@@ -1,0 +1,5 @@
+# BTC-K Tor Onion Hidden Service Configuration
+HiddenServiceDir /var/lib/tor/btck_node/
+HiddenServicePort 16112 127.0.0.1:16112
+HiddenServicePort 16110 127.0.0.1:16110
+HiddenServicePort 3333 127.0.0.1:3333

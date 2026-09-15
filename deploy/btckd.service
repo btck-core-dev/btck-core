@@ -1,0 +1,15 @@
+[Unit]
+Description=BTC-K Sovereign BlockDAG Seed Node Daemon
+After=network.target
+
+[Service]
+Type=simple
+User=btck
+WorkingDirectory=/opt/btck-core
+ExecStart=/usr/bin/python3 /opt/btck-core/src/node/daemon.py --port 16110 --p2p-port 16111
+Restart=always
+RestartSec=5s
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target

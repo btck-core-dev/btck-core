@@ -1,0 +1,36 @@
+version: '3.8'
+
+services:
+  btck-node:
+    build: .
+    container_name: btck-full-node
+    restart: always
+    command: ["python3", "/app/src/node/daemon.py"]
+    ports:
+      - "16110:16110"  # JSON-RPC
+      - "16112:16112"  # P2P Gossip
+    volumes:
+      - btck-data:/app/data
+
+  btck-stratum:
+    build: .
+    container_name: btck-stratum-pool
+    restart: always
+    command: ["python3", "-c", "import asyncio, sys; sys.path.insert(0, '/app/src'); from stratum.stratum_server import BTCKStratumServer; s=BTCKStratumServer(port=3333); asyncio.run(s.start()); import time; time.sleep(999999999)"]
+    ports:
+      - "3333:3333"    # Stratum V1 ASIC Port
+    depends_on:
+      - btck-node
+
+  btck-ai-gateway:
+    build: .
+    container_name: btck-ai-rpc-gateway
+    restart: always
+    command: ["python3", "-c", "import sys; sys.path.insert(0, '/app/src'); from gateway.ai_rpc_gateway import AIRPCGateway; print('AI-RPC Gateway Active')"]
+    ports:
+      - "8080:8080"    # HTTP 402 AI-RPC Gateway
+    depends_on:
+      - btck-node
+
+volumes:
+  btck-data:

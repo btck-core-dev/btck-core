@@ -1,0 +1,2 @@
+#!/usr/bin/env bash
+python3 /Users/a1234/btck-core/tools/btck_cli.py "$@"

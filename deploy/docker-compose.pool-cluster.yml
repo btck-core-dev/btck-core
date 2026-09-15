@@ -1,0 +1,54 @@
+version: '3.8'
+
+services:
+  # 1. High-Speed Shared Cache & Pub/Sub
+  redis:
+    image: redis:7.2-alpine
+    container_name: btck-pool-redis
+    command: redis-server --appendonly yes --maxmemory 2gb --maxmemory-policy allkeys-lru
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    restart: always
+    networks:
+      - btck-pool-net
+
+  # 2. Go-Stratum High-Concurrency Gateway
+  stratum-gateway:
+    build:
+      context: ../src/stratum_gateway_go
+      dockerfile: Dockerfile
+    container_name: btck-stratum-gateway
+    environment:
+      - STRATUM_PORT=3333
+      - REDIS_ADDR=redis:6379
+      - DEFAULT_DIFFICULTY=5.2
+    ports:
+      - "3333:3333"
+    depends_on:
+      - redis
+    restart: always
+    networks:
+      - btck-pool-net
+
+  # 3. BTC-K Core Node & P2P Daemon
+  btck-node:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    container_name: btck-core-daemon
+    command: python3 src/node/daemon.py --port 16110
+    ports:
+      - "16110:16110"
+      - "16111:16111"
+    restart: always
+    networks:
+      - btck-pool-net
+
+volumes:
+  redis-data:
+
+networks:
+  btck-pool-net:
+    driver: bridge

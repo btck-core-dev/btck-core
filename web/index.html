@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BTCK | Sovereign AI Agent Settlement & kHeavyHash BlockDAG</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+</head>
+<body>
+
+  <!-- Header -->
+  <header>
+    <div class="logo-group">
+      <span style="font-size: 24px; font-weight: 800; color: #00ff88; letter-spacing: -0.5px;">⚡ BTCK</span>
+      <span class="badge">1.0s BlockDAG</span>
+      <span class="badge badge-gold">21,000,000 Hard Cap</span>
+    </div>
+    <div style="display: flex; gap: 16px; align-items: center;">
+      <div id="wallet-pill" style="font-family: var(--font-mono); font-size: 13px; background: #182234; padding: 6px 14px; border-radius: 20px; border: 1px solid #233148;">
+        💰 Balance: <span id="header-balance" style="color: #00ff88; font-weight: bold;">1,250 SatK</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- Live Stats Bar -->
+  <div class="stats-bar">
+    <div class="stat-item"><span class="stat-label">BlockDAG Height:</span> <span class="stat-val" id="stat-height">#0</span></div>
+    <div class="stat-item"><span class="stat-label">Current Emission:</span> <span class="stat-val" id="stat-emission">50.0 BTCK / sec</span></div>
+    <div class="stat-item"><span class="stat-label">10x Combo Jackpot:</span> <span class="stat-val" id="stat-combo" style="color: #ffb800;">500 BTCK (P=1/41)</span></div>
+    <div class="stat-item"><span class="stat-label">Flash Halving Era:</span> <span class="stat-val" id="stat-era">Era 0: 创世冷启动 (Genesis Bootstrap)</span></div>
+    <div class="stat-item"><span class="stat-label">Mining Algorithm:</span> <span class="stat-val">kHeavyHash (Kaspa ASIC)</span></div>
+  </div>
+
+  <!-- Navigation Tabs -->
+  <nav class="tabs">
+    <button class="tab-btn active" onclick="switchTab('tab-chat')">🤖 SatsChat.ai (AI-RPC)</button>
+    <button class="tab-btn" onclick="switchTab('tab-dex')">🔄 BTCK Swap (AMM DEX)</button>
+    <button class="tab-btn" onclick="switchTab('tab-miner')">⛏️ ASIC Miner & Stratum Pool</button>
+    <button class="tab-btn" onclick="switchTab('tab-wallet')">🛡️ Monero-Grade Stealth Wallet</button>
+    <button class="tab-btn" onclick="switchTab('tab-explorer')">🌐 BlockDAG Visual Explorer</button>
+    <button class="tab-btn" onclick="switchTab('tab-sdk')">📦 Python SDK (`btck-agent`)</button>
+  </nav>
+
+  <!-- Main Views -->
+  <main>
+    
+    <!-- Tab 1: SatsChat.ai -->
+    <section id="tab-chat" class="tab-content active">
+      <div class="card">
+        <h2>⚡ SatsChat: Pay-per-Token Zero-KYC AI Interface</h2>
+        <p style="color: var(--text-muted); font-size: 14px; margin-bottom: 16px;">
+          Call top frontier AI models (DeepSeek-R1 / GPT-4o) directly with your mined SatK. 
+          Zero KYC, no overseas credit cards required. Powered by native <strong>HTTP 402 Payment Required</strong>.
+        </p>
+
+        <div class="chat-box">
+          <div class="chat-messages" id="chat-messages">
+            <div class="msg ai">
+              Hello! I am SatsChat, connected to BTCK's decentralized AI-RPC gateway. 
+              Each response stream costs ~0.01 SatK per token directly from your stealth address balance. Ask me anything!
+            </div>
+          </div>
+          <div class="chat-input-row">
+            <select id="model-select">
+              <option value="deepseek-r1">DeepSeek-R1 (Reasoning)</option>
+              <option value="gpt-4o">GPT-4o (Frontier)</option>
+              <option value="llama-3.3-70b">Llama-3.3-70B (Open-Weights)</option>
+            </select>
+            <input type="text" id="chat-input" placeholder="Type a prompt for autonomous AI reasoning..." style="flex: 1;">
+            <button class="btn-primary" onclick="sendMessage()">Send (0.01 SatK/Tok)</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Tab 2: BTCK AMM DEX Swap -->
+    <section id="tab-dex" class="tab-content">
+      <div class="card">
+        <h2>🔄 BTCK Sovereign AMM Swap & Liquidity Pool</h2>
+        <p style="color: var(--text-muted); font-size: 14px; margin-bottom: 20px;">
+          Decentralized, non-custodial constant product market maker ($x \cdot y = k$). 
+          Trade BTCK directly against USDT with 0.3% LP fee and zero KYC.
+        </p>
+
+        <div class="grid-2">
+          <!-- Swap Box -->
+          <div style="background: var(--bg-primary); padding: 20px; border-radius: 6px; border: 1px solid var(--border-color);">
+            <h3 style="font-size: 16px; margin-bottom: 12px; color: #00ff88;">⚡ Instant Token Swap</h3>
+            
+            <div style="margin-bottom: 12px;">
+              <label style="font-size: 12px; color: var(--text-muted); display: block; margin-bottom: 4px;">You Pay:</label>
+              <div style="display: flex; gap: 8px;">
+                <input type="number" id="swap-in-amount" value="500" oninput="calculateSwapOut()" style="flex: 1; font-family: var(--font-mono); font-size: 16px;">
+                <select id="swap-in-currency" onchange="toggleSwapDirection()" style="font-weight: bold; width: 110px;">
+                  <option value="USDT">USDT</option>
+                  <option value="BTCK">BTCK</option>
+                </select>
+              </div>
+            </div>
+
+            <div style="text-align: center; margin: 8px 0;">
+              <button onclick="reverseSwapDirection()" style="background: none; border: 1px solid var(--border-color); color: #00d2ff; padding: 4px 12px; border-radius: 20px; cursor: pointer;">⇅ Reverse</button>
+            </div>
+
+            <div style="margin-bottom: 16px;">
+              <label style="font-size: 12px; color: var(--text-muted); display: block; margin-bottom: 4px;">You Receive (Estimated):</label>
+              <div style="display: flex; gap: 8px;">
+                <input type="text" id="swap-out-amount" readonly value="7,284.19" style="flex: 1; font-family: var(--font-mono); font-size: 16px; color: #00ff88; font-weight: bold;">
+                <select id="swap-out-currency" disabled style="font-weight: bold; width: 110px;">
+                  <option value="BTCK">BTCK</option>
+                  <option value="USDT">USDT</option>
+                </select>
+              </div>
+            </div>
+
+            <button class="btn-primary" style="width: 100%;" onclick="executeSwap()">Execute Instant AMM Swap</button>
+          </div>
+
+          <!-- Pool Stats -->
+          <div style="background: var(--bg-primary); padding: 20px; border-radius: 6px; border: 1px solid var(--border-color);">
+            <h3 style="font-size: 16px; margin-bottom: 12px;">📊 Sovereign Pool Reserving</h3>
+            <div style="font-family: var(--font-mono); font-size: 13px; line-height: 1.8;">
+              <div>Pool Reserves (BTCK): <span id="pool-btck" style="color: #00ff88;">38,418.75 BTCK</span></div>
+              <div>Pool Reserves (USDT): <span id="pool-usdt" style="color: #00d2ff;">$2,636.93 USDT</span></div>
+              <div>Spot Exchange Price:  <span id="spot-price" style="color: #ffb800; font-weight: bold;">$0.0686 / BTCK</span></div>
+              <div>LP Transaction Fee:   <span>0.30%</span></div>
+              <div>Liquidity Status:     <span style="color: #00ff88;">Autonomous On-Chain</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Tab 3: ASIC Miner & Stratum Pool -->
+    <section id="tab-miner" class="tab-content">
+      <div class="card">
+        <h2>⛏️ Kaspa ASIC Miner Stratum Connection (Port 3333)</h2>
+        <p style="color: var(--text-muted); font-size: 14px; margin-bottom: 20px;">
+          Plug-and-play compatibility with <strong>IceRiver (KS0/KS1/KS2/KS3/KS5)</strong> and <strong>Bitmain Antminer (KS19/KS21)</strong>. 
+          Dual-Key stealth address payout guarantees untraceable mining revenue.
+        </p>
+
+        <div class="grid-2">
+          <div>
+            <h3 style="font-size: 16px; margin-bottom: 8px;">1. Stratum Connection URL</h3>
+            <pre><code>stratum+tcp://node.btck.network:3333
+Username: YOUR_STEALTH_ADDRESS.worker_name
+Password: x</code></pre>
+
+            <h3 style="font-size: 16px; margin: 16px 0 8px;">2. 10x Lucky Share Personal Award</h3>
+            <p style="font-size: 13px; color: var(--text-muted); line-height: 1.6;">
+              Every ~41 seconds, a <strong>10x Combo Jackpot (500 BTCK)</strong> block is minted. 
+              Instead of being shared across large farms, <strong>100% of the jackpot is paid directly to the individual miner's share</strong>! 
+              Even a small 200 GH/s KS0 home miner has the chance to win 500 BTCK instantly!
+            </p>
+          </div>
+
+          <div>
+            <h3 style="font-size: 16px; margin-bottom: 8px;">3. Hashrate Profit Estimator</h3>
+            <div style="background: var(--bg-primary); padding: 16px; border-radius: 6px; border: 1px solid var(--border-color);">
+              <label style="font-size: 12px; color: var(--text-muted);">Select Your Miner:</label>
+              <select id="miner-preset" onchange="updateCalc()" style="width: 100%; margin: 6px 0 12px;">
+                <option value="200">IceRiver KS0 (200 GH/s - 65W)</option>
+                <option value="400">IceRiver KS0 Pro (400 GH/s - 100W)</option>
+                <option value="1000">IceRiver KS1 (1 TH/s - 600W)</option>
+                <option value="2000">IceRiver KS2 (2 TH/s - 1200W)</option>
+                <option value="8000">IceRiver KS3 / Antminer (8 TH/s - 3200W)</option>
+                <option value="20000" selected>IceRiver KS5 / Pro (20 TH/s - 3400W)</option>
+              </select>
+
+              <div style="font-size: 14px; font-family: var(--font-mono); line-height: 1.8;">
+                <div>Estimated Daily Output: <span id="est-daily" style="color: #00ff88; font-weight: bold;">0.0899 BTCK</span></div>
+                <div>Equivalent in SatK: <span id="est-sats" style="color: #00d2ff;">8,990,000 SatK</span></div>
+                <div>AI Token Credits: <span id="est-tokens" style="color: #ffb800;">899,000,000 Tokens</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Tab 4: Stealth Wallet & Transfer -->
+    <section id="tab-wallet" class="tab-content">
+      <div class="card">
+        <h2>🛡️ Monero-Grade Dual-Key Stealth Privacy Wallet</h2>
+        <p style="color: var(--text-muted); font-size: 14px; margin-bottom: 20px;">
+          BTCK utilizes cryptographic Dual-Key Stealth Addresses (Spend Key + View Key). 
+          Every transaction and coinbase output generates an untraceable one-time public key on the BlockDAG.
+        </p>
+
+        <!-- Wallet Info Box -->
+        <div style="background: var(--bg-primary); padding: 20px; border-radius: 6px; border: 1px solid var(--border-color); margin-bottom: 24px;">
+          <div style="margin-bottom: 12px;">
+            <label style="font-size: 12px; color: var(--text-muted); display: block; margin-bottom: 4px;">Public Stealth Address (Share this freely):</label>
+            <input type="text" id="wallet-addr" readonly style="width: 100%; font-family: var(--font-mono); font-size: 12px; color: #00ff88;" value="btck1s0286b07764e0e6f4a42eebf0659beb6d878f92aa838d15568ecdb2397b4b1bb017036eb8d8fe217b64b1964838a2554262154d52eb8bac0f7dd1fa5005ee5a822b9437c77629">
+          </div>
+
+          <div class="grid-2">
+            <div>
+              <label style="font-size: 12px; color: var(--text-muted); display: block; margin-bottom: 4px;">Private View Key (Scalar - For Scan Only):</label>
+              <input type="text" id="wallet-view" readonly style="width: 100%; font-family: var(--font-mono); font-size: 11px;" value="896094dd27a01f15e2039c62...">
+            </div>
+            <div>
+              <label style="font-size: 12px; color: var(--text-muted); display: block; margin-bottom: 4px;">Private Spend Key (Scalar - Keep secret!):</label>
+              <input type="text" id="wallet-spend" readonly style="width: 100%; font-family: var(--font-mono); font-size: 11px; color: #ffb800;" value="****************************************">
+            </div>
+          </div>
+
+          <!-- Mnemonic Box -->
+          <div id="mnemonic-box" style="margin-top: 14px; display: none; background: rgba(0,0,0,0.3); padding: 12px; border-radius: 6px; border: 1px dashed #58a6ff;">
+            <label style="font-size: 12px; color: #58a6ff; font-weight: 600;">🔑 12-Word Cypherpunk Recovery Mnemonic:</label>
+            <div id="mnemonic-words" style="font-family: var(--font-mono); font-size: 13px; color: #fff; margin-top: 6px; line-height: 1.6;"></div>
+          </div>
+
+          <div style="margin-top: 16px; display: flex; gap: 12px; flex-wrap: wrap;">
+            <button class="btn-primary" onclick="generateNewWallet()">Generate New Stealth Wallet</button>
+            <button class="btn-primary" style="background: #1e3a5f; color: #fff;" onclick="scanWalletUTXOs()">Scan BlockDAG for UTXOs</button>
+            <button class="btn-primary" style="background: #233148; color: #58a6ff;" onclick="generateMnemonicWallet()">Create 12-Word Mnemonic</button>
+          </div>
+        </div>
+
+        <!-- Transfer & Send Box -->
+        <div style="background: var(--bg-primary); padding: 20px; border-radius: 6px; border: 1px solid var(--border-color);">
+          <h3 style="font-size: 16px; margin-bottom: 12px; color: #00d2ff;">💸 Send Anonymous Stealth Transfer</h3>
+          <div style="margin-bottom: 12px;">
+            <label style="font-size: 12px; color: var(--text-muted); display: block; margin-bottom: 4px;">Recipient Stealth Address (btck1s...):</label>
+            <input type="text" id="tx-recipient" placeholder="btck1s..." style="width: 100%; font-family: var(--font-mono); font-size: 13px;">
+          </div>
+          <div class="grid-2">
+            <div>
+              <label style="font-size: 12px; color: var(--text-muted); display: block; margin-bottom: 4px;">Amount (BTC-K):</label>
+              <input type="number" id="tx-amount" value="5.0" step="0.1" style="width: 100%; font-family: var(--font-mono); font-size: 14px;">
+            </div>
+            <div>
+              <label style="font-size: 12px; color: var(--text-muted); display: block; margin-bottom: 4px;">Network Fee (SatK):</label>
+              <input type="text" id="tx-fee" readonly value="10,000 SatK (0.0001 BTC-K)" style="width: 100%; font-family: var(--font-mono); font-size: 14px; color: var(--text-muted);">
+            </div>
+          </div>
+          <div style="margin-top: 16px;">
+            <button class="btn-primary" style="background: #238636; width: 100%;" onclick="sendStealthTransfer()">Sign with Spend Key & Broadcast</button>
+          </div>
+
+          <!-- Transaction Result Box -->
+          <div id="tx-result-box" style="margin-top: 16px; display: none; background: rgba(0,0,0,0.4); padding: 14px; border-radius: 6px; border: 1px solid #238636;">
+            <div style="color: #3fb950; font-weight: bold; margin-bottom: 6px;">✅ Transaction Successfully Signed & Broadcasted!</div>
+            <div style="font-family: var(--font-mono); font-size: 12px; line-height: 1.8;">
+              <div>TXID: <span id="res-txid" style="color: #58a6ff;"></span></div>
+              <div>One-Time Ephemeral PubKey (R): <span id="res-r" style="color: #8b949e;"></span></div>
+              <div>Schnorr Signature: <span id="res-sig" style="color: #ffb800;"></span></div>
+              <div>Privacy Status: <span style="color: #3fb950;">Untraceable On-Chain (Diffie-Hellman Sealed)</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Tab 5: BlockDAG Visual Explorer -->
+    <section id="tab-explorer" class="tab-content">
+      <div class="card">
+        <h2>🌐 1.0s BlockDAG Real-Time Visual Explorer</h2>
+        <p style="color: var(--text-muted); font-size: 14px; margin-bottom: 16px;">
+          Live GHOSTDAG topological graph visualizer. Inspect multi-parent consensus blocks, 10x lucky combo payouts, and stealth address coinbase outputs.
+        </p>
+
+        <!-- Search Bar -->
+        <div style="display: flex; gap: 8px; margin-bottom: 20px;">
+          <input type="text" id="explorer-search" placeholder="Search by Block Height, Block Hash (64 hex), or TXID..." style="flex: 1; font-family: var(--font-mono); font-size: 13px;">
+          <button class="btn-primary" onclick="searchExplorer()">Search</button>
+        </div>
+
+        <!-- DAG Canvas Visualizer -->
+        <div style="background: #0d1117; border: 1px solid var(--border-color); border-radius: 8px; padding: 16px; margin-bottom: 24px; text-align: center;">
+          <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 8px; text-align: left;">
+            ⚡ <b>Live BlockDAG Topology</b> (1 block/sec | Blue Score Ordering):
+          </div>
+          <canvas id="dag-canvas" width="860" height="140" style="width: 100%; height: 140px; background: #0b0f14; border-radius: 6px;"></canvas>
+        </div>
+
+        <!-- Recent Blocks Table -->
+        <div style="overflow-x: auto;">
+          <table style="width: 100%; border-collapse: collapse; font-size: 13px; text-align: left;">
+            <thead>
+              <tr style="background: rgba(255, 255, 255, 0.03); color: var(--text-muted); border-bottom: 1px solid var(--border-color);">
+                <th style="padding: 10px 14px;">Height</th>
+                <th style="padding: 10px 14px;">Block Hash</th>
+                <th style="padding: 10px 14px;">Blue Score</th>
+                <th style="padding: 10px 14px;">Reward (BTC-K)</th>
+                <th style="padding: 10px 14px;">Status</th>
+                <th style="padding: 10px 14px;">Time</th>
+              </tr>
+            </thead>
+            <tbody id="explorer-blocks-tbody">
+              <!-- Dynamically populated -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- Tab 6: SDK -->
+    <section id="tab-sdk" class="tab-content">
+      <div class="card">
+        <h2>📦 `pip install btck-agent` (Python AI SDK)</h2>
+        <p style="color: var(--text-muted); font-size: 14px; margin-bottom: 16px;">
+          Integrate sovereign micropayments and untraceable privacy into your LangChain, CrewAI, AutoGen, or custom Python agents in 3 lines of code.
+        </p>
+
+        <pre><code>pip install btck-agent</code></pre>
+
+        <pre><code>from btck_agent import BTCKWallet, BTCKAgentClient
+
+# 1. Initialize anonymous wallet
+wallet = BTCKWallet.generate()
+
+# 2. Call LLMs with automatic SatK micro-billing
+client = BTCKAgentClient(wallet=wallet, gateway_url="http://node.btck.network:8080")
+resp = client.chat_completion(
+    model="deepseek-r1",
+    prompt="Generate an autonomous arbitrage strategy for decentralized compute."
+)
+print(resp["choices"][0]["message"]["content"])</code></pre>
+      </div>
+    </section>
+
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>

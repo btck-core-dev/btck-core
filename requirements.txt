@@ -1,0 +1,12 @@
+# BTC-K Core Production & Development Dependencies
+# ----------------------------------------------------------------------
+# BTC-K is engineered with zero third-party runtime package dependencies
+# to eliminate Python supply-chain vulnerabilities.
+# All cryptography (Schnorr/secp256k1, SHA-256, kHeavyHash),
+# networking (P2P Gossip, AsyncIO Stratum V1, HTTP 402 AI-RPC),
+# and consensus state machines operate exclusively on Python 3.10+ standard library.
+# ----------------------------------------------------------------------
+
+# Build & Packaging tools
+setuptools>=68.0.0
+wheel>=0.40.0

@@ -1,0 +1,28 @@
+# Security & Secret exclusions
+secrets/
+*.key
+*privkey*
+*wallet.json
+*.tar.gz
+*.tar.gz.sha256
+backups/
+.env
+
+# Logs & Runtime
+logs/
+data/
+*.log
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.coverage
+
+# Virtual Environments
+venv/
+env/
+.venv/
+
+# OS
+.DS_Store
+Thumbs.db
