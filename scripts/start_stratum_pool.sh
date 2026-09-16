@@ -9,7 +9,7 @@ echo "⛏️ Starting BTC-K Stratum Pool Server"
 echo "   Target ASIC: IceRiver KS0/KS1/KS2/KS3/KS5, Antminer KS3"
 echo "   Listening on: ${HOST}:${PORT}"
 echo "   Log destination: ${LOG_PATH}"
-echo "   10x Combo Lucky Share Personal Award: ENABLED (P=1/41)"
+echo "   12h Combo Jackpot Tier (20% Reserve / 43,200 Blocks Draw): ENABLED"
 echo "=========================================================="
 exec python3 -u -c "
 import asyncio

@@ -222,8 +222,57 @@ class AIRPCGateway:
         self.idempotency_cache: Dict[str, Dict[str, Any]] = {}  # composite_key -> completion_resp
         self.delegation_spent: Dict[str, int] = {}  # delegation_id -> cumulative_spent_satk
         self.in_flight_locks: set = set()
+        self.registered_workers: Dict[str, Dict[str, Any]] = {}
+        self.worker_queues: Dict[str, asyncio.Queue] = {}
+        self.worker_pending_tasks: Dict[str, asyncio.Future] = {}
         self.server: Optional[asyncio.Server] = None
         self.running = False
+
+    def register_worker(self, data: dict) -> Tuple[bool, str, dict]:
+        """Register a symbiotic GPU worker node (Zero-Key public stealth address)."""
+        worker_id = data.get("worker_id") or f"worker_{uuid.uuid4().hex[:8]}"
+        address = data.get("worker_address", "")
+        if not address.startswith("btck1s"):
+            return False, "Invalid worker address: must be a BTC-K stealth address starting with 'btck1s'", {}
+        
+        worker_info = {
+            "worker_id": worker_id,
+            "worker_address": address,
+            "tier_level": int(data.get("tier_level", 1)),
+            "model_name": data.get("model_name", "deepseek-r1-distill-qwen-8b-q4"),
+            "supported_models": data.get("supported_models", [data.get("model_name", "deepseek-r1")]),
+            "vram_gb": float(data.get("vram_gb", 16.0)),
+            "pearl_hashrate": data.get("pearl_hashrate", "0 H/s"),
+            "pearl_pool": data.get("pearl_pool", "pearl-eu1.lproute.com:3360"),
+            "status": "ONLINE_MINING_PEARL",
+            "last_heartbeat": time.time(),
+            "tasks_completed": 0,
+            "satk_earned": 0,
+            "registered_at": time.time(),
+        }
+        self.registered_workers[worker_id] = worker_info
+        if worker_id not in self.worker_queues:
+            self.worker_queues[worker_id] = asyncio.Queue()
+        logger.info(f"⚡ Registered Symbiotic GPU Worker [{worker_id}] Tier {worker_info['tier_level']} (Address: {address[:16]}...)")
+        return True, "Worker registered successfully", worker_info
+
+    async def _dispatch_task_to_worker(self, worker_id: str, task: dict, timeout_sec: float = 5.0) -> Optional[str]:
+        """Dispatch task to worker queue and await completion."""
+        if worker_id not in self.worker_queues:
+            return None
+        task_id = task["task_id"]
+        loop = asyncio.get_running_loop()
+        future = loop.create_future()
+        self.worker_pending_tasks[task_id] = future
+        await self.worker_queues[worker_id].put(task)
+        try:
+            result = await asyncio.wait_for(future, timeout=timeout_sec)
+            return result
+        except asyncio.TimeoutError:
+            logger.warning(f"Worker {worker_id} timed out on task {task_id}")
+            return None
+        finally:
+            self.worker_pending_tasks.pop(task_id, None)
 
     def process_payment_receipt(self, receipt: dict, expected_path: str = "") -> Tuple[bool, str]:
         """
@@ -549,6 +598,72 @@ class AIRPCGateway:
                 await self._send_response(writer, 200, json.dumps(res).encode())
                 return
 
+            # Symbiotic GPU Worker Management Endpoints
+            if method == "GET" and path == "/v1/workers":
+                workers_list = list(self.registered_workers.values())
+                total_vram = sum(w.get("vram_gb", 0.0) for w in workers_list)
+                active_workers = [w for w in workers_list if time.time() - w.get("last_heartbeat", 0) < 60]
+                res = {
+                    "object": "worker_cluster",
+                    "total_registered": len(workers_list),
+                    "active_online": len(active_workers),
+                    "cluster_vram_gb": round(total_vram, 2),
+                    "workers": workers_list,
+                }
+                await self._send_response(writer, 200, json.dumps(res).encode())
+                return
+
+            if method == "POST" and path == "/v1/workers/register":
+                try:
+                    data = json.loads(body_bytes.decode())
+                except Exception:
+                    await self._send_response(writer, 400, json.dumps({"error": "Invalid JSON"}).encode())
+                    return
+                ok, msg, worker_info = self.register_worker(data)
+                status_code = 200 if ok else 400
+                await self._send_response(writer, status_code, json.dumps({"success": ok, "message": msg, "worker": worker_info}).encode())
+                return
+
+            if method == "POST" and path == "/v1/workers/heartbeat":
+                try:
+                    data = json.loads(body_bytes.decode())
+                except Exception:
+                    await self._send_response(writer, 400, json.dumps({"error": "Invalid JSON"}).encode())
+                    return
+                worker_id = data.get("worker_id", "")
+                if worker_id not in self.registered_workers:
+                    await self._send_response(writer, 404, json.dumps({"error": "Worker not registered"}).encode())
+                    return
+                w = self.registered_workers[worker_id]
+                w["last_heartbeat"] = time.time()
+                if "pearl_hashrate" in data:
+                    w["pearl_hashrate"] = data["pearl_hashrate"]
+                if "status" in data:
+                    w["status"] = data["status"]
+
+                pending_task = None
+                queue = self.worker_queues.get(worker_id)
+                if queue and not queue.empty():
+                    pending_task = queue.get_nowait()
+
+                await self._send_response(writer, 200, json.dumps({"status": "OK", "pending_task": pending_task}).encode())
+                return
+
+            if method == "POST" and path == "/v1/workers/complete":
+                try:
+                    data = json.loads(body_bytes.decode())
+                except Exception:
+                    await self._send_response(writer, 400, json.dumps({"error": "Invalid JSON"}).encode())
+                    return
+                task_id = data.get("task_id", "")
+                output_text = data.get("output_text", "")
+                if task_id in self.worker_pending_tasks:
+                    fut = self.worker_pending_tasks[task_id]
+                    if not fut.done():
+                        fut.set_result(output_text)
+                await self._send_response(writer, 200, json.dumps({"status": "ACCEPTED"}).encode())
+                return
+
             # Chat Completions (with HTTP 402 + Idempotency + Proof of Delivery + Delegation verification)
             if method == "POST" and (path == "/v1/chat/completions" or path == "/v1/completions"):
                 await self._handle_chat_completions(writer, headers, body_bytes)
@@ -695,7 +810,36 @@ class AIRPCGateway:
 
         # 6. Execute Completion
         task_id = f"task_{uuid.uuid4().hex[:12]}"
-        actual_output_text = self._generate_reasoning_completion(model, prompt)
+        actual_output_text = None
+        worker_used = None
+
+        # Check if a registered symbiotic GPU worker can fulfill this task
+        matching_workers = [
+            w for w in self.registered_workers.values()
+            if (w.get("model_name", "").lower() == model.lower() or 
+                model.lower() in [m.lower() for m in w.get("supported_models", [])])
+            and (time.time() - w.get("last_heartbeat", 0) < 60)
+        ]
+
+        if matching_workers:
+            target_worker = matching_workers[0]
+            try:
+                task_payload = {
+                    "task_id": task_id,
+                    "prompt": prompt,
+                    "model": model,
+                    "prompt_tokens": len(prompt.split()),
+                    "max_tokens": 512,
+                }
+                actual_output_text = await self._dispatch_task_to_worker(target_worker["worker_id"], task_payload, timeout_sec=6.0)
+                if actual_output_text:
+                    worker_used = target_worker
+            except Exception as e:
+                logger.warning(f"Worker dispatch failed ({e}), falling back to local reasoning engine.")
+
+        if not actual_output_text:
+            actual_output_text = self._generate_reasoning_completion(model, prompt)
+
         input_tokens = len(prompt.split())
         output_tokens = len(actual_output_text.split())
         actual_tokens = input_tokens + output_tokens
@@ -712,6 +856,14 @@ class AIRPCGateway:
             }
             await self._send_response(writer, 402, json.dumps(err_deduct).encode())
             return
+
+        # If worker was used, credit 85% directly to worker's stealth address!
+        if worker_used:
+            worker_payout = max(1, int(actual_cost_satk * 0.85))
+            self.ledger.deposit(worker_used["worker_address"], worker_payout)
+            worker_used["satk_earned"] = worker_used.get("satk_earned", 0) + worker_payout
+            worker_used["tasks_completed"] = worker_used.get("tasks_completed", 0) + 1
+            logger.info(f"💎 Symbiotic GPU Worker [{worker_used['worker_address'][:16]}...] earned {worker_payout} SatK for task {task_id}")
 
         if delegation_id:
             self.delegation_spent[delegation_id] = self.delegation_spent.get(delegation_id, 0) + actual_cost_satk

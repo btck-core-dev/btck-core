@@ -15,11 +15,14 @@
     <div class="logo-group">
       <span style="font-size: 24px; font-weight: 800; color: #00ff88; letter-spacing: -0.5px;">⚡ BTCK</span>
       <span class="badge">1.0s BlockDAG</span>
+      <span class="badge" style="background: rgba(241, 224, 90, 0.15); color: #f1e05a; border-color: rgba(241, 224, 90, 0.3);">⏱️ 48h Stress Test</span>
       <span class="badge badge-gold">21,000,000 Hard Cap</span>
     </div>
-    <div style="display: flex; gap: 16px; align-items: center;">
+    <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+      <a href="/progress" target="_blank" style="text-decoration: none; font-size: 12px; background: rgba(188, 140, 255, 0.15); color: #bc8cff; border: 1px solid #bc8cff; padding: 5px 12px; border-radius: 6px; font-weight: 600;">🎯 全局战略与审计进度</a>
+      <a href="/" target="_blank" style="text-decoration: none; font-size: 12px; background: rgba(88, 166, 255, 0.15); color: #58a6ff; border: 1px solid #58a6ff; padding: 5px 12px; border-radius: 6px; font-weight: 600;">⚡ 48h 矿机仪表盘</a>
       <div id="wallet-pill" style="font-family: var(--font-mono); font-size: 13px; background: #182234; padding: 6px 14px; border-radius: 20px; border: 1px solid #233148;">
-        💰 Balance: <span id="header-balance" style="color: #00ff88; font-weight: bold;">1,250 SatK</span>
+        💰 Miner Balance: <span id="header-balance" style="color: #00ff88; font-weight: bold;">0.00 BTC-K</span>
       </div>
     </div>
   </header>
@@ -27,13 +30,24 @@
   <!-- Live Stats Bar -->
   <div class="stats-bar">
     <div class="stat-item"><span class="stat-label">BlockDAG Height:</span> <span class="stat-val" id="stat-height">#0</span></div>
-    <div class="stat-item"><span class="stat-label">Current Emission:</span> <span class="stat-val" id="stat-emission">50.0 BTCK / sec</span></div>
-    <div class="stat-item"><span class="stat-label">10x Combo Jackpot:</span> <span class="stat-val" id="stat-combo" style="color: #ffb800;">500 BTCK (P=1/41)</span></div>
-    <div class="stat-item"><span class="stat-label">Flash Halving Era:</span> <span class="stat-val" id="stat-era">Era 0: 创世冷启动 (Genesis Bootstrap)</span></div>
+    <div class="stat-item"><span class="stat-label">Block Subsidy:</span> <span class="stat-val" id="stat-emission">6.2982 BTC-K / blk</span></div>
+    <div class="stat-item"><span class="stat-label">12h Jackpot Pool:</span> <span class="stat-val" id="stat-combo" style="color: #ffb800;">0 BTC-K (Phase 1)</span></div>
+    <div class="stat-item"><span class="stat-label">Consensus Phase:</span> <span class="stat-val" id="stat-era">Phase 1: 创世基石 (12h 周期 / 20% 储备)</span></div>
     <div class="stat-item"><span class="stat-label">Mining Algorithm:</span> <span class="stat-val">kHeavyHash (Kaspa ASIC)</span></div>
   </div>
 
+  <!-- Top Marquee Ticker: Replaying Latest 5 Combo Jackpot Draws (By Winner Physical Hashrate) -->
+  <div class="combo-ticker-container" id="combo-ticker-container">
+    <div class="ticker-badge">🎰 COMBO WINNERS REPLAY</div>
+    <div class="ticker-marquee-wrapper">
+      <div class="ticker-marquee-track" id="combo-ticker-track">
+        <span class="ticker-item">正在载入历届 12h 周期 Combo 巨奖中奖算力遥测回放...</span>
+      </div>
+    </div>
+  </div>
+
   <!-- Navigation Tabs -->
+
   <nav class="tabs">
     <button class="tab-btn active" onclick="switchTab('tab-chat')">🤖 SatsChat.ai (AI-RPC)</button>
     <button class="tab-btn" onclick="switchTab('tab-dex')">🔄 BTCK Swap (AMM DEX)</button>
@@ -144,16 +158,20 @@
 
         <div class="grid-2">
           <div>
-            <h3 style="font-size: 16px; margin-bottom: 8px;">1. Stratum Connection URL</h3>
-            <pre><code>stratum+tcp://node.btck.network:3333
+            <h3 style="font-size: 16px; margin-bottom: 8px;">1. Stratum Connection URL (Local & Intranet)</h3>
+            <pre><code>stratum+tcp://192.168.50.189:3333
 Username: YOUR_STEALTH_ADDRESS.worker_name
-Password: x</code></pre>
+Password: x
 
-            <h3 style="font-size: 16px; margin: 16px 0 8px;">2. 10x Lucky Share Personal Award</h3>
+# Live Active Worker:
+Worker: ks001 (IceRiver KS0 Ultra @ 192.168.50.236)
+Hashrate: ~355 GH/s | Fan: 5,900 RPM (100% Locked) | Temp: 54°C / 42°C</code></pre>
+
+            <h3 style="font-size: 16px; margin: 16px 0 8px;">2. 12h 周期大奖公积金体系 (Canonical Tokenomics v2.3.0)</h3>
             <p style="font-size: 13px; color: var(--text-muted); line-height: 1.6;">
-              Every ~41 seconds, a <strong>10x Combo Jackpot (500 BTCK)</strong> block is minted. 
-              Instead of being shared across large farms, <strong>100% of the jackpot is paid directly to the individual miner's share</strong>! 
-              Even a small 200 GH/s KS0 home miner has the chance to win 500 BTCK instantly!
+              共识内核执行 <strong>80% 矿工基础收益 (5.0385 BTC-K) + 20% 奖池公积金 (1.2596 BTC-K)</strong> 的无损切分。
+              每 <strong>12 小时（43,200 区块）</strong> 触发一次全网大奖开奖。
+              开奖采用 <strong>未来随机信标 ($H_{end}+100$) + 256 位空间 Kademlia XOR 几何距离测距</strong>，由当期出块且距离信标最近的矿工独揽全部奖池（创世首日单次大奖累积预期达 <strong>~54,416 BTC-K</strong>）！
             </p>
           </div>
 
@@ -190,21 +208,48 @@ Password: x</code></pre>
           Every transaction and coinbase output generates an untraceable one-time public key on the BlockDAG.
         </p>
 
+        <!-- Live Tokenomics & Miner Wallet Status Cards -->
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; margin-bottom: 24px;">
+          <div style="background: var(--bg-primary); border: 1px solid var(--border-color); border-radius: 8px; padding: 16px;">
+            <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 4px;">💰 矿工钱包实时到账 (已确认)</div>
+            <div style="font-size: 20px; font-weight: 700; color: #00ff88; font-family: var(--font-mono);" id="wallet-balance-btck">0.00 BTC-K</div>
+            <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;" id="wallet-balance-satk">0 SatK</div>
+          </div>
+          <div style="background: var(--bg-primary); border: 1px solid var(--border-color); border-radius: 8px; padding: 16px;">
+            <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 4px;">🧱 本钱包独享出块 (SOLO)</div>
+            <div style="font-size: 20px; font-weight: 700; color: #58a6ff; font-family: var(--font-mono);" id="wallet-blocks-count">0 块</div>
+            <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;" id="wallet-decay-status">Day 0 阶段: 5.0385 BTC-K / 块 (80%)</div>
+          </div>
+          <div style="background: var(--bg-primary); border: 1px solid var(--border-color); border-radius: 8px; padding: 16px;">
+            <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 4px;">🏦 12h 周期共识奖池 (20% 储备)</div>
+            <div style="font-size: 20px; font-weight: 700; color: #ffb800; font-family: var(--font-mono);" id="wallet-pool-reserve">0.00 BTC-K</div>
+            <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">首日单次大奖累积预期: ~54,416 BTC-K</div>
+          </div>
+          <div style="background: var(--bg-primary); border: 1px solid var(--border-color); border-radius: 8px; padding: 16px;">
+            <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 4px;">⏱️ 下轮开奖高度与倒计时</div>
+            <div style="font-size: 20px; font-weight: 700; color: #bc8cff; font-family: var(--font-mono);" id="wallet-next-draw">#43,200</div>
+            <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;" id="wallet-draw-countdown">距开奖计算中...</div>
+          </div>
+        </div>
+
         <!-- Wallet Info Box -->
         <div style="background: var(--bg-primary); padding: 20px; border-radius: 6px; border: 1px solid var(--border-color); margin-bottom: 24px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+            <label style="font-size: 12px; color: var(--text-muted); font-weight: 600;">当前绑定矿机隐形地址 (Active Miner Stealth Address - ks001):</label>
+            <span style="font-size: 11px; color: #00ff88; font-family: var(--font-mono);">● 物理实机 IceRiver KS0 Ultra 正在出块结算</span>
+          </div>
           <div style="margin-bottom: 12px;">
-            <label style="font-size: 12px; color: var(--text-muted); display: block; margin-bottom: 4px;">Public Stealth Address (Share this freely):</label>
-            <input type="text" id="wallet-addr" readonly style="width: 100%; font-family: var(--font-mono); font-size: 12px; color: #00ff88;" value="btck1s0286b07764e0e6f4a42eebf0659beb6d878f92aa838d15568ecdb2397b4b1bb017036eb8d8fe217b64b1964838a2554262154d52eb8bac0f7dd1fa5005ee5a822b9437c77629">
+            <input type="text" id="wallet-addr" readonly style="width: 100%; font-family: var(--font-mono); font-size: 12px; color: #00ff88;" value="btck1s022fd5c7684238a4ee4505c01cef3353279d5330a5901ae135ebbe47a0e47c71a403c6248a22724350e3bfabd6a6280bf50ada1977f0e4f240783d3a03caae334b2d3f0cff62">
           </div>
 
           <div class="grid-2">
             <div>
               <label style="font-size: 12px; color: var(--text-muted); display: block; margin-bottom: 4px;">Private View Key (Scalar - For Scan Only):</label>
-              <input type="text" id="wallet-view" readonly style="width: 100%; font-family: var(--font-mono); font-size: 11px;" value="896094dd27a01f15e2039c62...">
+              <input type="text" id="wallet-view" readonly style="width: 100%; font-family: var(--font-mono); font-size: 11px;" value="896094dd27a01f15e2039c629532ea4c90e0b32947df3492...">
             </div>
             <div>
               <label style="font-size: 12px; color: var(--text-muted); display: block; margin-bottom: 4px;">Private Spend Key (Scalar - Keep secret!):</label>
-              <input type="text" id="wallet-spend" readonly style="width: 100%; font-family: var(--font-mono); font-size: 11px; color: #ffb800;" value="****************************************">
+              <input type="text" id="wallet-spend" readonly style="width: 100%; font-family: var(--font-mono); font-size: 11px; color: #ffb800;" value="************************************************">
             </div>
           </div>
 
@@ -215,9 +260,35 @@ Password: x</code></pre>
           </div>
 
           <div style="margin-top: 16px; display: flex; gap: 12px; flex-wrap: wrap;">
-            <button class="btn-primary" onclick="generateNewWallet()">Generate New Stealth Wallet</button>
-            <button class="btn-primary" style="background: #1e3a5f; color: #fff;" onclick="scanWalletUTXOs()">Scan BlockDAG for UTXOs</button>
-            <button class="btn-primary" style="background: #233148; color: #58a6ff;" onclick="generateMnemonicWallet()">Create 12-Word Mnemonic</button>
+            <button class="btn-primary" style="background: #1e3a5f; color: #fff;" onclick="scanWalletUTXOs()">🔍 实时扫描链上 UTXO 收益账本</button>
+            <button class="btn-primary" onclick="generateNewWallet()">✨ 生成新隐形地址</button>
+            <button class="btn-primary" style="background: #233148; color: #58a6ff;" onclick="generateMnemonicWallet()">📜 创建 12-词助记词</button>
+          </div>
+        </div>
+
+        <!-- Live UTXO Scanner Section -->
+        <div style="background: var(--bg-primary); padding: 20px; border-radius: 6px; border: 1px solid var(--border-color); margin-bottom: 24px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+            <h3 style="font-size: 15px; color: #00ff88; margin: 0;">📜 链上实时到账 UTXO 收益明细 (Confirmed Coinbase Outputs)</h3>
+            <span id="utxo-count-tag" style="font-size: 12px; color: var(--text-muted); font-family: var(--font-mono);">载入中...</span>
+          </div>
+          <div style="overflow-x: auto;">
+            <table style="width: 100%; border-collapse: collapse; font-size: 12px; text-align: left;">
+              <thead>
+                <tr style="background: rgba(255, 255, 255, 0.03); color: var(--text-muted); border-bottom: 1px solid var(--border-color);">
+                  <th style="padding: 8px 12px;">区块高度</th>
+                  <th style="padding: 8px 12px;">收益类型</th>
+                  <th style="padding: 8px 12px;">到账金额 (BTC-K)</th>
+                  <th style="padding: 8px 12px;">到账金额 (SatK)</th>
+                  <th style="padding: 8px 12px;">代币经济学切分</th>
+                  <th style="padding: 8px 12px;">共识状态</th>
+                  <th style="padding: 8px 12px;">出块时间</th>
+                </tr>
+              </thead>
+              <tbody id="wallet-utxos-tbody">
+                <tr><td colspan="7" style="padding: 16px; text-align: center; color: var(--text-muted);">正在扫描 BlockDAG 链上 UTXO...</td></tr>
+              </tbody>
+            </table>
           </div>
         </div>
 
@@ -295,6 +366,79 @@ Password: x</code></pre>
               <!-- Dynamically populated -->
             </tbody>
           </table>
+        </div>
+
+        <!-- Combo Hall of Fame Section (Winner Hashrate Disclosure) -->
+        <div style="margin-top: 28px; margin-bottom: 24px; background: var(--bg-primary); border: 1px solid var(--border-color); border-radius: 8px; padding: 20px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
+            <div>
+              <h3 style="font-size: 16px; color: #ffb800; margin: 0; display: flex; align-items: center; gap: 8px;">
+                🏆 历届 12h 周期 Combo 巨奖中奖名录 (按物理算力公示 · 零地址泄露隐私保护)
+              </h3>
+              <p style="font-size: 12px; color: var(--text-muted); margin: 4px 0 0 0;">
+                基于未来随机信标 ($H_{end}+100$) + 256 位 XOR 几何距离确定性开奖。保护矿工隐形地址隐私，仅公开获奖时刻物理算力与硬件型号。
+              </p>
+            </div>
+            <span style="font-size: 11px; background: rgba(255, 184, 0, 0.15); color: #ffb800; border: 1px solid rgba(255, 184, 0, 0.3); padding: 3px 8px; border-radius: 4px; font-weight: bold;">零知识保护 · 算力确权</span>
+          </div>
+
+          <div style="overflow-x: auto;">
+            <table style="width: 100%; border-collapse: collapse; font-size: 12px; text-align: left;">
+              <thead>
+                <tr style="background: rgba(255, 255, 255, 0.03); color: var(--text-muted); border-bottom: 1px solid var(--border-color);">
+                  <th style="padding: 9px 12px;">开奖轮次/周期</th>
+                  <th style="padding: 9px 12px;">开奖高度</th>
+                  <th style="padding: 9px 12px;">巨奖金额 (BTC-K)</th>
+                  <th style="padding: 9px 12px;">中奖者当时物理算力</th>
+                  <th style="padding: 9px 12px;">矿机硬件型号</th>
+                  <th style="padding: 9px 12px;">信标信源 / 最小 XOR 测距</th>
+                  <th style="padding: 9px 12px;">开奖时间</th>
+                  <th style="padding: 9px 12px;">状态</th>
+                </tr>
+              </thead>
+              <tbody id="combo-hof-tbody">
+                <tr><td colspan="8" style="padding: 16px; text-align: center; color: var(--text-muted);">正在载入历届 Combo 巨奖名录...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Hourly Tempo Benchmark Tracking Section -->
+        <div style="margin-bottom: 24px; background: var(--bg-primary); border: 1px solid var(--border-color); border-radius: 8px; padding: 20px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
+            <div>
+              <h3 style="font-size: 16px; color: #00d2ff; margin: 0; display: flex; align-items: center; gap: 8px;">
+                ⏱️ 48小时实机单机测速与落后/超前连续跟踪表 (整点记录 · 目标 1.0s/块)
+              </h3>
+              <p style="font-size: 12px; color: var(--text-muted); margin: 4px 0 0 0;">
+                每整点由后台守护进程毫秒级采样：对比实际出块高度 vs 理论基准 (1.0 块/秒)，核验 DAA 自适应调节与实机温控状态。
+              </p>
+            </div>
+            <span style="font-size: 11px; background: rgba(0, 210, 255, 0.15); color: #00d2ff; border: 1px solid rgba(0, 210, 255, 0.3); padding: 3px 8px; border-radius: 4px; font-weight: bold;">连续追踪中</span>
+          </div>
+
+          <div style="overflow-x: auto;">
+            <table style="width: 100%; border-collapse: collapse; font-size: 12px; text-align: left;">
+              <thead>
+                <tr style="background: rgba(255, 255, 255, 0.03); color: var(--text-muted); border-bottom: 1px solid var(--border-color);">
+                  <th style="padding: 9px 12px;">时间点</th>
+                  <th style="padding: 9px 12px;">整点时间戳</th>
+                  <th style="padding: 9px 12px;">已运行</th>
+                  <th style="padding: 9px 12px;">实际出块高度</th>
+                  <th style="padding: 9px 12px;">理论目标高度</th>
+                  <th style="padding: 9px 12px;">偏差块数</th>
+                  <th style="padding: 9px 12px;">偏差比例 (%)</th>
+                  <th style="padding: 9px 12px;">周期 BPS</th>
+                  <th style="padding: 9px 12px;">矿机物理算力</th>
+                  <th style="padding: 9px 12px;">温度 / 风扇</th>
+                  <th style="padding: 9px 12px;">状态说明</th>
+                </tr>
+              </thead>
+              <tbody id="hourly-tempo-tbody">
+                <tr><td colspan="11" style="padding: 16px; text-align: center; color: var(--text-muted);">正在载入整点测速数据...</td></tr>
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
     </section>
