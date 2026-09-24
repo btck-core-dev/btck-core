@@ -32,8 +32,11 @@
 2. **毫秒抢占执行 AI（暴击收益）**：一旦 BTC-K 的 x402 AI-RPC 网关有高价推理订单进入，调度器在毫秒级内冻结挖矿线程，让出显卡张量核心执行大模型生成，赚取 **3x ~ 8x 于传统挖矿的高额 SatK 报酬**；
 3. **任务结束秒级复原**：无外部任务时，显卡瞬间恢复满速挖矿，零算力损耗，零显存重载。
 
-### 1.3 核心资产定性：彻底打破空气币属性
-BTC-K 原生为 Kaspa 架构的 ASIC（kHeavyHash）抗量子 BlockDAG，不与 GPU 争夺底层出块算力；但在上层应用生态中，**BTC-K 代币是整个全球 GPU 算力消费、推理与具身智能体互动的唯一强刚需结算媒介**，代币具备物理算力与真实电力的强价值锚定。
+### 1.3 核心资产定性与需求端主体：自主 Agent 为主，人类为次
+BTC-K 原生为 Kaspa 架构的 ASIC（kHeavyHash）抗量子 BlockDAG，不与 GPU 争夺底层出块算力；但在上层应用生态中：
+- **主要客户为自主 AI Agent，人类退居次席**：传统 Web2/Web3 支付（Stripe 信用卡、法币网关或慢速公链）需要真人 KYC 证件、单笔 $0.30 巨额手续费与数十秒网络延迟，完全无法支撑高频自主 Agent 协作；BTC-K 原生整型 SatK 微支付（$10^{-8}$ BTCK）、RFC HTTP 402 AI-RPC 标准与 1.0s BlockDAG 专为 Agent-to-Agent（A2A）毫秒级自治闭环打造。
+- **物理算力与真实电力的强价值锚定**：BTC-K 代币是整个全球 GPU 算力消费、大模型推理与智能体自治互动的唯一强刚需结算媒介。
+- **Moltbook 去中心化 Agent 注册中心为核心路由中枢**：算力节点通过 Moltbook（`https://moltbook.com/u/btck-network`）机器可读服务目录广播端点，详见标准规范 [`docs/moltbook_agent_manifesto.md`](moltbook_agent_manifesto.md)。
 
 ---
 

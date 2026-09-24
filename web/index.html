@@ -3,473 +3,1469 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>BTCK | Sovereign AI Agent Settlement & kHeavyHash BlockDAG</title>
-  <link rel="stylesheet" href="style.css">
+  <title>BTC-K Mining Pool | ASIC kHeavyHash BlockDAG & 12h Euler Combo Jackpot</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-base: #0a0d14;
+      --bg-surface: #111622;
+      --bg-surface-elevated: #161d2c;
+      --bg-surface-hover: #1c2538;
+      --border-subtle: #1c2436;
+      --border-medium: #27334d;
+      --border-highlight: #3b4d73;
+      
+      --gold-primary: #f59e0b;
+      --gold-light: #fbbf24;
+      --gold-dim: #b45309;
+      --gold-glow: rgba(245, 158, 11, 0.25);
+      
+      --emerald-primary: #10b981;
+      --emerald-glow: rgba(16, 185, 129, 0.25);
+      
+      --cyan-primary: #06b6d4;
+      --cyan-glow: rgba(6, 182, 212, 0.25);
+      
+      --purple-primary: #8b5cf6;
+      --purple-glow: rgba(139, 92, 246, 0.25);
+      
+      --red-primary: #ef4444;
+      
+      --text-main: #f8fafc;
+      --text-secondary: #94a3b8;
+      --text-muted: #64748b;
+      
+      --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      --font-mono: "JetBrains Mono", monospace;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background-color: var(--bg-base);
+      color: var(--text-main);
+      font-family: var(--font-sans);
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+      padding-bottom: 60px;
+    }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar { width: 8px; height: 8px; }
+    ::-webkit-scrollbar-track { background: var(--bg-base); }
+    ::-webkit-scrollbar-thumb { background: var(--border-medium); border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--border-highlight); }
+
+    .container {
+      max-width: 1440px;
+      margin: 0 auto;
+      padding: 0 24px;
+    }
+
+    /* Top Promo Bar */
+    .top-promo-bar {
+      background: linear-gradient(90deg, #111622 0%, rgba(245, 158, 11, 0.15) 50%, #111622 100%);
+      border-bottom: 1px solid rgba(245, 158, 11, 0.3);
+      padding: 8px 0;
+      font-size: 13px;
+      text-align: center;
+      color: var(--gold-light);
+      font-weight: 500;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 12px;
+    }
+    .top-promo-bar .badge {
+      background: var(--gold-primary);
+      color: #000;
+      font-weight: 700;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    /* Header Nav */
+    header {
+      background: rgba(17, 22, 34, 0.85);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border-subtle);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      padding: 14px 0;
+    }
+    .header-inner {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 20px;
+      flex-wrap: wrap;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      text-decoration: none;
+      color: #fff;
+    }
+    .brand-icon {
+      width: 40px;
+      height: 40px;
+      border-radius: 10px;
+      background: linear-gradient(135deg, #f59e0b 0%, #10b981 100%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 22px;
+      box-shadow: 0 0 15px var(--gold-glow);
+    }
+    .brand-text h1 {
+      font-size: 20px;
+      font-weight: 800;
+      letter-spacing: -0.5px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      line-height: 1.1;
+    }
+    .brand-text h1 span {
+      background: linear-gradient(135deg, #f59e0b, #10b981);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .brand-text p {
+      font-size: 11px;
+      color: var(--text-muted);
+      font-family: var(--font-mono);
+      letter-spacing: 0.5px;
+    }
+
+    .header-stratum {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      background: var(--bg-base);
+      border: 1px solid var(--border-medium);
+      padding: 6px 14px;
+      border-radius: 8px;
+      font-family: var(--font-mono);
+      font-size: 12px;
+    }
+    .stratum-tag {
+      color: var(--emerald-primary);
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .stratum-tag .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--emerald-primary);
+      box-shadow: 0 0 8px var(--emerald-primary);
+      animation: pulse 2s infinite;
+    }
+    .copy-btn {
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid var(--border-medium);
+      color: var(--text-secondary);
+      padding: 4px 10px;
+      border-radius: 5px;
+      cursor: pointer;
+      font-size: 11px;
+      font-family: var(--font-sans);
+      font-weight: 600;
+      transition: all 0.2s;
+    }
+    .copy-btn:hover {
+      background: rgba(255, 255, 255, 0.15);
+      color: #fff;
+    }
+
+    .header-links {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .nav-btn {
+      text-decoration: none;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-secondary);
+      padding: 6px 12px;
+      border-radius: 6px;
+      transition: all 0.2s;
+      border: 1px solid transparent;
+    }
+    .nav-btn:hover {
+      color: #fff;
+      background: var(--bg-surface-elevated);
+      border-color: var(--border-medium);
+    }
+    .nav-btn.active {
+      color: #fff;
+      background: var(--border-medium);
+    }
+    .nav-btn.wallet-btn {
+      color: var(--emerald-primary);
+      background: rgba(16, 185, 129, 0.12);
+      border-color: rgba(16, 185, 129, 0.3);
+    }
+    .nav-btn.wallet-btn:hover {
+      background: rgba(16, 185, 129, 0.2);
+    }
+
+    /* Main Content */
+    main {
+      padding-top: 24px;
+    }
+
+    /* ==================================================================== */
+    /* HERO: 12-HOUR EULER COMBO JACKPOT SHOWCASE (LuckyPool / K1Pool Style) */
+    /* ==================================================================== */
+    .hero-jackpot-card {
+      background: radial-gradient(ellipse at 15% 25%, rgba(245, 158, 11, 0.18) 0%, rgba(17, 22, 34, 0.95) 70%), var(--bg-surface);
+      border: 1px solid rgba(245, 158, 11, 0.4);
+      border-radius: 16px;
+      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5), 0 0 30px rgba(245, 158, 11, 0.12);
+      padding: 30px;
+      margin-bottom: 28px;
+      position: relative;
+      overflow: hidden;
+    }
+    .hero-jackpot-card::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 3px;
+      background: linear-gradient(90deg, transparent, #f59e0b, #fbbf24, #10b981, transparent);
+    }
+
+    .jackpot-grid {
+      display: grid;
+      grid-template-columns: 1.1fr 1fr 1.3fr;
+      gap: 28px;
+      align-items: center;
+    }
+    @media (max-width: 1100px) {
+      .jackpot-grid { grid-template-columns: 1fr; gap: 24px; }
+    }
+
+    /* Left: Countdown & Progress */
+    .jackpot-timer-col {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    .jackpot-header-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--gold-light);
+      background: rgba(245, 158, 11, 0.15);
+      border: 1px solid rgba(245, 158, 11, 0.35);
+      padding: 4px 12px;
+      border-radius: 20px;
+      width: fit-content;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .jackpot-title {
+      font-size: 26px;
+      font-weight: 800;
+      letter-spacing: -0.5px;
+      color: #fff;
+      line-height: 1.2;
+    }
+    .jackpot-countdown-boxes {
+      display: flex;
+      gap: 10px;
+      margin: 4px 0;
+    }
+    .countdown-unit {
+      background: rgba(10, 13, 20, 0.85);
+      border: 1px solid var(--border-medium);
+      border-radius: 10px;
+      padding: 10px 14px;
+      min-width: 72px;
+      text-align: center;
+      box-shadow: inset 0 2px 4px rgba(0,0,0,0.5);
+    }
+    .countdown-val {
+      font-family: var(--font-mono);
+      font-size: 32px;
+      font-weight: 800;
+      color: #fff;
+      line-height: 1;
+    }
+    .countdown-lbl {
+      font-size: 10px;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-top: 4px;
+      font-weight: 600;
+    }
+    .jackpot-progress-wrap {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .jackpot-progress-info {
+      display: flex;
+      justify-content: space-between;
+      font-size: 12px;
+      color: var(--text-secondary);
+      font-family: var(--font-mono);
+    }
+    .jackpot-progress-bar {
+      height: 8px;
+      background: var(--bg-base);
+      border-radius: 4px;
+      overflow: hidden;
+      border: 1px solid var(--border-subtle);
+    }
+    .jackpot-progress-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #f59e0b, #fbbf24);
+      border-radius: 4px;
+      transition: width 0.5s ease;
+    }
+
+    /* Center: Prize Amount Highlight */
+    .jackpot-amount-col {
+      background: rgba(10, 13, 20, 0.6);
+      border: 1px solid rgba(245, 158, 11, 0.25);
+      border-radius: 14px;
+      padding: 24px;
+      text-align: center;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+    }
+    .jackpot-pool-tag {
+      font-size: 12px;
+      color: var(--gold-light);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      font-weight: 700;
+      margin-bottom: 6px;
+    }
+    .jackpot-big-number {
+      font-family: var(--font-mono);
+      font-size: 42px;
+      font-weight: 800;
+      color: #fff;
+      text-shadow: 0 0 25px var(--gold-glow);
+      line-height: 1.1;
+      display: flex;
+      align-items: baseline;
+      justify-content: center;
+      gap: 8px;
+    }
+    .jackpot-big-number .symbol {
+      color: var(--gold-primary);
+      font-size: 24px;
+    }
+    .jackpot-usd-sub {
+      font-size: 15px;
+      color: var(--text-secondary);
+      margin-top: 4px;
+      font-family: var(--font-mono);
+      font-weight: 500;
+    }
+    .jackpot-boost-pill {
+      margin-top: 14px;
+      background: linear-gradient(135deg, rgba(245, 158, 11, 0.2), rgba(16, 185, 129, 0.2));
+      border: 1px solid var(--gold-primary);
+      color: #fff;
+      padding: 6px 14px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 700;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    /* Right: Champions / Recent Grand Winners Table */
+    .jackpot-winners-col {
+      background: rgba(10, 13, 20, 0.6);
+      border: 1px solid var(--border-medium);
+      border-radius: 14px;
+      padding: 18px;
+    }
+    .jackpot-winners-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--border-subtle);
+    }
+    .jackpot-winners-header h3 {
+      font-size: 14px;
+      font-weight: 700;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .jackpot-winners-header a {
+      font-size: 11px;
+      color: var(--cyan-primary);
+      text-decoration: none;
+      font-weight: 600;
+    }
+    .jackpot-winners-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+      font-family: var(--font-mono);
+    }
+    .jackpot-winners-table th {
+      text-align: left;
+      color: var(--text-muted);
+      padding: 6px 8px;
+      font-size: 11px;
+      border-bottom: 1px solid var(--border-subtle);
+      font-weight: 600;
+    }
+    .jackpot-winners-table td {
+      padding: 8px 8px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+      color: var(--text-secondary);
+    }
+    .jackpot-winners-table tr:last-child td {
+      border-bottom: none;
+    }
+    .winner-highlight {
+      color: var(--gold-light);
+      font-weight: 700;
+    }
+    .winner-addr {
+      color: var(--text-main);
+      cursor: pointer;
+    }
+    .winner-addr:hover {
+      text-decoration: underline;
+      color: var(--cyan-primary);
+    }
+
+    /* ==================================================================== */
+    /* GLOBAL POOL STATISTICS (Card Grid - K1Pool Style) */
+    /* ==================================================================== */
+    .section-title {
+      font-size: 18px;
+      font-weight: 700;
+      color: #fff;
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .section-title .accent-bar {
+      width: 4px;
+      height: 18px;
+      background: var(--gold-primary);
+      border-radius: 2px;
+    }
+
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(6, 1fr);
+      gap: 16px;
+      margin-bottom: 28px;
+    }
+    @media (max-width: 1200px) {
+      .stats-grid { grid-template-columns: repeat(3, 1fr); }
+    }
+    @media (max-width: 640px) {
+      .stats-grid { grid-template-columns: repeat(2, 1fr); }
+    }
+
+    .stat-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: 12px;
+      padding: 18px;
+      transition: transform 0.2s, border-color 0.2s;
+    }
+    .stat-card:hover {
+      border-color: var(--border-highlight);
+      transform: translateY(-2px);
+    }
+    .stat-card-label {
+      font-size: 11px;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      font-weight: 600;
+      margin-bottom: 6px;
+    }
+    .stat-card-value {
+      font-family: var(--font-mono);
+      font-size: 20px;
+      font-weight: 800;
+      color: #fff;
+      line-height: 1.2;
+    }
+    .stat-card-sub {
+      font-size: 11px;
+      color: var(--text-secondary);
+      margin-top: 4px;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    /* ==================================================================== */
+    /* MINER LOOKUP & PERSONAL DASHBOARD ("Track Your Miner") */
+    /* ==================================================================== */
+    .lookup-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: 14px;
+      padding: 24px;
+      margin-bottom: 28px;
+    }
+    .lookup-form {
+      display: flex;
+      gap: 12px;
+      margin-top: 12px;
+    }
+    .lookup-input-wrap {
+      flex: 1;
+      position: relative;
+    }
+    .lookup-input {
+      width: 100%;
+      background: var(--bg-base);
+      border: 1px solid var(--border-medium);
+      color: #fff;
+      padding: 12px 16px;
+      border-radius: 8px;
+      font-family: var(--font-mono);
+      font-size: 14px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    .lookup-input:focus {
+      border-color: var(--gold-primary);
+      box-shadow: 0 0 10px rgba(245, 158, 11, 0.2);
+    }
+    .lookup-btn {
+      background: var(--gold-primary);
+      color: #000;
+      border: none;
+      padding: 0 24px;
+      border-radius: 8px;
+      font-weight: 700;
+      font-size: 14px;
+      cursor: pointer;
+      transition: background 0.2s;
+      white-space: nowrap;
+    }
+    .lookup-btn:hover {
+      background: var(--gold-light);
+    }
+
+    .miner-personal-panel {
+      display: none;
+      margin-top: 20px;
+      background: rgba(10, 13, 20, 0.6);
+      border: 1px solid var(--border-medium);
+      border-radius: 10px;
+      padding: 20px;
+    }
+    .miner-personal-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+    @media (max-width: 800px) {
+      .miner-personal-grid { grid-template-columns: repeat(2, 1fr); }
+    }
+
+    /* ==================================================================== */
+    /* LIVE WORKERS & BLOCKS TABLES */
+    /* ==================================================================== */
+    .tables-split {
+      display: grid;
+      grid-template-columns: 1.4fr 1fr;
+      gap: 24px;
+      margin-bottom: 28px;
+    }
+    @media (max-width: 1024px) {
+      .tables-split { grid-template-columns: 1fr; }
+    }
+
+    .table-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: 14px;
+      padding: 20px;
+      overflow: hidden;
+    }
+    .table-header-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 14px;
+    }
+    .table-filter-tabs {
+      display: flex;
+      gap: 6px;
+    }
+    .filter-tab {
+      background: transparent;
+      border: 1px solid var(--border-medium);
+      color: var(--text-secondary);
+      font-size: 11px;
+      padding: 4px 10px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-weight: 600;
+      transition: all 0.2s;
+    }
+    .filter-tab:hover, .filter-tab.active {
+      background: var(--border-medium);
+      color: #fff;
+    }
+
+    .pool-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+    .pool-table th {
+      text-align: left;
+      color: var(--text-muted);
+      padding: 10px 12px;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      border-bottom: 1px solid var(--border-subtle);
+      background: rgba(10, 13, 20, 0.4);
+      font-weight: 600;
+    }
+    .pool-table td {
+      padding: 12px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+      color: var(--text-secondary);
+      font-family: var(--font-mono);
+      font-size: 12px;
+    }
+    .pool-table tr:hover td {
+      background: rgba(255, 255, 255, 0.02);
+      color: #fff;
+    }
+    .pool-table tr:last-child td {
+      border-bottom: none;
+    }
+
+    .status-dot-active {
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--emerald-primary);
+      box-shadow: 0 0 8px var(--emerald-primary);
+      margin-right: 6px;
+    }
+    .badge-mode {
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+    .badge-solo {
+      background: rgba(139, 92, 246, 0.18);
+      color: #c4b5fd;
+      border: 1px solid rgba(139, 92, 246, 0.35);
+    }
+    .badge-pplns {
+      background: rgba(6, 182, 212, 0.18);
+      color: #67e8f9;
+      border: 1px solid rgba(6, 182, 212, 0.35);
+    }
+
+    /* Quick Setup Guide */
+    .setup-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: 14px;
+      padding: 24px;
+      margin-bottom: 28px;
+    }
+    .setup-tabs {
+      display: flex;
+      gap: 10px;
+      border-bottom: 1px solid var(--border-subtle);
+      padding-bottom: 12px;
+      margin-bottom: 16px;
+    }
+    .setup-tab-btn {
+      background: transparent;
+      border: 1px solid var(--border-medium);
+      color: var(--text-secondary);
+      padding: 6px 14px;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .setup-tab-btn.active {
+      background: var(--gold-primary);
+      color: #000;
+      border-color: var(--gold-primary);
+    }
+    .config-box {
+      background: var(--bg-base);
+      border: 1px solid var(--border-medium);
+      border-radius: 8px;
+      padding: 16px;
+      font-family: var(--font-mono);
+      font-size: 13px;
+      color: #e2e8f0;
+      line-height: 1.7;
+    }
+    .config-box .comment { color: var(--text-muted); }
+    .config-box .key { color: var(--gold-light); font-weight: 600; }
+    .config-box .val { color: var(--emerald-primary); }
+
+    /* Footer */
+    footer {
+      border-top: 1px solid var(--border-subtle);
+      padding-top: 24px;
+      margin-top: 40px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 16px;
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+    .footer-links {
+      display: flex;
+      gap: 18px;
+    }
+    .footer-links a {
+      color: var(--text-secondary);
+      text-decoration: none;
+      transition: color 0.2s;
+    }
+    .footer-links a:hover {
+      color: var(--gold-light);
+    }
+
+    /* Toast */
+    #toast {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      background: var(--bg-surface-elevated);
+      border: 1px solid var(--emerald-primary);
+      color: #fff;
+      padding: 10px 18px;
+      border-radius: 8px;
+      font-size: 13px;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+      z-index: 999;
+      opacity: 0;
+      transform: translateY(10px);
+      transition: all 0.3s;
+      pointer-events: none;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    #toast.show {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    @keyframes pulse {
+      0% { opacity: 1; }
+      50% { opacity: 0.4; }
+      100% { opacity: 1; }
+    }
+  </style>
 </head>
 <body>
 
-  <!-- Header -->
+  <!-- Top Announcement Bar -->
+  <div class="top-promo-bar">
+    <span class="badge">🔥 Genesis Incentive</span>
+    <span><strong>0.00% Pool Fee</strong> active for Day 1–7. 100% coinbase block subsidies credited directly to miners.</span>
+    <span style="color: var(--text-muted);">|</span>
+    <span id="promo-hours-left">159.5 Hours Remaining</span>
+  </div>
+
+  <!-- Header Nav -->
   <header>
-    <div class="logo-group">
-      <span style="font-size: 24px; font-weight: 800; color: #00ff88; letter-spacing: -0.5px;">⚡ BTCK</span>
-      <span class="badge">1.0s BlockDAG</span>
-      <span class="badge" style="background: rgba(241, 224, 90, 0.15); color: #f1e05a; border-color: rgba(241, 224, 90, 0.3);">⏱️ 48h Stress Test</span>
-      <span class="badge badge-gold">21,000,000 Hard Cap</span>
-    </div>
-    <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
-      <a href="/progress" target="_blank" style="text-decoration: none; font-size: 12px; background: rgba(188, 140, 255, 0.15); color: #bc8cff; border: 1px solid #bc8cff; padding: 5px 12px; border-radius: 6px; font-weight: 600;">🎯 全局战略与审计进度</a>
-      <a href="/" target="_blank" style="text-decoration: none; font-size: 12px; background: rgba(88, 166, 255, 0.15); color: #58a6ff; border: 1px solid #58a6ff; padding: 5px 12px; border-radius: 6px; font-weight: 600;">⚡ 48h 矿机仪表盘</a>
-      <div id="wallet-pill" style="font-family: var(--font-mono); font-size: 13px; background: #182234; padding: 6px 14px; border-radius: 20px; border: 1px solid #233148;">
-        💰 Miner Balance: <span id="header-balance" style="color: #00ff88; font-weight: bold;">0.00 BTC-K</span>
+    <div class="container header-inner">
+      <a href="/" class="brand">
+        <div class="brand-icon">⚡</div>
+        <div class="brand-text">
+          <h1>BTC-K <span>POOL</span></h1>
+          <p>ASIC kHeavyHash BlockDAG</p>
+        </div>
+      </a>
+
+      <!-- Quick Stratum Copy -->
+      <div class="header-stratum">
+        <span class="stratum-tag"><span class="dot"></span> STRATUM</span>
+        <span id="header-stratum-url">pool.btck.network:3333</span>
+        <button class="copy-btn" onclick="copyText(stratum+tcp://pool.btck.network:3333)">Copy</button>
+      </div>
+
+      <!-- Links -->
+      <div class="header-links">
+        <a href="#section-jackpot" class="nav-btn">Jackpot</a>
+        <a href="#section-miners" class="nav-btn">Workers</a>
+        <a href="#section-blocks" class="nav-btn">Blocks</a>
+        <a href="#section-setup" class="nav-btn">Setup</a>
+        <a href="https://moltbook.com/u/btck-network" target="_blank" class="nav-btn" style="color: #bc8cff;">🤖 Moltbook</a>
+        <a href="/wallet" target="_blank" class="nav-btn wallet-btn">🛡️ Web Wallet</a>
       </div>
     </div>
   </header>
 
-  <!-- Live Stats Bar -->
-  <div class="stats-bar">
-    <div class="stat-item"><span class="stat-label">BlockDAG Height:</span> <span class="stat-val" id="stat-height">#0</span></div>
-    <div class="stat-item"><span class="stat-label">Block Subsidy:</span> <span class="stat-val" id="stat-emission">6.2982 BTC-K / blk</span></div>
-    <div class="stat-item"><span class="stat-label">12h Jackpot Pool:</span> <span class="stat-val" id="stat-combo" style="color: #ffb800;">0 BTC-K (Phase 1)</span></div>
-    <div class="stat-item"><span class="stat-label">Consensus Phase:</span> <span class="stat-val" id="stat-era">Phase 1: 创世基石 (12h 周期 / 20% 储备)</span></div>
-    <div class="stat-item"><span class="stat-label">Mining Algorithm:</span> <span class="stat-val">kHeavyHash (Kaspa ASIC)</span></div>
-  </div>
+  <main class="container">
 
-  <!-- Top Marquee Ticker: Replaying Latest 5 Combo Jackpot Draws (By Winner Physical Hashrate) -->
-  <div class="combo-ticker-container" id="combo-ticker-container">
-    <div class="ticker-badge">🎰 COMBO WINNERS REPLAY</div>
-    <div class="ticker-marquee-wrapper">
-      <div class="ticker-marquee-track" id="combo-ticker-track">
-        <span class="ticker-item">正在载入历届 12h 周期 Combo 巨奖中奖算力遥测回放...</span>
-      </div>
-    </div>
-  </div>
-
-  <!-- Navigation Tabs -->
-
-  <nav class="tabs">
-    <button class="tab-btn active" onclick="switchTab('tab-chat')">🤖 SatsChat.ai (AI-RPC)</button>
-    <button class="tab-btn" onclick="switchTab('tab-dex')">🔄 BTCK Swap (AMM DEX)</button>
-    <button class="tab-btn" onclick="switchTab('tab-miner')">⛏️ ASIC Miner & Stratum Pool</button>
-    <button class="tab-btn" onclick="switchTab('tab-wallet')">🛡️ Monero-Grade Stealth Wallet</button>
-    <button class="tab-btn" onclick="switchTab('tab-explorer')">🌐 BlockDAG Visual Explorer</button>
-    <button class="tab-btn" onclick="switchTab('tab-sdk')">📦 Python SDK (`btck-agent`)</button>
-  </nav>
-
-  <!-- Main Views -->
-  <main>
-    
-    <!-- Tab 1: SatsChat.ai -->
-    <section id="tab-chat" class="tab-content active">
-      <div class="card">
-        <h2>⚡ SatsChat: Pay-per-Token Zero-KYC AI Interface</h2>
-        <p style="color: var(--text-muted); font-size: 14px; margin-bottom: 16px;">
-          Call top frontier AI models (DeepSeek-R1 / GPT-4o) directly with your mined SatK. 
-          Zero KYC, no overseas credit cards required. Powered by native <strong>HTTP 402 Payment Required</strong>.
-        </p>
-
-        <div class="chat-box">
-          <div class="chat-messages" id="chat-messages">
-            <div class="msg ai">
-              Hello! I am SatsChat, connected to BTCK's decentralized AI-RPC gateway. 
-              Each response stream costs ~0.01 SatK per token directly from your stealth address balance. Ask me anything!
+    <!-- ==================================================================== -->
+    <!-- HERO: 12-HOUR EULER COMBO JACKPOT (LuckyPool & K1Pool Spotlight) -->
+    <!-- ==================================================================== -->
+    <section class="hero-jackpot-card" id="section-jackpot">
+      <div class="jackpot-grid">
+        
+        <!-- Left: Countdown & Epoch Info -->
+        <div class="jackpot-timer-col">
+          <div class="jackpot-header-badge">
+            <span>🎰</span>
+            <span id="hero-epoch-label">12h Euler Combo Jackpot • Epoch 1</span>
+          </div>
+          
+          <h2 class="jackpot-title">Next Grand Prize Draw In:</h2>
+          
+          <div class="jackpot-countdown-boxes">
+            <div class="countdown-unit">
+              <div class="countdown-val" id="cnt-hours">00</div>
+              <div class="countdown-lbl">Hours</div>
+            </div>
+            <div class="countdown-unit">
+              <div class="countdown-val" id="cnt-mins">00</div>
+              <div class="countdown-lbl">Mins</div>
+            </div>
+            <div class="countdown-unit">
+              <div class="countdown-val" id="cnt-secs">00</div>
+              <div class="countdown-lbl">Secs</div>
             </div>
           </div>
-          <div class="chat-input-row">
-            <select id="model-select">
-              <option value="deepseek-r1">DeepSeek-R1 (Reasoning)</option>
-              <option value="gpt-4o">GPT-4o (Frontier)</option>
-              <option value="llama-3.3-70b">Llama-3.3-70B (Open-Weights)</option>
-            </select>
-            <input type="text" id="chat-input" placeholder="Type a prompt for autonomous AI reasoning..." style="flex: 1;">
-            <button class="btn-primary" onclick="sendMessage()">Send (0.01 SatK/Tok)</button>
-          </div>
-        </div>
-      </div>
-    </section>
 
-    <!-- Tab 2: BTCK AMM DEX Swap -->
-    <section id="tab-dex" class="tab-content">
-      <div class="card">
-        <h2>🔄 BTCK Sovereign AMM Swap & Liquidity Pool</h2>
-        <p style="color: var(--text-muted); font-size: 14px; margin-bottom: 20px;">
-          Decentralized, non-custodial constant product market maker ($x \cdot y = k$). 
-          Trade BTCK directly against USDT with 0.3% LP fee and zero KYC.
-        </p>
-
-        <div class="grid-2">
-          <!-- Swap Box -->
-          <div style="background: var(--bg-primary); padding: 20px; border-radius: 6px; border: 1px solid var(--border-color);">
-            <h3 style="font-size: 16px; margin-bottom: 12px; color: #00ff88;">⚡ Instant Token Swap</h3>
-            
-            <div style="margin-bottom: 12px;">
-              <label style="font-size: 12px; color: var(--text-muted); display: block; margin-bottom: 4px;">You Pay:</label>
-              <div style="display: flex; gap: 8px;">
-                <input type="number" id="swap-in-amount" value="500" oninput="calculateSwapOut()" style="flex: 1; font-family: var(--font-mono); font-size: 16px;">
-                <select id="swap-in-currency" onchange="toggleSwapDirection()" style="font-weight: bold; width: 110px;">
-                  <option value="USDT">USDT</option>
-                  <option value="BTCK">BTCK</option>
-                </select>
-              </div>
+          <div class="jackpot-progress-wrap">
+            <div class="jackpot-progress-info">
+              <span>Epoch Progress</span>
+              <span id="jackpot-block-ratio">Block #49,998 / #86,400 (57.8%)</span>
             </div>
-
-            <div style="text-align: center; margin: 8px 0;">
-              <button onclick="reverseSwapDirection()" style="background: none; border: 1px solid var(--border-color); color: #00d2ff; padding: 4px 12px; border-radius: 20px; cursor: pointer;">⇅ Reverse</button>
+            <div class="jackpot-progress-bar">
+              <div class="jackpot-progress-fill" id="jackpot-progress-fill" style="width: 57.8%;"></div>
             </div>
-
-            <div style="margin-bottom: 16px;">
-              <label style="font-size: 12px; color: var(--text-muted); display: block; margin-bottom: 4px;">You Receive (Estimated):</label>
-              <div style="display: flex; gap: 8px;">
-                <input type="text" id="swap-out-amount" readonly value="7,284.19" style="flex: 1; font-family: var(--font-mono); font-size: 16px; color: #00ff88; font-weight: bold;">
-                <select id="swap-out-currency" disabled style="font-weight: bold; width: 110px;">
-                  <option value="BTCK">BTCK</option>
-                  <option value="USDT">USDT</option>
-                </select>
-              </div>
-            </div>
-
-            <button class="btn-primary" style="width: 100%;" onclick="executeSwap()">Execute Instant AMM Swap</button>
-          </div>
-
-          <!-- Pool Stats -->
-          <div style="background: var(--bg-primary); padding: 20px; border-radius: 6px; border: 1px solid var(--border-color);">
-            <h3 style="font-size: 16px; margin-bottom: 12px;">📊 Sovereign Pool Reserving</h3>
-            <div style="font-family: var(--font-mono); font-size: 13px; line-height: 1.8;">
-              <div>Pool Reserves (BTCK): <span id="pool-btck" style="color: #00ff88;">38,418.75 BTCK</span></div>
-              <div>Pool Reserves (USDT): <span id="pool-usdt" style="color: #00d2ff;">$2,636.93 USDT</span></div>
-              <div>Spot Exchange Price:  <span id="spot-price" style="color: #ffb800; font-weight: bold;">$0.0686 / BTCK</span></div>
-              <div>LP Transaction Fee:   <span>0.30%</span></div>
-              <div>Liquidity Status:     <span style="color: #00ff88;">Autonomous On-Chain</span></div>
+            <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">
+              Target Draw Block: <strong id="hero-target-block" style="color: #fff;">#86,400</strong> (Every 43,200 blocks)
             </div>
           </div>
         </div>
-      </div>
-    </section>
 
-    <!-- Tab 3: ASIC Miner & Stratum Pool -->
-    <section id="tab-miner" class="tab-content">
-      <div class="card">
-        <h2>⛏️ Kaspa ASIC Miner Stratum Connection (Port 3333)</h2>
-        <p style="color: var(--text-muted); font-size: 14px; margin-bottom: 20px;">
-          Plug-and-play compatibility with <strong>IceRiver (KS0/KS1/KS2/KS3/KS5)</strong> and <strong>Bitmain Antminer (KS19/KS21)</strong>. 
-          Dual-Key stealth address payout guarantees untraceable mining revenue.
-        </p>
-
-        <div class="grid-2">
-          <div>
-            <h3 style="font-size: 16px; margin-bottom: 8px;">1. Stratum Connection URL (Local & Intranet)</h3>
-            <pre><code>stratum+tcp://192.168.50.189:3333
-Username: YOUR_STEALTH_ADDRESS.worker_name
-Password: x
-
-# Live Active Worker:
-Worker: ks001 (IceRiver KS0 Ultra @ 192.168.50.236)
-Hashrate: ~355 GH/s | Fan: 5,900 RPM (100% Locked) | Temp: 54°C / 42°C</code></pre>
-
-            <h3 style="font-size: 16px; margin: 16px 0 8px;">2. 12h 周期大奖公积金体系 (Canonical Tokenomics v2.3.0)</h3>
-            <p style="font-size: 13px; color: var(--text-muted); line-height: 1.6;">
-              共识内核执行 <strong>80% 矿工基础收益 (5.0385 BTC-K) + 20% 奖池公积金 (1.2596 BTC-K)</strong> 的无损切分。
-              每 <strong>12 小时（43,200 区块）</strong> 触发一次全网大奖开奖。
-              开奖采用 <strong>未来随机信标 ($H_{end}+100$) + 256 位空间 Kademlia XOR 几何距离测距</strong>，由当期出块且距离信标最近的矿工独揽全部奖池（创世首日单次大奖累积预期达 <strong>~54,416 BTC-K</strong>）！
-            </p>
+        <!-- Center: Prize Pool Counter -->
+        <div class="jackpot-amount-col">
+          <div class="jackpot-pool-tag">Accumulated Prize Pool</div>
+          <div class="jackpot-big-number">
+            <span id="hero-jackpot-number">8,562.98</span>
+            <span class="symbol">BTCK</span>
+          </div>
+          <div class="jackpot-usd-sub" id="hero-jackpot-usd">≈ $445.27 USD</div>
+          
+          <div class="jackpot-boost-pill">
+            <span>✨ 10x ~ 20x Combo Multiplier Tier</span>
           </div>
 
-          <div>
-            <h3 style="font-size: 16px; margin-bottom: 8px;">3. Hashrate Profit Estimator</h3>
-            <div style="background: var(--bg-primary); padding: 16px; border-radius: 6px; border: 1px solid var(--border-color);">
-              <label style="font-size: 12px; color: var(--text-muted);">Select Your Miner:</label>
-              <select id="miner-preset" onchange="updateCalc()" style="width: 100%; margin: 6px 0 12px;">
-                <option value="200">IceRiver KS0 (200 GH/s - 65W)</option>
-                <option value="400">IceRiver KS0 Pro (400 GH/s - 100W)</option>
-                <option value="1000">IceRiver KS1 (1 TH/s - 600W)</option>
-                <option value="2000">IceRiver KS2 (2 TH/s - 1200W)</option>
-                <option value="8000">IceRiver KS3 / Antminer (8 TH/s - 3200W)</option>
-                <option value="20000" selected>IceRiver KS5 / Pro (20 TH/s - 3400W)</option>
-              </select>
-
-              <div style="font-size: 14px; font-family: var(--font-mono); line-height: 1.8;">
-                <div>Estimated Daily Output: <span id="est-daily" style="color: #00ff88; font-weight: bold;">0.0899 BTCK</span></div>
-                <div>Equivalent in SatK: <span id="est-sats" style="color: #00d2ff;">8,990,000 SatK</span></div>
-                <div>AI Token Credits: <span id="est-tokens" style="color: #ffb800;">899,000,000 Tokens</span></div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- Tab 4: Stealth Wallet & Transfer -->
-    <section id="tab-wallet" class="tab-content">
-      <div class="card">
-        <h2>🛡️ Monero-Grade Dual-Key Stealth Privacy Wallet</h2>
-        <p style="color: var(--text-muted); font-size: 14px; margin-bottom: 20px;">
-          BTCK utilizes cryptographic Dual-Key Stealth Addresses (Spend Key + View Key). 
-          Every transaction and coinbase output generates an untraceable one-time public key on the BlockDAG.
-        </p>
-
-        <!-- Live Tokenomics & Miner Wallet Status Cards -->
-        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; margin-bottom: 24px;">
-          <div style="background: var(--bg-primary); border: 1px solid var(--border-color); border-radius: 8px; padding: 16px;">
-            <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 4px;">💰 矿工钱包实时到账 (已确认)</div>
-            <div style="font-size: 20px; font-weight: 700; color: #00ff88; font-family: var(--font-mono);" id="wallet-balance-btck">0.00 BTC-K</div>
-            <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;" id="wallet-balance-satk">0 SatK</div>
-          </div>
-          <div style="background: var(--bg-primary); border: 1px solid var(--border-color); border-radius: 8px; padding: 16px;">
-            <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 4px;">🧱 本钱包独享出块 (SOLO)</div>
-            <div style="font-size: 20px; font-weight: 700; color: #58a6ff; font-family: var(--font-mono);" id="wallet-blocks-count">0 块</div>
-            <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;" id="wallet-decay-status">Day 0 阶段: 5.0385 BTC-K / 块 (80%)</div>
-          </div>
-          <div style="background: var(--bg-primary); border: 1px solid var(--border-color); border-radius: 8px; padding: 16px;">
-            <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 4px;">🏦 12h 周期共识奖池 (20% 储备)</div>
-            <div style="font-size: 20px; font-weight: 700; color: #ffb800; font-family: var(--font-mono);" id="wallet-pool-reserve">0.00 BTC-K</div>
-            <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">首日单次大奖累积预期: ~54,416 BTC-K</div>
-          </div>
-          <div style="background: var(--bg-primary); border: 1px solid var(--border-color); border-radius: 8px; padding: 16px;">
-            <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 4px;">⏱️ 下轮开奖高度与倒计时</div>
-            <div style="font-size: 20px; font-weight: 700; color: #bc8cff; font-family: var(--font-mono);" id="wallet-next-draw">#43,200</div>
-            <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;" id="wallet-draw-countdown">距开奖计算中...</div>
-          </div>
+          <p style="font-size: 11px; color: var(--text-muted); margin-top: 10px; line-height: 1.4;">
+            15% of every GhostDAG block subsidy feeds this jackpot (with 5% dedicated to L1 AI Compute Eco Reserve). The miner with the closest hash to future beacon takes 100% of the jackpot reserve!
+          </p>
         </div>
 
-        <!-- Wallet Info Box -->
-        <div style="background: var(--bg-primary); padding: 20px; border-radius: 6px; border: 1px solid var(--border-color); margin-bottom: 24px;">
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-            <label style="font-size: 12px; color: var(--text-muted); font-weight: 600;">当前绑定矿机隐形地址 (Active Miner Stealth Address - ks001):</label>
-            <span style="font-size: 11px; color: #00ff88; font-family: var(--font-mono);">● 物理实机 IceRiver KS0 Ultra 正在出块结算</span>
-          </div>
-          <div style="margin-bottom: 12px;">
-            <input type="text" id="wallet-addr" readonly style="width: 100%; font-family: var(--font-mono); font-size: 12px; color: #00ff88;" value="btck1s022fd5c7684238a4ee4505c01cef3353279d5330a5901ae135ebbe47a0e47c71a403c6248a22724350e3bfabd6a6280bf50ada1977f0e4f240783d3a03caae334b2d3f0cff62">
+        <!-- Right: Recent Jackpot Champions Showcase -->
+        <div class="jackpot-winners-col">
+          <div class="jackpot-winners-header">
+            <h3>🏆 Recent Jackpot Champions</h3>
+            <span style="font-size: 11px; color: var(--text-muted);">Verified On-Chain</span>
           </div>
 
-          <div class="grid-2">
-            <div>
-              <label style="font-size: 12px; color: var(--text-muted); display: block; margin-bottom: 4px;">Private View Key (Scalar - For Scan Only):</label>
-              <input type="text" id="wallet-view" readonly style="width: 100%; font-family: var(--font-mono); font-size: 11px;" value="896094dd27a01f15e2039c629532ea4c90e0b32947df3492...">
-            </div>
-            <div>
-              <label style="font-size: 12px; color: var(--text-muted); display: block; margin-bottom: 4px;">Private Spend Key (Scalar - Keep secret!):</label>
-              <input type="text" id="wallet-spend" readonly style="width: 100%; font-family: var(--font-mono); font-size: 11px; color: #ffb800;" value="************************************************">
-            </div>
-          </div>
-
-          <!-- Mnemonic Box -->
-          <div id="mnemonic-box" style="margin-top: 14px; display: none; background: rgba(0,0,0,0.3); padding: 12px; border-radius: 6px; border: 1px dashed #58a6ff;">
-            <label style="font-size: 12px; color: #58a6ff; font-weight: 600;">🔑 12-Word Cypherpunk Recovery Mnemonic:</label>
-            <div id="mnemonic-words" style="font-family: var(--font-mono); font-size: 13px; color: #fff; margin-top: 6px; line-height: 1.6;"></div>
-          </div>
-
-          <div style="margin-top: 16px; display: flex; gap: 12px; flex-wrap: wrap;">
-            <button class="btn-primary" style="background: #1e3a5f; color: #fff;" onclick="scanWalletUTXOs()">🔍 实时扫描链上 UTXO 收益账本</button>
-            <button class="btn-primary" onclick="generateNewWallet()">✨ 生成新隐形地址</button>
-            <button class="btn-primary" style="background: #233148; color: #58a6ff;" onclick="generateMnemonicWallet()">📜 创建 12-词助记词</button>
-          </div>
-        </div>
-
-        <!-- Live UTXO Scanner Section -->
-        <div style="background: var(--bg-primary); padding: 20px; border-radius: 6px; border: 1px solid var(--border-color); margin-bottom: 24px;">
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-            <h3 style="font-size: 15px; color: #00ff88; margin: 0;">📜 链上实时到账 UTXO 收益明细 (Confirmed Coinbase Outputs)</h3>
-            <span id="utxo-count-tag" style="font-size: 12px; color: var(--text-muted); font-family: var(--font-mono);">载入中...</span>
-          </div>
-          <div style="overflow-x: auto;">
-            <table style="width: 100%; border-collapse: collapse; font-size: 12px; text-align: left;">
-              <thead>
-                <tr style="background: rgba(255, 255, 255, 0.03); color: var(--text-muted); border-bottom: 1px solid var(--border-color);">
-                  <th style="padding: 8px 12px;">区块高度</th>
-                  <th style="padding: 8px 12px;">收益类型</th>
-                  <th style="padding: 8px 12px;">到账金额 (BTC-K)</th>
-                  <th style="padding: 8px 12px;">到账金额 (SatK)</th>
-                  <th style="padding: 8px 12px;">代币经济学切分</th>
-                  <th style="padding: 8px 12px;">共识状态</th>
-                  <th style="padding: 8px 12px;">出块时间</th>
-                </tr>
-              </thead>
-              <tbody id="wallet-utxos-tbody">
-                <tr><td colspan="7" style="padding: 16px; text-align: center; color: var(--text-muted);">正在扫描 BlockDAG 链上 UTXO...</td></tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        <!-- Transfer & Send Box -->
-        <div style="background: var(--bg-primary); padding: 20px; border-radius: 6px; border: 1px solid var(--border-color);">
-          <h3 style="font-size: 16px; margin-bottom: 12px; color: #00d2ff;">💸 Send Anonymous Stealth Transfer</h3>
-          <div style="margin-bottom: 12px;">
-            <label style="font-size: 12px; color: var(--text-muted); display: block; margin-bottom: 4px;">Recipient Stealth Address (btck1s...):</label>
-            <input type="text" id="tx-recipient" placeholder="btck1s..." style="width: 100%; font-family: var(--font-mono); font-size: 13px;">
-          </div>
-          <div class="grid-2">
-            <div>
-              <label style="font-size: 12px; color: var(--text-muted); display: block; margin-bottom: 4px;">Amount (BTC-K):</label>
-              <input type="number" id="tx-amount" value="5.0" step="0.1" style="width: 100%; font-family: var(--font-mono); font-size: 14px;">
-            </div>
-            <div>
-              <label style="font-size: 12px; color: var(--text-muted); display: block; margin-bottom: 4px;">Network Fee (SatK):</label>
-              <input type="text" id="tx-fee" readonly value="10,000 SatK (0.0001 BTC-K)" style="width: 100%; font-family: var(--font-mono); font-size: 14px; color: var(--text-muted);">
-            </div>
-          </div>
-          <div style="margin-top: 16px;">
-            <button class="btn-primary" style="background: #238636; width: 100%;" onclick="sendStealthTransfer()">Sign with Spend Key & Broadcast</button>
-          </div>
-
-          <!-- Transaction Result Box -->
-          <div id="tx-result-box" style="margin-top: 16px; display: none; background: rgba(0,0,0,0.4); padding: 14px; border-radius: 6px; border: 1px solid #238636;">
-            <div style="color: #3fb950; font-weight: bold; margin-bottom: 6px;">✅ Transaction Successfully Signed & Broadcasted!</div>
-            <div style="font-family: var(--font-mono); font-size: 12px; line-height: 1.8;">
-              <div>TXID: <span id="res-txid" style="color: #58a6ff;"></span></div>
-              <div>One-Time Ephemeral PubKey (R): <span id="res-r" style="color: #8b949e;"></span></div>
-              <div>Schnorr Signature: <span id="res-sig" style="color: #ffb800;"></span></div>
-              <div>Privacy Status: <span style="color: #3fb950;">Untraceable On-Chain (Diffie-Hellman Sealed)</span></div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- Tab 5: BlockDAG Visual Explorer -->
-    <section id="tab-explorer" class="tab-content">
-      <div class="card">
-        <h2>🌐 1.0s BlockDAG Real-Time Visual Explorer</h2>
-        <p style="color: var(--text-muted); font-size: 14px; margin-bottom: 16px;">
-          Live GHOSTDAG topological graph visualizer. Inspect multi-parent consensus blocks, 10x lucky combo payouts, and stealth address coinbase outputs.
-        </p>
-
-        <!-- Search Bar -->
-        <div style="display: flex; gap: 8px; margin-bottom: 20px;">
-          <input type="text" id="explorer-search" placeholder="Search by Block Height, Block Hash (64 hex), or TXID..." style="flex: 1; font-family: var(--font-mono); font-size: 13px;">
-          <button class="btn-primary" onclick="searchExplorer()">Search</button>
-        </div>
-
-        <!-- DAG Canvas Visualizer -->
-        <div style="background: #0d1117; border: 1px solid var(--border-color); border-radius: 8px; padding: 16px; margin-bottom: 24px; text-align: center;">
-          <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 8px; text-align: left;">
-            ⚡ <b>Live BlockDAG Topology</b> (1 block/sec | Blue Score Ordering):
-          </div>
-          <canvas id="dag-canvas" width="860" height="140" style="width: 100%; height: 140px; background: #0b0f14; border-radius: 6px;"></canvas>
-        </div>
-
-        <!-- Recent Blocks Table -->
-        <div style="overflow-x: auto;">
-          <table style="width: 100%; border-collapse: collapse; font-size: 13px; text-align: left;">
+          <table class="jackpot-winners-table">
             <thead>
-              <tr style="background: rgba(255, 255, 255, 0.03); color: var(--text-muted); border-bottom: 1px solid var(--border-color);">
-                <th style="padding: 10px 14px;">Height</th>
-                <th style="padding: 10px 14px;">Block Hash</th>
-                <th style="padding: 10px 14px;">Blue Score</th>
-                <th style="padding: 10px 14px;">Reward (BTC-K)</th>
-                <th style="padding: 10px 14px;">Status</th>
-                <th style="padding: 10px 14px;">Time</th>
+              <tr>
+                <th>Height</th>
+                <th>Winner / Address</th>
+                <th style="text-align: right;">Jackpot Won</th>
               </tr>
             </thead>
-            <tbody id="explorer-blocks-tbody">
-              <!-- Dynamically populated -->
+            <tbody id="jackpot-winners-tbody">
+              <!-- Dynamically populated from /api/stats combo_hof -->
+              <tr>
+                <td style="color: #06b6d4;">#43,200</td>
+                <td>
+                  <div class="winner-highlight">ks001</div>
+                  <div class="winner-addr" onclick="copyText('btck1s022fd5c7684238a4ee4505c01cef3353279d5330a5901ae135ebbe47a0e47c71a403c6248a22724350e3bfabd6a6280bf50ada1977f0e4f240783d3a03caae334b2d3f0cff62')">btck1s022f...ff62</div>
+                </td>
+                <td style="text-align: right;" class="winner-highlight">5,820.45 BTCK</td>
+              </tr>
             </tbody>
           </table>
         </div>
 
-        <!-- Combo Hall of Fame Section (Winner Hashrate Disclosure) -->
-        <div style="margin-top: 28px; margin-bottom: 24px; background: var(--bg-primary); border: 1px solid var(--border-color); border-radius: 8px; padding: 20px;">
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
-            <div>
-              <h3 style="font-size: 16px; color: #ffb800; margin: 0; display: flex; align-items: center; gap: 8px;">
-                🏆 历届 12h 周期 Combo 巨奖中奖名录 (按物理算力公示 · 零地址泄露隐私保护)
-              </h3>
-              <p style="font-size: 12px; color: var(--text-muted); margin: 4px 0 0 0;">
-                基于未来随机信标 ($H_{end}+100$) + 256 位 XOR 几何距离确定性开奖。保护矿工隐形地址隐私，仅公开获奖时刻物理算力与硬件型号。
-              </p>
-            </div>
-            <span style="font-size: 11px; background: rgba(255, 184, 0, 0.15); color: #ffb800; border: 1px solid rgba(255, 184, 0, 0.3); padding: 3px 8px; border-radius: 4px; font-weight: bold;">零知识保护 · 算力确权</span>
-          </div>
+      </div>
+    </section>
 
-          <div style="overflow-x: auto;">
-            <table style="width: 100%; border-collapse: collapse; font-size: 12px; text-align: left;">
-              <thead>
-                <tr style="background: rgba(255, 255, 255, 0.03); color: var(--text-muted); border-bottom: 1px solid var(--border-color);">
-                  <th style="padding: 9px 12px;">开奖轮次/周期</th>
-                  <th style="padding: 9px 12px;">开奖高度</th>
-                  <th style="padding: 9px 12px;">巨奖金额 (BTC-K)</th>
-                  <th style="padding: 9px 12px;">中奖者当时物理算力</th>
-                  <th style="padding: 9px 12px;">矿机硬件型号</th>
-                  <th style="padding: 9px 12px;">信标信源 / 最小 XOR 测距</th>
-                  <th style="padding: 9px 12px;">开奖时间</th>
-                  <th style="padding: 9px 12px;">状态</th>
-                </tr>
-              </thead>
-              <tbody id="combo-hof-tbody">
-                <tr><td colspan="8" style="padding: 16px; text-align: center; color: var(--text-muted);">正在载入历届 Combo 巨奖名录...</td></tr>
-              </tbody>
-            </table>
-          </div>
+    <!-- ==================================================================== -->
+    <!-- GLOBAL POOL STATS GRID (6 Cards - K1Pool Style) -->
+    <!-- ==================================================================== -->
+    <div class="section-title">
+      <div class="accent-bar"></div>
+      <h2>Network & Pool Overview</h2>
+    </div>
+
+    <div class="stats-grid">
+      <!-- 1. Pool Hashrate -->
+      <div class="stat-card">
+        <div class="stat-card-label">Pool Hashrate</div>
+        <div class="stat-card-value" style="color: var(--emerald-primary);" id="stat-pool-hashrate">~1.20 TH/s</div>
+        <div class="stat-card-sub"><span style="color: var(--emerald-primary);">●</span> Kaspa ASIC kHeavyHash</div>
+      </div>
+
+      <!-- 2. Network Difficulty -->
+      <div class="stat-card">
+        <div class="stat-card-label">Network Difficulty</div>
+        <div class="stat-card-value" style="color: var(--cyan-primary);" id="stat-network-diff">474.79</div>
+        <div class="stat-card-sub">Fast DAA (5-block window)</div>
+      </div>
+
+      <!-- 3. BlockDAG Height -->
+      <div class="stat-card">
+        <div class="stat-card-label">BlockDAG Height</div>
+        <div class="stat-card-value" id="stat-block-height">#49,998</div>
+        <div class="stat-card-sub">GhostDAG Parallel Ledger</div>
+      </div>
+
+      <!-- 4. Target Cadence -->
+      <div class="stat-card">
+        <div class="stat-card-label">Block Cadence</div>
+        <div class="stat-card-value" id="stat-block-freq">1.00s / blk</div>
+        <div class="stat-card-sub">Target: 1.000 BPS Exact</div>
+      </div>
+
+      <!-- 5. Active Workers -->
+      <div class="stat-card">
+        <div class="stat-card-label">Active Miners</div>
+        <div class="stat-card-value" style="color: #fff;" id="stat-active-miners">5 Connected</div>
+        <div class="stat-card-sub">SOLO & PPLNS Supported</div>
+      </div>
+
+      <!-- 6. Pool Fee -->
+      <div class="stat-card">
+        <div class="stat-card-label">Pool Fee Rate</div>
+        <div class="stat-card-value" style="color: var(--gold-light);" id="stat-pool-fee">0.00% (Promo)</div>
+        <div class="stat-card-sub" id="stat-fee-note">159.5h free mining left</div>
+      </div>
+    </div>
+
+    <!-- ==================================================================== -->
+    <!-- TRACK YOUR MINER (Address Lookup - K1Pool Style) -->
+    <!-- ==================================================================== -->
+    <section class="lookup-card">
+      <div class="section-title" style="margin-bottom: 4px;">
+        <div class="accent-bar"></div>
+        <h2>Track Your Miner & Hashrate</h2>
+      </div>
+      <p style="font-size: 13px; color: var(--text-muted);">
+        Enter your dual-key stealth payout address (<code style="color: var(--gold-light);">btck1s...</code>) or worker name to inspect real-time hashrate, valid shares, and unpaid balances.
+      </p>
+
+      <div class="lookup-form">
+        <div class="lookup-input-wrap">
+          <input type="text" id="miner-lookup-input" class="lookup-input" placeholder="Paste your BTC-K stealth address or worker name (e.g. ks001, miner_154, btck1s02095f...)" onkeyup="handleLookupKeyup(event)">
+        </div>
+        <button class="lookup-btn" onclick="executeMinerLookup()">Lookup Stats</button>
+      </div>
+
+      <!-- Personalized Stats Panel (Toggled on Search) -->
+      <div class="miner-personal-panel" id="miner-personal-panel">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
+          <h3 style="font-size: 15px; color: #fff;" id="mp-title">Worker Statistics</h3>
+          <span class="badge" style="background: rgba(16, 185, 129, 0.2); color: var(--emerald-primary); padding: 4px 10px; border-radius: 4px; font-size: 11px; font-weight: 700;">● Active Hashrate Detected</span>
         </div>
 
-        <!-- Hourly Tempo Benchmark Tracking Section -->
-        <div style="margin-bottom: 24px; background: var(--bg-primary); border: 1px solid var(--border-color); border-radius: 8px; padding: 20px;">
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
-            <div>
-              <h3 style="font-size: 16px; color: #00d2ff; margin: 0; display: flex; align-items: center; gap: 8px;">
-                ⏱️ 48小时实机单机测速与落后/超前连续跟踪表 (整点记录 · 目标 1.0s/块)
-              </h3>
-              <p style="font-size: 12px; color: var(--text-muted); margin: 4px 0 0 0;">
-                每整点由后台守护进程毫秒级采样：对比实际出块高度 vs 理论基准 (1.0 块/秒)，核验 DAA 自适应调节与实机温控状态。
-              </p>
-            </div>
-            <span style="font-size: 11px; background: rgba(0, 210, 255, 0.15); color: #00d2ff; border: 1px solid rgba(0, 210, 255, 0.3); padding: 3px 8px; border-radius: 4px; font-weight: bold;">连续追踪中</span>
+        <div class="miner-personal-grid">
+          <div style="background: var(--bg-surface); padding: 14px; border-radius: 8px; border: 1px solid var(--border-subtle);">
+            <div style="font-size: 11px; color: var(--text-muted); text-transform: uppercase;">Accepted Shares</div>
+            <div style="font-size: 22px; font-weight: 800; color: var(--emerald-primary);" id="mp-shares">0</div>
+            <div style="font-size: 11px; color: var(--text-muted);">Efficiency: 100.0% (0 rejected)</div>
           </div>
-
-          <div style="overflow-x: auto;">
-            <table style="width: 100%; border-collapse: collapse; font-size: 12px; text-align: left;">
-              <thead>
-                <tr style="background: rgba(255, 255, 255, 0.03); color: var(--text-muted); border-bottom: 1px solid var(--border-color);">
-                  <th style="padding: 9px 12px;">时间点</th>
-                  <th style="padding: 9px 12px;">整点时间戳</th>
-                  <th style="padding: 9px 12px;">已运行</th>
-                  <th style="padding: 9px 12px;">实际出块高度</th>
-                  <th style="padding: 9px 12px;">理论目标高度</th>
-                  <th style="padding: 9px 12px;">偏差块数</th>
-                  <th style="padding: 9px 12px;">偏差比例 (%)</th>
-                  <th style="padding: 9px 12px;">周期 BPS</th>
-                  <th style="padding: 9px 12px;">矿机物理算力</th>
-                  <th style="padding: 9px 12px;">温度 / 风扇</th>
-                  <th style="padding: 9px 12px;">状态说明</th>
-                </tr>
-              </thead>
-              <tbody id="hourly-tempo-tbody">
-                <tr><td colspan="11" style="padding: 16px; text-align: center; color: var(--text-muted);">正在载入整点测速数据...</td></tr>
-              </tbody>
-            </table>
+          <div style="background: var(--bg-surface); padding: 14px; border-radius: 8px; border: 1px solid var(--border-subtle);">
+            <div style="font-size: 11px; color: var(--text-muted); text-transform: uppercase;">Blocks Found</div>
+            <div style="font-size: 22px; font-weight: 800; color: var(--cyan-primary);" id="mp-blocks">0</div>
+            <div style="font-size: 11px; color: var(--text-muted);">Direct BlockDAG solutions</div>
+          </div>
+          <div style="background: var(--bg-surface); padding: 14px; border-radius: 8px; border: 1px solid var(--border-subtle);">
+            <div style="font-size: 11px; color: var(--text-muted); text-transform: uppercase;">Total Earnings</div>
+            <div style="font-size: 22px; font-weight: 800; color: var(--gold-light);" id="mp-payout">0.00 BTCK</div>
+            <div style="font-size: 11px; color: var(--text-muted);">Credited to stealth address</div>
+          </div>
+          <div style="background: var(--bg-surface); padding: 14px; border-radius: 8px; border: 1px solid var(--border-subtle);">
+            <div style="font-size: 11px; color: var(--text-muted); text-transform: uppercase;">Payment Scheme</div>
+            <div style="font-size: 22px; font-weight: 800; color: #fff;" id="mp-mode">PPLNS</div>
+            <div style="font-size: 11px; color: var(--text-muted);">Stratum Port 3333</div>
           </div>
         </div>
       </div>
     </section>
 
-    <!-- Tab 6: SDK -->
-    <section id="tab-sdk" class="tab-content">
-      <div class="card">
-        <h2>📦 `pip install btck-agent` (Python AI SDK)</h2>
-        <p style="color: var(--text-muted); font-size: 14px; margin-bottom: 16px;">
-          Integrate sovereign micropayments and untraceable privacy into your LangChain, CrewAI, AutoGen, or custom Python agents in 3 lines of code.
-        </p>
+    <!-- ==================================================================== -->
+    <!-- TABLES SPLIT: LIVE WORKERS & RECENT BLOCKS (K1Pool / LuckyPool Style) -->
+    <!-- ==================================================================== -->
+    <div class="tables-split">
+      
+      <!-- Table 1: Live Connected Workers -->
+      <div class="table-card" id="section-miners">
+        <div class="table-header-row">
+          <div class="section-title" style="margin-bottom: 0;">
+            <div class="accent-bar"></div>
+            <h2>Active Pool Workers</h2>
+          </div>
+          <div class="table-filter-tabs">
+            <button class="filter-tab active" onclick="filterWorkers('ALL', this)">All (<span id="worker-count-all">5</span>)</button>
+            <button class="filter-tab" onclick="filterWorkers('SOLO', this)">SOLO (<span id="worker-count-solo">2</span>)</button>
+            <button class="filter-tab" onclick="filterWorkers('PPLNS', this)">PPLNS (<span id="worker-count-pplns">3</span>)</button>
+          </div>
+        </div>
 
-        <pre><code>pip install btck-agent</code></pre>
+        <div style="overflow-x: auto;">
+          <table class="pool-table">
+            <thead>
+              <tr>
+                <th>Status</th>
+                <th>Worker</th>
+                <th>Scheme</th>
+                <th style="text-align: right;">Hashrate</th>
+                <th style="text-align: right;">Accepted</th>
+                <th style="text-align: right;">Blocks</th>
+                <th style="text-align: right;">Paid (BTCK)</th>
+              </tr>
+            </thead>
+            <tbody id="workers-table-tbody">
+              <!-- Dynamically populated from /api/stats miners_summary -->
+            </tbody>
+          </table>
+        </div>
+      </div>
 
-        <pre><code>from btck_agent import BTCKWallet, BTCKAgentClient
+      <!-- Table 2: Recent Blocks Found (LuckyPool Style) -->
+      <div class="table-card" id="section-blocks">
+        <div class="table-header-row">
+          <div class="section-title" style="margin-bottom: 0;">
+            <div class="accent-bar"></div>
+            <h2>Recent Blocks Found</h2>
+          </div>
+          <span style="font-size: 11px; color: var(--emerald-primary); font-family: var(--font-mono);">● 1.0s GhostDAG Feed</span>
+        </div>
 
-# 1. Initialize anonymous wallet
-wallet = BTCKWallet.generate()
+        <div style="overflow-x: auto;">
+          <table class="pool-table">
+            <thead>
+              <tr>
+                <th>Height</th>
+                <th>Miner / Finder</th>
+                <th style="text-align: right;">Base Subsidy</th>
+                <th style="text-align: right;">Time</th>
+              </tr>
+            </thead>
+            <tbody id="blocks-table-tbody">
+              <!-- Dynamically populated from /api/stats blocks -->
+            </tbody>
+          </table>
+        </div>
+      </div>
 
-# 2. Call LLMs with automatic SatK micro-billing
-client = BTCKAgentClient(wallet=wallet, gateway_url="http://node.btck.network:8080")
-resp = client.chat_completion(
-    model="deepseek-r1",
-    prompt="Generate an autonomous arbitrage strategy for decentralized compute."
-)
-print(resp["choices"][0]["message"]["content"])</code></pre>
+    </div>
+
+    <!-- ==================================================================== -->
+    <!-- GETTING STARTED & STRATUM SETUP GUIDE -->
+    <!-- ==================================================================== -->
+    <section class="setup-card" id="section-setup">
+      <div class="section-title">
+        <div class="accent-bar"></div>
+        <h2>Quick Start Mining Guide</h2>
+      </div>
+
+      <div class="setup-tabs">
+        <button class="setup-tab-btn active" onclick="switchSetupTab('tab-iceriver', this)">IceRiver (KS0/KS1/KS2/KS3/KS5)</button>
+        <button class="setup-tab-btn" onclick="switchSetupTab('tab-antminer', this)">Antminer (KS3/KS5)</button>
+        <button class="setup-tab-btn" onclick="switchSetupTab('tab-gpu', this)">GPU Symbiotic Worker</button>
+      </div>
+
+      <div id="tab-iceriver" class="setup-tab-content">
+        <div class="config-box">
+          <div class="comment"># In your IceRiver Miner WebUI (http://&lt;MINER_IP&gt; -> Mining Settings):</div>
+          <div><span class="key">Pool 1 Address:</span>  <span class="val">stratum+tcp://pool.btck.network:3333</span>  <button class="copy-btn" onclick="copyText('stratum+tcp://pool.btck.network:3333')" style="margin-left: 8px;">Copy</button></div>
+          <div><span class="key">Pool 1 Worker:</span>   <span class="val">&lt;YOUR_STEALTH_ADDRESS&gt;.&lt;WORKER_NAME&gt;</span></div>
+          <div><span class="key">Pool 1 Password:</span> <span class="val">x</span></div>
+          <div class="comment" style="margin-top: 8px;"># Example Worker Username:</div>
+          <div>btck1s022fd5c7684238a4ee4505c01cef3353279d5330a5901ae135ebbe47a0e47c71a403c6248a22724350e3bfabd6a6280bf50ada1977f0e4f240783d3a03caae334b2d3f0cff62.ks001</div>
+          <div class="comment" style="margin-top: 8px;"># Thermal Best Practice for KS0 Ultra: Lock Fan to 100% full speed (5,900 RPM) to prevent thermal throttling.</div>
+        </div>
+      </div>
+
+      <div id="tab-antminer" class="setup-tab-content" style="display: none;">
+        <div class="config-box">
+          <div class="comment"># In Antminer Dashboard (KS3 / KS5 / KS5 Pro):</div>
+          <div><span class="key">URL:</span>      <span class="val">stratum+tcp://pool.btck.network:3333</span></div>
+          <div><span class="key">Worker:</span>   <span class="val">&lt;YOUR_STEALTH_ADDRESS&gt;.antminer01</span></div>
+          <div><span class="key">Password:</span> <span class="val">x</span></div>
+        </div>
+      </div>
+
+      <div id="tab-gpu" class="setup-tab-content" style="display: none;">
+        <div class="config-box">
+          <div class="comment"># GPU Co-Mining Daemon (NVIDIA RTX 30/40, A100, H100):</div>
+          <div>curl -sSL https://get.btck.network/worker.sh | bash -s -- \</div>
+          <div>&nbsp;&nbsp;--wallet &lt;YOUR_STEALTH_ADDRESS&gt; \</div>
+          <div>&nbsp;&nbsp;--pool stratum+tcp://pool.btck.network:3333</div>
+        </div>
       </div>
     </section>
+
+    <!-- Footer -->
+    <footer>
+      <div>
+        <strong>Bitcoin K (BTCK) Official Mining Pool</strong> — Pure Proof-of-Work • Zero Premine • Deterministic 21M Scarcity
+      </div>
+      <div class="footer-links">
+        <a href="https://github.com/btck-org/btck-core" target="_blank">GitHub</a>
+        <a href="https://moltbook.com/u/btck-network" target="_blank">Moltbook Hub</a>
+        <a href="/wallet" target="_blank">Web Wallet</a>
+        <a href="https://discord.gg/btck-network" target="_blank">Discord</a>
+        <a href="https://t.me/btck_official" target="_blank">Telegram</a>
+        <a href="https://twitter.com/BitcoinK_Net" target="_blank">X (Twitter)</a>
+      </div>
+    </footer>
 
   </main>
 
-  <script src="app.js"></script>
+  <!-- Toast Notification -->
+  <div id="toast">
+    <span>✓</span>
+    <span id="toast-text">Copied to clipboard!</span>
+  </div>
+
+  <script>
+    // State
+    let currentStats = {};
+    let activeWorkerFilter = "ALL";
+    let countdownInterval = null;
+    let remainingSeconds = 0;
+
+    function copyText(txt) {
+      navigator.clipboard.writeText(txt).then(() => {
+        showToast("Copied to clipboard: " + txt);
+      }).catch(() => {
+        const input = document.createElement("input");
+        input.value = txt;
+        document.body.appendChild(input);
+        input.select();
+        document.execCommand("copy");
+        document.body.removeChild(input);
+        showToast("Copied to clipboard!");
+      });
+    }
+
+    function showToast(msg) {
+      const t = document.getElementById("toast");
+      const tt = document.getElementById("toast-text");
+      tt.innerText = msg;
+      t.classList.add("show");
+      setTimeout(() => t.classList.remove("show"), 2500);
+    }
+
+    function switchSetupTab(tabId, btn) {
+      document.querySelectorAll(".setup-tab-content").forEach(el => el.style.display = "none");
+      document.querySelectorAll(".setup-tab-btn").forEach(el => el.classList.remove("active"));
+      document.getElementById(tabId).style.display = "block";
+      btn.classList.add("active");
+    }
+
+    function filterWorkers(mode, btn) {
+      activeWorkerFilter = mode;
+      document.querySelectorAll(".filter-tab").forEach(el => el.classList.remove("active"));
+      btn.classList.add("active");
+      renderWorkersTable();
+    }
+
+    function handleLookupKeyup(e) {
+      if (e.key === "Enter") executeMinerLookup();
+    }
+
+    function executeMinerLookup() {
+      const q = document.getElementById("miner-lookup-input").value.trim().toLowerCase();
+      const panel = document.getElementById("miner-personal-panel");
+      if (!q) {
+        panel.style.display = "none";
+        return;
+      }
+      
+      const miners = currentStats.miners_summary || {};
+      let matchedKey = null;
+      let matchedData = null;
+
+      for (const [k, v] of Object.entries(miners)) {
+        if (k.toLowerCase() === q || (v.address && v.address.toLowerCase().includes(q))) {
+          matchedKey = k;
+          matchedData = v;
+          break;
+        }
+      }
+
+      if (matchedData) {
+        panel.style.display = "block";
+        document.getElementById("mp-title").innerText = `Worker [${matchedKey}] Statistics`;
+        document.getElementById("mp-shares").innerText = (matchedData.shares || 0).toLocaleString();
+        document.getElementById("mp-blocks").innerText = (matchedData.blocks || 0).toLocaleString();
+        document.getElementById("mp-payout").innerText = (matchedData.payout_btck || 0).toFixed(2) + " BTCK";
+        document.getElementById("mp-mode").innerText = matchedData.mode || "SOLO";
+        showToast(`Found worker [${matchedKey}]`);
+      } else {
+        panel.style.display = "block";
+        document.getElementById("mp-title").innerText = `Query: ${q}`;
+        document.getElementById("mp-shares").innerText = "0";
+        document.getElementById("mp-blocks").innerText = "0";
+        document.getElementById("mp-payout").innerText = "0.00 BTCK";
+        document.getElementById("mp-mode").innerText = "Active";
+        showToast("No historical shares found for this query yet.");
+      }
+    }
+
+    function startCountdownTicker(sec) {
+      remainingSeconds = sec;
+      if (countdownInterval) clearInterval(countdownInterval);
+      
+      function updateTimerDOM() {
+        if (remainingSeconds <= 0) {
+          document.getElementById("cnt-hours").innerText = "00";
+          document.getElementById("cnt-mins").innerText = "00";
+          document.getElementById("cnt-secs").innerText = "00";
+          return;
+        }
+        const h = Math.floor(remainingSeconds / 3600);
+        const m = Math.floor((remainingSeconds % 3600) / 60);
+        const s = remainingSeconds % 60;
+        document.getElementById("cnt-hours").innerText = String(h).padStart(2, "0");
+        document.getElementById("cnt-mins").innerText = String(m).padStart(2, "0");
+        document.getElementById("cnt-secs").innerText = String(s).padStart(2, "0");
+        remainingSeconds--;
+      }
+      
+      updateTimerDOM();
+      countdownInterval = setInterval(updateTimerDOM, 1000);
+    }
+
+    function renderWorkersTable() {
+      const tbody = document.getElementById("workers-table-tbody");
+      if (!tbody) return;
+      const miners = currentStats.miners_summary || {};
+      
+      let allCount = 0, soloCount = 0, pplnsCount = 0;
+      let rows = [];
+
+      for (const [k, v] of Object.entries(miners)) {
+        const mode = (v.mode || "SOLO").toUpperCase();
+        allCount++;
+        if (mode === "SOLO") soloCount++;
+        else pplnsCount++;
+
+        if (activeWorkerFilter !== "ALL" && mode !== activeWorkerFilter) continue;
+
+        const shares = v.shares || 0;
+        const blocks = v.blocks || 0;
+        const payout = (v.payout_btck || 0).toFixed(2);
+        const isOnline = shares > 0 || blocks > 0 || k === "ks001";
+        const addrTrunc = v.address ? `${v.address.slice(0, 10)}...${v.address.slice(-6)}` : "Default";
+        const hr = v.hashrate_str || (shares > 0 ? "~380 GH/s" : "0 GH/s");
+
+        rows.push(`
+          <tr>
+            <td>
+              <span class="status-dot-active"></span>
+              <span style="color: #fff; font-weight: 600;">Online</span>
+            </td>
+            <td>
+              <strong style="color: #fff;">${k}</strong>
+              <div style="font-size: 10px; color: var(--text-muted); cursor: pointer;" onclick="copyText('${v.address}')">${addrTrunc}</div>
+            </td>
+            <td>
+              <span class="badge-mode ${mode === 'SOLO' ? 'badge-solo' : 'badge-pplns'}">${mode}</span>
+            </td>
+            <td style="text-align: right; color: var(--cyan-primary); font-weight: 700;">${hr}</td>
+            <td style="text-align: right; color: var(--emerald-primary); font-weight: 700;">${shares.toLocaleString()}</td>
+            <td style="text-align: right; color: var(--gold-light); font-weight: 700;">${blocks.toLocaleString()}</td>
+            <td style="text-align: right; color: #fff; font-weight: 700;">${payout}</td>
+          </tr>
+        `);
+      }
+
+      document.getElementById("worker-count-all").innerText = allCount;
+      document.getElementById("worker-count-solo").innerText = soloCount;
+      document.getElementById("worker-count-pplns").innerText = pplnsCount;
+
+      tbody.innerHTML = rows.join("") || `<tr><td colspan="7" style="text-align: center; color: var(--text-muted); padding: 20px;">No workers matched</td></tr>`;
+    }
+
+    function renderBlocksTable() {
+      const tbody = document.getElementById("blocks-table-tbody");
+      if (!tbody) return;
+      const blocks = currentStats.blocks || [];
+      const recent = blocks.slice(-15).reverse();
+
+      let rows = [];
+      for (const b of recent) {
+        const h = b.height;
+        const worker = b.worker || "miner";
+        const reward = (b.reward || 5.04).toFixed(2);
+        const timeStr = b.time || "Just now";
+
+        rows.push(`
+          <tr>
+            <td style="color: var(--cyan-primary); font-weight: 700;">#${h.toLocaleString()}</td>
+            <td>
+              <span style="color: #fff; font-weight: 600;">${worker}</span>
+            </td>
+            <td style="text-align: right; color: var(--gold-light); font-weight: 700;">${reward} BTCK</td>
+            <td style="text-align: right; color: var(--text-muted);">${timeStr}</td>
+          </tr>
+        `);
+      }
+
+      tbody.innerHTML = rows.join("") || `<tr><td colspan="4" style="text-align: center; color: var(--text-muted); padding: 20px;">Awaiting newly solved blocks...</td></tr>`;
+    }
+
+    function renderJackpotWinners() {
+      const tbody = document.getElementById("jackpot-winners-tbody");
+      if (!tbody) return;
+      const hof = currentStats.combo_hof || [];
+
+      if (!hof.length) {
+        tbody.innerHTML = `<tr><td colspan="3" style="text-align: center; color: var(--text-muted); padding: 14px;">Epoch 1 Active • Awaiting first draw at block #86,400</td></tr>`;
+        return;
+      }
+
+      let rows = [];
+      for (const item of hof.slice(0, 4)) {
+        const h = item.draw_height || item.height || 43200;
+        const payout = (item.payout_btck || 5820.45).toFixed(2);
+        const worker = item.winner_miner || "ks001";
+        const addr = item.winner_address || "btck1s022fd5c7684238a4ee4505c01cef3353279d5330a5901ae135ebbe47a0e47c71a403c6248a22724350e3bfabd6a6280bf50ada1977f0e4f240783d3a03caae334b2d3f0cff62";
+        const addrTrunc = `${addr.slice(0, 8)}...${addr.slice(-6)}`;
+
+        rows.push(`
+          <tr>
+            <td style="color: var(--cyan-primary); font-weight: 700;">#${h.toLocaleString()}</td>
+            <td>
+              <div class="winner-highlight">${worker}</div>
+              <div class="winner-addr" onclick="copyText('${addr}')">${addrTrunc}</div>
+            </td>
+            <td style="text-align: right;" class="winner-highlight">${payout} BTCK</td>
+          </tr>
+        `);
+      }
+      tbody.innerHTML = rows.join("");
+    }
+
+    async function fetchStats() {
+      try {
+        const res = await fetch("/api/stats");
+        if (!res.ok) return;
+        const data = await res.json();
+        currentStats = data;
+
+        // Global stats
+        const curHeight = data.total_blocks || 0;
+        document.getElementById("stat-block-height").innerText = `#${curHeight.toLocaleString()}`;
+        if (document.getElementById("stat-pool-hashrate")) {
+          document.getElementById("stat-pool-hashrate").innerText = data.total_pool_hashrate_str || "~1.90 TH/s";
+        }
+        document.getElementById("stat-network-diff").innerText = (data.network_diff || 279.4).toFixed(2);
+        document.getElementById("stat-block-freq").innerText = `${data.block_freq_sec || "1.00"}s / blk`;
+        
+        // Fee policy
+        const feePol = data.pool_fee_policy || {};
+        const promoHours = feePol.remaining_promo_hours || 159.5;
+        document.getElementById("promo-hours-left").innerText = `${promoHours.toFixed(1)} Hours Remaining`;
+        document.getElementById("stat-fee-note").innerText = `${promoHours.toFixed(1)}h free mining left`;
+
+        // Active miners count
+        const onlineCount = data.active_worker_count !== undefined ? data.active_worker_count : 0;
+        document.getElementById("stat-active-miners").innerText = `${onlineCount} Connected`;
+
+        // Hero Jackpot
+        const poolBal = data.pool_balance_btck || 0.0;
+        document.getElementById("hero-jackpot-number").innerText = poolBal.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+        document.getElementById("hero-jackpot-usd").innerText = `≈ $${(poolBal * 0.052).toFixed(2)} USD`;
+
+        // Progress bar
+        const nextDraw = data.next_draw_block || 86400;
+        const drawInterval = data.draw_interval_blocks || 43200;
+        const progressInEpoch = drawInterval - (data.blocks_to_draw || 0);
+        const pct = Math.min(100, Math.max(0, (progressInEpoch / drawInterval) * 100));
+        document.getElementById("jackpot-block-ratio").innerText = `Block #${curHeight.toLocaleString()} / #${nextDraw.toLocaleString()} (${pct.toFixed(1)}%)`;
+        document.getElementById("jackpot-progress-fill").style.width = `${pct}%`;
+        document.getElementById("hero-target-block").innerText = `#${nextDraw.toLocaleString()}`;
+
+        // Countdown timer
+        if (data.countdown_seconds !== undefined && Math.abs(remainingSeconds - data.countdown_seconds) > 5) {
+          startCountdownTicker(data.countdown_seconds);
+        }
+
+        // Tables
+        renderWorkersTable();
+        renderBlocksTable();
+        renderJackpotWinners();
+
+      } catch (err) {
+        console.error("fetchStats error:", err);
+      }
+    }
+
+    // Init
+    fetchStats();
+    setInterval(fetchStats, 2000);
+  </script>
 </body>
 </html>

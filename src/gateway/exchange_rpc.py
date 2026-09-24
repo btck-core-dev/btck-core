@@ -12,7 +12,8 @@ import logging
 from typing import Dict, Any, Optional
 
 import sys
-sys.path.insert(0, '/Users/a1234/btck-core/src')
+import os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from node.blockdag import BlockDAG
 from privacy.stealth_address import StealthKeyPair
 from tokenomics.emission_schedule import SATK_PER_COIN

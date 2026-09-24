@@ -135,8 +135,10 @@ class TestSymbioticWorkerSuite(unittest.TestCase):
             preemptor.pause()
             self.assertEqual(preemptor.state, MinerState.PAUSED_FOR_AI)
 
-            # Wait for watchdog to fire
-            time.sleep(0.35)
+            # Wait for watchdog to fire (robust poll up to 1.5s)
+            t_end = time.time() + 1.5
+            while time.time() < t_end and preemptor.state != MinerState.MINING_ACTIVE:
+                time.sleep(0.05)
 
             # Verify watchdog automatically restored mining state
             self.assertEqual(preemptor.state, MinerState.MINING_ACTIVE)

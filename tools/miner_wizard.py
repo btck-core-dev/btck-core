@@ -231,6 +231,41 @@ class PlanGenerator:
     """Generates optimal configuration options for miner approval."""
 
     @staticmethod
+    def recommend_model_spec(usable_vram_per_gpu_mib: int, tp_size: int) -> Dict:
+        total_ai_vram_gb = (usable_vram_per_gpu_mib * tp_size) / 1024.0
+
+        if total_ai_vram_gb < 9.0:
+            return {
+                "name": "Qwen3-8B-Instruct-AWQ (INT4)",
+                "context": "16k (16,384 tokens)",
+                "reason": "保留 2G+ KV Cache，杜绝 8B-FP8 导致 OOM，稳定保障长上下文"
+            }
+        elif total_ai_vram_gb < 18.0:
+            return {
+                "name": "Qwen3-14B-Instruct-AWQ (INT4)",
+                "context": "32k (32,768 tokens 满血)",
+                "reason": "单卡 16G 绝配！拒绝 14B-FP8 (仅剩 1G 显存锁死 4k)，INT4 释放 6GB KV 缓冲拉满 32k！"
+            }
+        elif total_ai_vram_gb < 35.0:
+            return {
+                "name": "Qwen3.6-27B-Instruct-AWQ (INT4)",
+                "context": "24k (24,576 tokens)",
+                "reason": "双卡或单卡 24G 优选，提供 24k 长上下文与商用级逻辑推理深度"
+            }
+        elif total_ai_vram_gb < 60.0:
+            return {
+                "name": "Qwen3.6-35B-A3B-AWQ (INT4)",
+                "context": "32k (32,768 tokens 满血，最高 65k)",
+                "reason": "4卡共生黄金选型！取代 35B-FP8 (FP8 仅余 2.6G KV 导致 4k 截断)；INT4 释放 16GB KV 空间彻底根治截断！"
+            }
+        else:
+            return {
+                "name": "Qwen3-72B-Instruct-AWQ (INT4)",
+                "context": "32k ~ 65k tokens",
+                "reason": "顶级多卡集群旗舰，满血 72B 享 15x 最高 SatK 收益"
+            }
+
+    @staticmethod
     def build_plans(cpu: CPUTopology, gpus: List[GPUInfo], miner: Optional[MinerProcess]) -> List[Dict]:
         plans = []
         gpu_count = len(gpus)
@@ -246,6 +281,9 @@ class PlanGenerator:
         recommended_util = round(min(0.90, max(0.50, usable_vram_mib / min_card_vram_mib)), 2)
 
         if is_dual_socket and gpu_count == 4:
+            rec_dual = PlanGenerator.recommend_model_spec(usable_vram_mib, 2)
+            rec_unified = PlanGenerator.recommend_model_spec(usable_vram_mib, 4)
+
             # Plan 1: Dual Instance (Architecturally Recommended for Dual Socket)
             plans.append({
                 "id": 1,
@@ -257,7 +295,7 @@ class PlanGenerator:
                     "架构原理: 彻底规避双路 CPU 之间 QPI/UPI 总线通信延迟，发挥单卡最高流速",
                     "并发能力: 2 套独立对外提供服务 (端口 8000 & 8001)，双倍并发吞吐，抗压翻倍",
                     f"挖矿共生: 卡 0~3 继续同时挖 {miner.algo if miner else 'Pearl'}，算力收益 100% 满额",
-                    "推荐模型: 实例 A (Qwen 14B~32B / 35B FP8, TP=2) + 实例 B (Qwen 14B~32B, TP=2)",
+                    f"推荐模型: 实例 A & B 各载 {rec_dual['name']} | 上下文: {rec_dual['context']} ({rec_dual['reason']})",
                     f"显存配额: 每卡利用率 {recommended_util} (挖矿占用 {miner_dag_mib}M, 预留缓冲 {safety_buffer_mib}M)",
                     "预期流速: 单实例 75~100 tokens/s，总聚合吞吐 > 160 tokens/s"
                 ],
@@ -277,9 +315,9 @@ class PlanGenerator:
                 "summary": "1 套统一大实例接管卡 [0,1,2,3]，聚合 64GB 显存池。",
                 "details": [
                     "架构原理: 4 卡统一张量并行 (TP=4)，由单个 vLLM 实例统一调度",
-                    "适用场景: 适合必须加载超大尺寸参数模型 (如 Qwen 72B / Llama 70B)",
+                    "适用场景: 适合必须加载超大尺寸参数模型 (如 Qwen 35B / 72B)",
                     "潜在损耗: 卡间通信需跨越 CPU 插槽，PCIe 跨路延迟略有增加 (~10% 延迟波动)",
-                    "推荐模型: Qwen3.6-35B-A3B-FP8 (TP=4) 或 72B-AWQ/FP8",
+                    f"推荐模型: {rec_unified['name']} (TP=4) | 预期上下文: {rec_unified['context']} ({rec_unified['reason']})",
                     f"显存配额: 每卡利用率 {recommended_util}，端口 8000",
                     "预期流速: 85~115 tokens/s (CUDA Graph 捕获状态)"
                 ],
@@ -291,6 +329,7 @@ class PlanGenerator:
         else:
             # Single Socket or other card count
             tp_size = gpu_count if gpu_count in [1, 2, 4, 8] else 1
+            rec_std = PlanGenerator.recommend_model_spec(usable_vram_mib, tp_size)
             plans.append({
                 "id": 1,
                 "title": f"标准单路架构 (TP={tp_size})",
@@ -300,6 +339,7 @@ class PlanGenerator:
                 "details": [
                     "架构原理: 单路 CPU 直连各 GPU，无 NUMA 跨插槽惩罚",
                     "挖矿共生: 保持挖矿与推理零冲突毫秒级物理抢占",
+                    f"推荐模型: {rec_std['name']} | 上下文: {rec_std['context']} ({rec_std['reason']})",
                     f"显存配额: 每卡利用率 {recommended_util}",
                     "端口监听: 0.0.0.0:8000"
                 ],

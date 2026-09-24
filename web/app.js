@@ -3,11 +3,21 @@ let currentHeight = 0;
 
 // Tab switcher
 function switchTab(tabId) {
-  document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
-  document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
-  
-  event.target.classList.add('active');
-  document.getElementById(tabId).classList.add('active');
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    const oc = btn.getAttribute('onclick') || '';
+    if (oc.includes(tabId)) {
+      btn.classList.add('active');
+    } else {
+      btn.classList.remove('active');
+    }
+  });
+  document.querySelectorAll('.tab-content').forEach(content => {
+    if (content.id === tabId) {
+      content.classList.add('active');
+    } else {
+      content.classList.remove('active');
+    }
+  });
 }
 
 
@@ -330,6 +340,31 @@ async function fetchLiveExplorerData() {
       if (wCountdown && data.blocks_to_draw !== undefined) {
         const hoursLeft = (data.blocks_to_draw / 3600.0).toFixed(1);
         wCountdown.innerText = `距开奖剩余 ${data.blocks_to_draw.toLocaleString()} 块 (约 ${hoursLeft} 小时)`;
+      }
+
+      // Sync Stratum Pool 7-Day 0% Promo Fee Policy & Countdown
+      if (data.pool_fee_policy) {
+        const pfp = data.pool_fee_policy;
+        const feeBadge = document.getElementById("pool-fee-badge");
+        const feeTimer = document.getElementById("pool-fee-timer");
+        const treasuryAddr = document.getElementById("pool-treasury-addr");
+        if (feeBadge) {
+          feeBadge.innerText = pfp.is_promo_active ? "当前抽水: 0.00% (创世豁免)" : `当前抽水: ${(pfp.current_fee_rate * 100).toFixed(2)}%`;
+        }
+        if (feeTimer) {
+          if (pfp.is_promo_active) {
+            const h = parseFloat(pfp.remaining_promo_hours) || 0;
+            const days = Math.floor(h / 24);
+            const remH = Math.floor(h % 24);
+            const remM = Math.floor((h * 60) % 60);
+            feeTimer.innerText = `⏳ 7 天免抽水倒计时: 还剩 ${days} 天 ${remH} 小时 ${remM} 分 (后转 1.0%)`;
+          } else {
+            feeTimer.innerText = "✅ 官方标准费率已生效 (1.00%)";
+          }
+        }
+        if (treasuryAddr && pfp.treasury_address) {
+          treasuryAddr.innerText = pfp.treasury_address;
+        }
       }
     }
 
@@ -654,5 +689,12 @@ function renderHourlyTempoTable(records) {
 
 window.addEventListener("DOMContentLoaded", () => {
   initExplorer();
+  if (window.location.pathname.includes('wallet') || window.location.hash.includes('wallet')) {
+    switchTab('tab-wallet');
+  } else if (window.location.pathname.includes('caas') || window.location.hash.includes('caas')) {
+    switchTab('tab-caas');
+  } else if (window.location.pathname.includes('explorer') || window.location.hash.includes('explorer')) {
+    switchTab('tab-explorer');
+  }
 });
 

@@ -24,8 +24,9 @@ from privacy.wallet_engine import (
     StealthTransaction,
     sha256
 )
+from tokenomics.emission_schedule import get_regular_coinbase_maturity_blocks
 
-COINBASE_MATURITY_CONFIRMATIONS = 120
+COINBASE_MATURITY_CONFIRMATIONS = 7200
 
 @dataclass
 class UTXOEntry:
@@ -84,15 +85,16 @@ class UTXOSet:
             if not utxo:
                 return False, f"Referenced UTXO does not exist or already spent: {outpoint}", 0
 
-            # 120-block Coinbase maturity enforcement
-            if utxo.is_coinbase:
+            # Streaming timelock enforcement (Combo jackpot tranches)
+            if utxo.timelock_until_height > 0:
+                if current_height < utxo.timelock_until_height:
+                    return False, f"Output timelocked until height {utxo.timelock_until_height}, current height {current_height}", 0
+            elif utxo.is_coinbase:
+                # Progressive Regular Coinbase maturity enforcement
+                req_maturity = get_regular_coinbase_maturity_blocks(utxo.block_height)
                 confirmations = current_height - utxo.block_height
-                if confirmations < COINBASE_MATURITY_CONFIRMATIONS:
-                    return False, f"Coinbase maturity violation: {confirmations} / {COINBASE_MATURITY_CONFIRMATIONS} confirmations", 0
-
-            # Streaming timelock enforcement
-            if utxo.timelock_until_height > 0 and current_height < utxo.timelock_until_height:
-                return False, f"Output timelocked until height {utxo.timelock_until_height}, current height {current_height}", 0
+                if confirmations < req_maturity:
+                    return False, f"Coinbase maturity violation: {confirmations} / {req_maturity} confirmations", 0
 
             # Verify input amount matches UTXO
             if inp.amount_satk != utxo.amount_satk:

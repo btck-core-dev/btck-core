@@ -12,13 +12,15 @@ import logging
 import time
 from typing import Dict, Any, Optional
 
+import os
 import sys
-sys.path.insert(0, '/Users/a1234/btck-core/src')
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from node.blockdag import BlockDAG, DAGBlock
 from privacy.stealth_address import StealthKeyPair
 from tokenomics.emission_schedule import SATS_PER_COIN
 from p2p.p2p_network import P2PNetwork
+from consensus.safeguards import consensus_guardian, SignedNetworkAlert, NetworkAlertPayload
 
 logging.basicConfig(
     level=logging.INFO,
@@ -116,7 +118,17 @@ class BTCKDaemon:
             "protocol_version": 1,
             "uptime_seconds": int(time.time() - self.start_time),
             "block_time_target": "1.0s",
-            "dag": dag_info
+            "safeguards": {
+                "safe_mode": consensus_guardian.alerts.is_safe_mode(),
+                "latest_notice": consensus_guardian.alerts.get_latest_broadcast_notice()
+            },
+            "dag": dag_info,
+            "p2p": {
+                "port": self.p2p_port,
+                "connected_peers": len(self.p2p.peers),
+                "seed_peers": self.p2p.seed_peers,
+                "peers": self.p2p.get_peers_info()
+            }
         }
 
     async def process_rpc(self, req: dict) -> dict:
@@ -126,6 +138,48 @@ class BTCKDaemon:
 
         if method == "getInfo":
             return {"jsonrpc": "2.0", "result": self.get_node_info(), "id": req_id}
+
+        elif method == "getAlertInfo":
+            return {
+                "jsonrpc": "2.0",
+                "result": {
+                    "safe_mode": consensus_guardian.alerts.is_safe_mode(),
+                    "latest_notice": consensus_guardian.alerts.get_latest_broadcast_notice(),
+                    "active_alert_count": len(consensus_guardian.alerts.active_alerts)
+                },
+                "id": req_id
+            }
+
+        elif method == "submitAlert":
+            try:
+                payload_dict = params.get("payload", {})
+                sig_hex = params.get("signature_hex", "")
+                payload = NetworkAlertPayload(**payload_dict)
+                signed_alert = SignedNetworkAlert(payload=payload, signature_hex=sig_hex)
+                success, msg = consensus_guardian.alerts.process_incoming_alert(signed_alert)
+                if success and payload.checkpoint_height and payload.checkpoint_hash:
+                    consensus_guardian.checkpoints.add_checkpoint(payload.checkpoint_height, payload.checkpoint_hash)
+                return {
+                    "jsonrpc": "2.0",
+                    "result": {
+                        "accepted": success,
+                        "message": msg,
+                        "safe_mode_active": consensus_guardian.alerts.is_safe_mode()
+                    },
+                    "id": req_id
+                }
+            except Exception as e:
+                return {"jsonrpc": "2.0", "error": {"code": -32602, "message": str(e)}, "id": req_id}
+
+        elif method == "getPeerInfo":
+            return {"jsonrpc": "2.0", "result": self.p2p.get_peers_info(), "id": req_id}
+
+        elif method == "addPeer":
+            peer_addr = params.get("peer")
+            if not peer_addr:
+                return {"jsonrpc": "2.0", "error": {"code": -32602, "message": "Missing 'peer' parameter (expected 'host:port')"}, "id": req_id}
+            asyncio.create_task(self.p2p.connect_to_peer(peer_addr))
+            return {"jsonrpc": "2.0", "result": {"initiated": True, "peer": peer_addr}, "id": req_id}
 
         elif method == "getBlockDagInfo":
             return {"jsonrpc": "2.0", "result": self.dag.get_dag_info(), "id": req_id}
@@ -237,9 +291,17 @@ class BTCKDaemon:
         logger.info("btckd Node Daemon stopped.")
 
 if __name__ == "__main__":
+    import argparse
+    parser = argparse.ArgumentParser(description="BTC-K High-Speed BlockDAG Node Daemon (btckd)")
+    parser.add_argument("--host", default="0.0.0.0", help="RPC listen host (default: 0.0.0.0)")
+    parser.add_argument("--port", type=int, default=16110, help="RPC listen port (default: 16110)")
+    parser.add_argument("--p2p-port", type=int, default=16111, help="P2P listen port (default: 16111)")
+    parser.add_argument("--seed", action="append", default=[], help="Seed peer in host:port format (can specify multiple)")
+    args = parser.parse_args()
+
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
-    daemon = BTCKDaemon()
+    daemon = BTCKDaemon(host=args.host, port=args.port, p2p_port=args.p2p_port, seed_peers=args.seed)
     try:
         loop.run_until_complete(daemon.start())
         loop.run_forever()

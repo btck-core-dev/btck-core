@@ -85,22 +85,22 @@ class TestFourYearRationalDecay(unittest.TestCase):
         """Audit Section 2 & 参数规范: 四阶段 Combo 比例与开奖间隔"""
         stage1, r1, int1 = get_combo_spec_for_height(8_640_000)
         self.assertEqual(stage1, 1)
-        self.assertEqual(r1, 0.20)
+        self.assertEqual(r1, 0.15)
         self.assertEqual(int1, 43_200)
 
         stage2, r2, int2 = get_combo_spec_for_height(43_200_000)
         self.assertEqual(stage2, 2)
-        self.assertEqual(r2, 0.30)
+        self.assertEqual(r2, 0.25)
         self.assertEqual(int2, 129_600)
 
         stage3, r3, int3 = get_combo_spec_for_height(77_760_000)
         self.assertEqual(stage3, 3)
-        self.assertEqual(r3, 0.40)
+        self.assertEqual(r3, 0.35)
         self.assertEqual(int3, 388_800)
 
         stage4, r4, int4 = get_combo_spec_for_height(103_680_000)
         self.assertEqual(stage4, 4)
-        self.assertEqual(r4, 0.50)
+        self.assertEqual(r4, 0.45)
         self.assertEqual(int4, 1_166_400)
 
     def test_07_beacon_xor_distance_winner_selection(self):
@@ -132,6 +132,7 @@ class TestFourYearRationalDecay(unittest.TestCase):
         current_issued = 0
         current_pool = 0
         total_paid_to_miners = 0
+        total_eco_collected = 0
 
         for h in range(1, 2001):
             block_hash = hashlib.sha256(f"SIM_BLOCK_{h}".encode()).digest()
@@ -144,15 +145,16 @@ class TestFourYearRationalDecay(unittest.TestCase):
                 force_combo=force_draw
             )
 
-            self.assertEqual(res.minted_sats, res.miner_base_sats + res.pool_deposit_sats)
+            self.assertEqual(res.minted_sats, res.miner_base_sats + res.pool_deposit_sats + res.eco_deposit_sats)
             self.assertGreaterEqual(res.new_pool_balance_sats, 0)
             self.assertLessEqual(res.new_issued_supply_sats, TOTAL_HARD_CAP_SATK)
 
             total_paid_to_miners += res.miner_total_payout_sats
+            total_eco_collected += res.eco_deposit_sats
             current_issued = res.new_issued_supply_sats
             current_pool = res.new_pool_balance_sats
 
-            self.assertEqual(total_paid_to_miners + current_pool, current_issued)
+            self.assertEqual(total_paid_to_miners + current_pool + total_eco_collected, current_issued)
 
     def test_10_dag_order_independence(self):
         """Audit Section 12: 发行状态不依赖节点到达顺序，为确定性纯函数"""

@@ -12,8 +12,9 @@ canonical byte serialization format (P0-04).
 import time
 import hashlib
 from typing import Tuple, List
+import os
 import sys
-sys.path.insert(0, '/Users/a1234/btck-core/src')
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from consensus.kheavyhash import kheavyhash
 

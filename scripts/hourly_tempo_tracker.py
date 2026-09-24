@@ -19,8 +19,16 @@ DATA_FILE = os.path.join(BASE_DIR, "data", "hourly_tempo_tracking.json")
 MD_FILE = os.path.join(BASE_DIR, "docs", "hourly_tempo_tracking.md")
 CHAIN_STATE_FILE = os.path.join(BASE_DIR, "data", "chain_state.json")
 LOG_FILE = os.path.join(BASE_DIR, "logs", "stratum.log")
-MINER_IP = "192.168.50.236"
-TEST_START_TIME = 1789530359.78  # 2026-09-16 11:45:59.78
+MINER_IPS = ["192.168.50.236", "192.168.50.154", "192.168.50.104"]
+def get_test_start_time():
+    if os.path.exists(CHAIN_STATE_FILE):
+        try:
+            with open(CHAIN_STATE_FILE, "r") as f:
+                return json.load(f).get("test_start_time", time.time())
+        except Exception:
+            pass
+    return time.time()
+TEST_START_TIME = get_test_start_time()
 TARGET_BPS = 1.000  # Theoretical 1.0s / block
 
 def fetch_miner_telemetry():

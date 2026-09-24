@@ -93,22 +93,22 @@ class TestAllCoreModules(unittest.TestCase):
         # 2.1 Test Tiered Stages & Draw Schedules
         stage1, ratio1, interval1 = get_combo_spec_for_height(100_000)
         self.assertEqual(stage1, 1)
-        self.assertEqual(ratio1, 0.20)
+        self.assertEqual(ratio1, 0.15)
         self.assertEqual(interval1, 43_200)
 
         stage2, ratio2, interval2 = get_combo_spec_for_height(35_000_000)
         self.assertEqual(stage2, 2)
-        self.assertEqual(ratio2, 0.30)
+        self.assertEqual(ratio2, 0.25)
         self.assertEqual(interval2, 129_600)
 
         stage3, ratio3, interval3 = get_combo_spec_for_height(70_000_000)
         self.assertEqual(stage3, 3)
-        self.assertEqual(ratio3, 0.40)
+        self.assertEqual(ratio3, 0.35)
         self.assertEqual(interval3, 388_800)
 
         stage4, ratio4, interval4 = get_combo_spec_for_height(100_000_000)
         self.assertEqual(stage4, 4)
-        self.assertEqual(ratio4, 0.50)
+        self.assertEqual(ratio4, 0.45)
         self.assertEqual(interval4, 1_166_400)
 
         # 2.2 Future Random Beacon + XOR Geometric Distance Winner Selection
@@ -120,7 +120,7 @@ class TestAllCoreModules(unittest.TestCase):
 
         # 2.3 Streaming Vesting Schedule Calculation
         tranches = compute_jackpot_vesting_tranches(stage_id=4, jackpot_amount_satk=20_620 * SATS_PER_COIN, draw_block_height=100_000_000)
-        self.assertEqual(len(tranches), 10)  # 1 instant + 9 streaming tranches (10 total)
+        self.assertEqual(len(tranches), 16)  # 1 instant + 15 streaming tranches (16 total)
         total_tranches_satk = sum(t["amount_satk"] for t in tranches)
         self.assertEqual(total_tranches_satk, 20_620 * SATS_PER_COIN)
 
@@ -128,6 +128,7 @@ class TestAllCoreModules(unittest.TestCase):
         current_issued = 0
         current_pool = 0
         total_miner_received = 0
+        total_eco_received = 0
         
         for h in range(1, 1001):
             fake_hash = hashlib.sha256(f"BLOCK_{h}".encode()).digest()
@@ -140,17 +141,18 @@ class TestAllCoreModules(unittest.TestCase):
                 force_combo=force_draw
             )
             
-            self.assertEqual(res.minted_sats, res.miner_base_sats + res.pool_deposit_sats)
+            self.assertEqual(res.minted_sats, res.miner_base_sats + res.pool_deposit_sats + res.eco_deposit_sats)
             self.assertGreaterEqual(res.new_pool_balance_sats, 0, "Jackpot pool went negative!")
             self.assertLessEqual(res.new_issued_supply_sats, TOTAL_HARD_CAP_SATK)
             
             total_miner_received += res.miner_total_payout_sats
+            total_eco_received += res.eco_deposit_sats
             current_issued = res.new_issued_supply_sats
             current_pool = res.new_pool_balance_sats
             
             self.assertEqual(
-                total_miner_received + current_pool, current_issued,
-                f"Supply mismatch: miner({total_miner_received}) + pool({current_pool}) != issued({current_issued})"
+                total_miner_received + current_pool + total_eco_received, current_issued,
+                f"Supply mismatch: miner({total_miner_received}) + pool({current_pool}) + eco({total_eco_received}) != issued({current_issued})"
             )
 
     def test_privacy_stealth(self):

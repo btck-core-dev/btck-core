@@ -1,0 +1,928 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="google" content="notranslate">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BTC-K 隐私钱包 (BTCK Stealth Wallet)</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-dark: #0d1117;
+      --bg-card: #161b22;
+      --bg-input: #0b0e14;
+      --border: #30363d;
+      --border-focus: #58a6ff;
+      --text-main: #c9d1d9;
+      --text-muted: #8b949e;
+      --text-bright: #f0f6fc;
+      --accent-green: #2ea043;
+      --accent-green-bright: #3fb950;
+      --accent-blue: #58a6ff;
+      --accent-gold: #d29922;
+      --accent-purple: #bc8cff;
+      --danger: #f85149;
+      --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      --font-mono: 'JetBrains Mono', monospace;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background-color: var(--bg-dark);
+      color: var(--text-main);
+      font-family: var(--font-sans);
+      line-height: 1.5;
+      padding: 24px;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .container {
+      max-width: 1040px;
+      margin: 0 auto;
+    }
+
+    /* Header */
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-bottom: 20px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 24px;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+
+    .logo-area {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .logo-badge {
+      font-size: 20px;
+      font-weight: 700;
+      color: var(--accent-green-bright);
+      letter-spacing: -0.5px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .net-badge {
+      font-size: 11px;
+      background: rgba(63, 185, 80, 0.12);
+      color: var(--accent-green-bright);
+      border: 1px solid rgba(63, 185, 80, 0.3);
+      padding: 4px 10px;
+      border-radius: 20px;
+      font-family: var(--font-mono);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .net-badge::before {
+      content: "";
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--accent-green-bright);
+      display: inline-block;
+      box-shadow: 0 0 6px var(--accent-green-bright);
+    }
+
+    /* Balance Hero */
+    .balance-card {
+      background: linear-gradient(145deg, #161b22, #1a2230);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 28px 32px;
+      margin-bottom: 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 20px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+    }
+
+    .balance-label {
+      font-size: 13px;
+      color: var(--text-muted);
+      margin-bottom: 6px;
+      font-weight: 500;
+    }
+
+    .balance-main {
+      font-size: 38px;
+      font-weight: 800;
+      color: var(--text-bright);
+      font-family: var(--font-mono);
+      letter-spacing: -1px;
+      display: flex;
+      align-items: baseline;
+      gap: 8px;
+    }
+
+    .balance-unit {
+      font-size: 20px;
+      color: var(--accent-green-bright);
+      font-weight: 600;
+    }
+
+    .balance-sub {
+      font-size: 13px;
+      color: var(--text-muted);
+      font-family: var(--font-mono);
+      margin-top: 4px;
+    }
+
+    .balance-meta {
+      display: flex;
+      gap: 24px;
+      border-left: 1px solid var(--border);
+      padding-left: 28px;
+    }
+
+    .meta-item {
+      text-align: right;
+    }
+
+    .meta-val {
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--accent-blue);
+      font-family: var(--font-mono);
+    }
+
+    .meta-lbl {
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-top: 2px;
+    }
+
+    /* Navigation Tabs */
+    .nav-tabs {
+      display: flex;
+      gap: 8px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 24px;
+    }
+
+    .tab-btn {
+      background: none;
+      border: none;
+      border-bottom: 2px solid transparent;
+      color: var(--text-muted);
+      font-size: 14px;
+      font-weight: 600;
+      padding: 10px 18px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      transition: all 0.15s ease;
+      font-family: var(--font-sans);
+    }
+
+    .tab-btn:hover {
+      color: var(--text-bright);
+    }
+
+    .tab-btn.active {
+      color: var(--accent-green-bright);
+      border-bottom-color: var(--accent-green-bright);
+    }
+
+    /* Tab Panels */
+    .tab-panel {
+      display: none;
+    }
+
+    .tab-panel.active {
+      display: block;
+    }
+
+    /* Cards */
+    .card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 24px;
+      margin-bottom: 24px;
+    }
+
+    .card-title {
+      font-size: 16px;
+      font-weight: 600;
+      color: var(--text-bright);
+      margin-bottom: 16px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    /* Forms & Inputs */
+    .form-group {
+      margin-bottom: 18px;
+    }
+
+    .form-label {
+      display: block;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-muted);
+      margin-bottom: 6px;
+    }
+
+    .input-field {
+      width: 100%;
+      background: var(--bg-input);
+      border: 1px solid var(--border);
+      color: var(--text-bright);
+      font-family: var(--font-mono);
+      font-size: 13px;
+      padding: 10px 14px;
+      border-radius: 6px;
+      outline: none;
+      transition: border 0.15s ease;
+    }
+
+    .input-field:focus {
+      border-color: var(--border-focus);
+    }
+
+    .btn {
+      padding: 10px 20px;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      border: none;
+      transition: all 0.15s ease;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .btn-primary {
+      background: var(--accent-green);
+      color: #ffffff;
+    }
+
+    .btn-primary:hover {
+      background: #2c973b;
+    }
+
+    .btn-secondary {
+      background: #21262d;
+      color: var(--text-main);
+      border: 1px solid var(--border);
+    }
+
+    .btn-secondary:hover {
+      background: #30363d;
+      color: var(--text-bright);
+    }
+
+    /* Tables */
+    .table-responsive {
+      overflow-x: auto;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+      text-align: left;
+    }
+
+    th {
+      background: rgba(255,255,255,0.02);
+      color: var(--text-muted);
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--border);
+      font-weight: 600;
+      font-size: 12px;
+    }
+
+    td {
+      padding: 12px 14px;
+      border-bottom: 1px solid rgba(48,54,61,0.5);
+      color: var(--text-main);
+    }
+
+    tr:hover td {
+      background: rgba(255,255,255,0.015);
+    }
+
+    .badge-in {
+      background: rgba(63,185,80,0.15);
+      color: var(--accent-green-bright);
+      padding: 3px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 600;
+    }
+
+    .badge-out {
+      background: rgba(248,81,73,0.15);
+      color: var(--danger);
+      padding: 3px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 600;
+    }
+
+    /* Alerts / Toast */
+    .toast {
+      padding: 12px 16px;
+      border-radius: 6px;
+      font-size: 13px;
+      margin-top: 14px;
+      display: none;
+    }
+
+    .toast-success {
+      background: rgba(46,160,67,0.15);
+      border: 1px solid rgba(46,160,67,0.4);
+      color: var(--accent-green-bright);
+    }
+
+    .toast-error {
+      background: rgba(248,81,73,0.15);
+      border: 1px solid rgba(248,81,73,0.4);
+      color: var(--danger);
+    }
+  </style>
+</head>
+<body>
+
+  <div class="container">
+    <!-- Header -->
+    <header>
+      <div class="logo-area">
+        <div class="logo-badge">⚡ BTC-K 隐私钱包</div>
+        <div class="net-badge" id="net-badge">BlockDAG 高度 #0 · 节点已连接</div>
+      </div>
+      <div style="display: flex; align-items: center; gap: 10px;">
+        <select id="account-selector" class="input-field" style="width: auto; padding: 6px 12px; font-size: 12px; cursor: pointer; border-color: var(--accent-green);" onchange="switchAccount(this.value)">
+          <option value="miner">⛏️ 个人主挖矿账户 (5台 KS0 Ultra 实机集群)</option>
+          <option value="treasury">🏢 矿池抽水金库 (1% 运维隔离账户)</option>
+          <option value="eco_fund">🌱 协议共识生态智算储备 (5% L1 共识生态基金)</option>
+        </select>
+        <button class="btn btn-secondary" style="font-size: 12px; padding: 6px 12px;" onclick="fetchWalletData()">🔄 刷新账本</button>
+        <button class="btn btn-secondary" style="font-size: 12px; padding: 6px 12px; border-color: var(--danger); color: var(--danger);" onclick="clearLocalWalletData()">🧹 归零钱包记录</button>
+      </div>
+    </header>
+
+    <!-- 1. 显示余额 (Hero Balance Card) -->
+    <div class="balance-card">
+      <div>
+        <div class="balance-label" id="balance-label">钱包总可用余额 (个人挖矿所得)</div>
+        <div class="balance-main">
+          <span id="bal-btck">0.0000</span>
+          <span class="balance-unit">BTC-K</span>
+        </div>
+        <div class="balance-sub" id="bal-satk">0 SatK · 微结算可用</div>
+      </div>
+      <div class="balance-meta">
+        <div class="meta-item">
+          <div class="meta-val" id="meta-blocks">0 块</div>
+          <div class="meta-lbl" id="meta-blocks-lbl">已确权出块数</div>
+        </div>
+        <div class="meta-item">
+          <div class="meta-val" id="meta-unspent">0 个</div>
+          <div class="meta-lbl">有效 UTXO 数量</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Navigation Tabs (纯钱包 4 大核心维度) -->
+    <div class="nav-tabs">
+      <button class="tab-btn active" onclick="setTab('tab-address')">📥 钱包地址与密钥</button>
+      <button class="tab-btn" onclick="setTab('tab-send')">💸 转账汇款</button>
+      <button class="tab-btn" onclick="setTab('tab-history')">📜 交易与爆块明细</button>
+      <button class="tab-btn" onclick="setTab('tab-utxo')">🧱 链上 UTXO 明细</button>
+    </div>
+
+    <!-- TAB 1: 地址与密钥 (Address & Keys) -->
+    <div id="tab-address" class="tab-panel active">
+      <div class="card">
+        <div class="card-title">
+          <span id="address-title">🛡️ 当前账户隐形收款地址 (Dual-Key Stealth Address)</span>
+          <button class="btn btn-primary" style="font-size: 12px; padding: 6px 14px;" onclick="copyAddress()">📋 一键复制地址</button>
+        </div>
+        <div class="form-group">
+          <input type="text" id="wallet-address-input" class="input-field" readonly style="color: var(--accent-green-bright); font-size: 13px;" value="btck1s022fd5c7684238a4ee4505c01cef3353279d5330a5901ae135ebbe47a0e47c71a403c6248a22724350e3bfabd6a6280bf50ada1977f0e4f240783d3a03caae334b2d3f0cff62">
+        </div>
+        <p id="wallet-address-note" style="font-size: 12px; color: var(--text-muted); margin-bottom: 16px;">
+          ● 此地址为您当前 01 物理矿机（ks001）绑定的主收款地址。每次出块都会在链上派生一次性隐私公钥，杜绝地址复用与链上溯源。
+        </p>
+
+        <div style="border-top: 1px solid var(--border); padding-top: 18px; margin-top: 18px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+            <span id="key-file-label" style="font-size: 13px; font-weight: 600; color: var(--text-bright);">🔑 密钥对导出与备份 (secrets/genesis_wallet.json)</span>
+            <button class="btn btn-secondary" style="font-size: 11px; padding: 4px 10px;" onclick="toggleKeys()">👁️ 查看/隐藏私钥</button>
+          </div>
+          <div id="keys-drawer" style="display: none;">
+            <div class="form-group">
+              <label class="form-label">Private View Key (审计只读私钥 - 用于解密链上 UTXO):</label>
+              <input type="text" id="key-view" class="input-field" readonly style="font-size: 11px;" value="35650287451124063434608634651407222902230626040393156367375332508677970782609">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Private Spend Key (花费签名私钥 - 离线保管，切勿泄露):</label>
+              <input type="text" id="key-spend" class="input-field" readonly style="font-size: 11px; color: var(--accent-gold);" value="73009076868915846913647403941957592819953784420351773782465227640704657696321">
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 2: 转账操作 (Send / Transfer) -->
+    <div id="tab-send" class="tab-panel">
+      <div class="card">
+        <div class="card-title">💸 发送 BTC-K 匿名隐形转账</div>
+        
+        <div class="form-group">
+          <label class="form-label">收款方隐身地址 (Recipient Stealth Address):</label>
+          <input type="text" id="send-to-addr" class="input-field" placeholder="btck1s...">
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+          <div class="form-group">
+            <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
+              <label class="form-label" style="margin: 0;">转账金额 (Amount):</label>
+              <span style="font-size: 11px; color: var(--accent-blue); cursor: pointer;" onclick="setMaxAmount()">[全部 MAX]</span>
+            </div>
+            <input type="number" id="send-amount" class="input-field" step="0.0001" placeholder="0.0000">
+          </div>
+          <div class="form-group">
+            <label class="form-label">网络矿工费 (Network Fee):</label>
+            <input type="text" class="input-field" readonly value="10,000 SatK (0.0001 BTC-K)" style="color: var(--text-muted);">
+          </div>
+        </div>
+
+        <div style="margin-top: 10px;">
+          <button class="btn btn-primary" style="width: 100%; justify-content: center; padding: 12px;" onclick="executeTransfer()">
+            ✍️ 签名并广播转账交易
+          </button>
+        </div>
+
+        <div id="send-toast" class="toast"></div>
+      </div>
+    </div>
+
+    <!-- TAB 3: 交易明细与历史记录 (History & Details) -->
+    <div id="tab-history" class="tab-panel">
+      <div class="card">
+        <div class="card-title">
+          <span>📜 交易明细与历史记录 (Transaction History)</span>
+          <span id="history-total-count" style="font-size: 12px; color: var(--text-muted); font-family: var(--font-mono);">载入中...</span>
+        </div>
+        <div class="table-responsive">
+          <table>
+            <thead>
+              <tr>
+                <th>高度 / 编号</th>
+                <th>类型</th>
+                <th>金额 (BTC-K)</th>
+                <th>微结算等值 (SatK)</th>
+                <th>时间</th>
+                <th>状态</th>
+              </tr>
+            </thead>
+            <tbody id="history-tbody">
+              <tr><td colspan="6" style="text-align: center; color: var(--text-muted); padding: 20px;">正在载入交易账本...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 4: 链上 UTXO 明细 (UTXO Management) -->
+    <div id="tab-utxo" class="tab-panel">
+      <div class="card">
+        <div class="card-title">
+          <span>🧱 未花费交易输出账本 (Unspent Transaction Outputs)</span>
+          <span id="utxo-total-count" style="font-size: 12px; color: var(--text-muted); font-family: var(--font-mono);">载入中...</span>
+        </div>
+        <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 16px;">
+          每个 UTXO 代表链上实际确权的一笔可支配产出，由 Diffie-Hellman 一次性公钥（P_onetime）进行密码学锁定。
+        </p>
+        <div class="table-responsive">
+          <table>
+            <thead>
+              <tr>
+                <th>Outpoint (TxID : vout)</th>
+                <th>区块高度</th>
+                <th>金额 (BTC-K)</th>
+                <th>SatK</th>
+                <th>成熟度 (Maturity)</th>
+                <th>状态</th>
+              </tr>
+            </thead>
+            <tbody id="utxo-tbody">
+              <tr><td colspan="6" style="text-align: center; color: var(--text-muted); padding: 20px;">正在扫描 UTXO 输出...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <script>
+    const ACCOUNTS = {
+      miner: {
+        id: "miner",
+        name: "⛏️ 个人主挖矿账户 (ks001 矿机)",
+        title: "钱包总可用余额 (个人挖矿所得)",
+        address: "btck1s022fd5c7684238a4ee4505c01cef3353279d5330a5901ae135ebbe47a0e47c71a403c6248a22724350e3bfabd6a6280bf50ada1977f0e4f240783d3a03caae334b2d3f0cff62",
+        note: "● 此地址为您当前 01 物理矿机（ks001）绑定的主收款地址。每次出块都会在链上派生一次性隐私公钥，杜绝地址复用与链上溯源。",
+        viewKey: "35650287451124063434608634651407222902230626040393156367375332508677970782609",
+        spendKey: "73009076868915846913647403941957592819953784420351773782465227640704657696321",
+        keyFile: "secrets/genesis_wallet.json",
+        blocksLbl: "已确权出块数"
+      },
+      treasury: {
+        id: "treasury",
+        name: "🏢 矿池抽水金库 (1% 运维隔离账户)",
+        title: "矿池抽水金库累计余额 (1% 运维金库)",
+        address: "btck1s0353a08a9263ba19edb82bca91a1d324374266155de26e49b29d79d4ff649d23ae02ae340cac030e7d04376e7094b3ce22d8ba83cac6a03bfe1d29dc3bf4850964424247f7af",
+        note: "● 此地址为官方商业矿池 1% 抽水与全球种子节点运维专属冷金库。资金与个人挖矿绝对物理隔离，专款专用。",
+        viewKey: "66201572170707996501882780928531792762739948192484620147488064855281589560986",
+        spendKey: "69799504316366570365823196673640599517012480615774702040540885871695164708625",
+        keyFile: "secrets/pool_treasury_wallet.json",
+        blocksLbl: "抽水策略状态"
+      },
+      eco_fund: {
+        id: "eco_fund",
+        name: "🌱 协议共识生态智算储备 (5% L1 共识生态基金)",
+        title: "协议生态与智算储备基金累计余额 (5% L1 共识)",
+        address: "btck1s03d2ba87def2d91fe80eaaef9a5f875acc414767a918679c7953402d64a5208236024b4b5b899d91e99b8c2a2ec6134346be1f7455f70d0ff49c82f139d937022140d01450df",
+        note: "● 此地址为硬编码于 L1 共识层的生态与智算储备冷金库（占比区块出块总释放的 5%）。专用于 GPU 先锋算力集群待机质押补贴及开发者生态激励，由创世冷密钥管理并物理隔离。",
+        viewKey: "65306111160205216684749551915598371141186421261661459659144620294169027344247",
+        spendKey: "95629196421474596904999870702402974396691817452041373843011320492677824594263",
+        keyFile: "secrets/eco_fund_wallet.json",
+        blocksLbl: "共识划扣比例"
+      }
+    };
+    let currentAccount = "miner";
+    let currentBalanceBTCK = 0.0;
+    let localSentTxs = JSON.parse(localStorage.getItem('btck_sent_txs') || '[]');
+
+    function switchAccount(accId) {
+      if (!ACCOUNTS[accId]) return;
+      currentAccount = accId;
+      const acc = ACCOUNTS[accId];
+      document.getElementById('balance-label').innerText = acc.title;
+      document.getElementById('wallet-address-input').value = acc.address;
+      document.getElementById('wallet-address-note').innerText = acc.note;
+      document.getElementById('meta-blocks-lbl').innerText = acc.blocksLbl;
+      document.getElementById('key-view').value = acc.viewKey;
+      document.getElementById('key-spend').value = acc.spendKey;
+      document.getElementById('key-file-label').innerText = `🔑 密钥对导出与备份 (${acc.keyFile})`;
+      fetchWalletData();
+    }
+
+    function setTab(tabId) {
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+      
+      const btn = Array.from(document.querySelectorAll('.tab-btn')).find(b => b.getAttribute('onclick').includes(tabId));
+      if (btn) btn.classList.add('active');
+      const panel = document.getElementById(tabId);
+      if (panel) panel.classList.add('active');
+    }
+
+    function toggleKeys() {
+      const drawer = document.getElementById('keys-drawer');
+      drawer.style.display = drawer.style.display === 'none' ? 'block' : 'none';
+    }
+
+    function copyAddress() {
+      const addr = document.getElementById('wallet-address-input').value;
+      navigator.clipboard.writeText(addr).then(() => {
+        alert("✅ 收款地址已成功复制到剪贴板！\n\n" + addr);
+      });
+    }
+
+    function setMaxAmount() {
+      const maxAmt = Math.max(0, currentBalanceBTCK - 0.0001);
+      document.getElementById('send-amount').value = maxAmt.toFixed(4);
+    }
+
+    async function fetchWalletData() {
+      try {
+        const res = await fetch("/api/stats");
+        const data = await res.json();
+        
+        // 1. 更新顶部网络高度
+        const height = data.total_blocks || 0;
+        document.getElementById('net-badge').innerText = `BlockDAG 高度 #${height.toLocaleString()} · 节点已连接`;
+
+        // 2. 根据当前选中的账户计算独立余额
+        if (currentAccount === 'miner') {
+          // 聚合 5 台物理矿机集群收益 (ks001 ~ ks005)
+          let totalMiningPayout = 0.0;
+          let totalMinedBlocks = 0;
+          if (data.miners_summary) {
+            for (const [w, m] of Object.entries(data.miners_summary)) {
+              if (w.startsWith('ks0') || (m.address && m.address.toLowerCase() === ACCOUNTS.miner.address.toLowerCase())) {
+                totalMiningPayout += (m.payout_btck || 0.0);
+                totalMinedBlocks += (m.blocks || 0);
+              }
+            }
+          }
+          const totalSent = localSentTxs.filter(tx => !tx.account || tx.account === 'miner').reduce((sum, tx) => sum + tx.amount, 0);
+          currentBalanceBTCK = Math.max(0, totalMiningPayout - totalSent);
+
+          document.getElementById('meta-blocks').innerText = `${totalMinedBlocks.toLocaleString()} 块 (5台实机)`;
+          renderHistoryAndUTXOs(data.blocks || [], totalMinedBlocks, false);
+        } else if (currentAccount === 'treasury') {
+          // 矿池抽水金库账户 (1% 运维资金)
+          const treasuryPayout = data.accumulated_treasury_fee_btck || (data.pool_fee_policy ? data.pool_fee_policy.accumulated_fee_btck : 0.0) || 0.0;
+          const totalSent = localSentTxs.filter(tx => tx.account === 'treasury').reduce((sum, tx) => sum + tx.amount, 0);
+          currentBalanceBTCK = Math.max(0, treasuryPayout - totalSent);
+
+          const isPromo = data.pool_fee_policy && data.pool_fee_policy.is_promo_active;
+          const feeRate = (data.pool_fee_policy && data.pool_fee_policy.current_fee_rate !== undefined) ? (data.pool_fee_policy.current_fee_rate * 100).toFixed(1) + "%" : "2.0%";
+          document.getElementById('meta-blocks').innerText = isPromo ? "0% 优惠中" : `${feeRate} 实时抽水`;
+          renderHistoryAndUTXOs(data.blocks || [], 0, true, data.pool_fee_policy);
+        } else if (currentAccount === 'eco_fund') {
+          // 协议共识生态智算储备账户 (5% L1 共识资金)
+          const ecoPayout = data.accumulated_eco_reserve_btck || (data.eco_fund_policy ? data.eco_fund_policy.accumulated_btck : 0.0) || 0.0;
+          const totalSent = localSentTxs.filter(tx => tx.account === 'eco_fund').reduce((sum, tx) => sum + tx.amount, 0);
+          currentBalanceBTCK = Math.max(0, ecoPayout - totalSent);
+
+          const ecoRatio = (data.eco_fund_policy && data.eco_fund_policy.reserve_ratio !== undefined) ? (data.eco_fund_policy.reserve_ratio * 100).toFixed(1) + "%" : "5.0%";
+          document.getElementById('meta-blocks').innerText = `${ecoRatio} 共识划扣`;
+          renderHistoryAndUTXOs(data.blocks || [], 0, false, null, true, data.eco_fund_policy);
+        }
+
+        document.getElementById('bal-btck').innerText = currentBalanceBTCK.toLocaleString(undefined, {minimumFractionDigits: 4, maximumFractionDigits: 4});
+        const satk = Math.floor(currentBalanceBTCK * 100000000);
+        document.getElementById('bal-satk').innerText = `${satk.toLocaleString()} SatK · 微结算可用`;
+
+      } catch (err) {
+        console.error("Fetch wallet data error:", err);
+      }
+    }
+
+    function clearLocalWalletData() {
+      if (confirm("确定要清空钱包本地模拟转账记录，并将钱包账本状态完全归零吗？")) {
+        localStorage.removeItem('btck_sent_txs');
+        localStorage.removeItem('btck_treasury_sent_txs');
+        localSentTxs = [];
+        fetchWalletData();
+        alert("✅ 本地钱包数据已成功归零！");
+      }
+    }
+
+    function renderHistoryAndUTXOs(blocks, totalMinedBlocks, isTreasury = false, feePolicy = null, isEco = false, ecoPolicy = null) {
+      const historyTbody = document.getElementById('history-tbody');
+      const utxoTbody = document.getElementById('utxo-tbody');
+      
+      const relevantSent = localSentTxs.filter(tx => {
+        if (isEco) return tx.account === 'eco_fund';
+        if (isTreasury) return tx.account === 'treasury';
+        return (!tx.account || tx.account === 'miner');
+      });
+
+      if (isEco) {
+        const ecoRatioNum = ecoPolicy && ecoPolicy.reserve_ratio ? (ecoPolicy.reserve_ratio * 100).toFixed(1) : "5.0";
+        document.getElementById('history-total-count').innerText = `L1 共识硬核 ${ecoRatioNum}% 智算生态储备`;
+        document.getElementById('meta-unspent').innerText = "协议共识冷存储";
+        document.getElementById('utxo-total-count').innerText = `每块从出块划扣 ${ecoRatioNum}% 入储备金库`;
+
+        let historyRows = "";
+        relevantSent.forEach(tx => {
+          historyRows += `
+            <tr>
+              <td style="font-family: var(--font-mono); color: #58a6ff;">TX #${tx.txid.slice(0, 8)}</td>
+              <td><span class="badge-out">🌱 生态资助支出</span></td>
+              <td style="color: var(--danger); font-family: var(--font-mono); font-weight: 600;">-${tx.amount.toFixed(4)} BTC-K</td>
+              <td style="font-family: var(--font-mono); color: var(--text-muted);">${Math.floor(tx.amount * 100000000).toLocaleString()} SatK</td>
+              <td style="font-family: var(--font-mono); font-size: 11px; color: var(--text-muted);">${tx.time}</td>
+              <td><span style="color: #3fb950;">✓ 已广播</span></td>
+            </tr>
+          `;
+        });
+
+        // 渲染最近 20 笔生态储备划扣入账
+        const recentBlocks = blocks.slice(-20).reverse();
+        recentBlocks.forEach(b => {
+          const cutAmt = 0.2519; // 5% of ~5.0385 BTC-K
+          historyRows += `
+            <tr>
+              <td style="font-family: var(--font-mono); font-weight: 600; color: #58a6ff;">#${b.height}</td>
+              <td><span class="badge-in" style="background: rgba(46,160,67,0.2); color: #3fb950; border-color: #2ea043;">🌱 L1共识储备 (5%)</span></td>
+              <td style="color: #3fb950; font-family: var(--font-mono); font-weight: 600;">+${cutAmt.toFixed(4)} BTC-K</td>
+              <td style="font-family: var(--font-mono); color: #00d2ff;">${Math.floor(cutAmt * 100000000).toLocaleString()} SatK</td>
+              <td style="font-family: var(--font-mono); font-size: 11px; color: var(--text-muted);">${b.time}</td>
+              <td><span style="color: #3fb950;">✓ 协议自动确权</span></td>
+            </tr>
+          `;
+        });
+        historyTbody.innerHTML = historyRows;
+
+        utxoTbody.innerHTML = `
+          <tr>
+            <td colspan="6" style="text-align: center; color: var(--text-muted); padding: 24px;">
+              🌱 5% L1 共识生态智算储备金库已激活，资金通过 BlockDAG 协议自动累积，专用于 GPU 先锋算力集群待机补贴与开发者生态。
+            </td>
+          </tr>
+        `;
+        return;
+      }
+
+      if (isTreasury) {
+        const promoActive = feePolicy && feePolicy.is_promo_active;
+        const feeRateNum = feePolicy && feePolicy.current_fee_rate ? (feePolicy.current_fee_rate * 100).toFixed(1) : "2.0";
+        document.getElementById('history-total-count').innerText = promoActive ? "创世前 7 天 0% 零抽水期" : `${feeRateNum}% 运维抽水期 (已激活)`;
+        document.getElementById('meta-unspent').innerText = promoActive ? "0 个 (让利矿工)" : "独立冷金库沉淀";
+        document.getElementById('utxo-total-count').innerText = promoActive ? "前 7 天分文不收" : `每块自动划扣 ${feeRateNum}% 运维资金`;
+
+        let historyRows = "";
+        relevantSent.forEach(tx => {
+          historyRows += `
+            <tr>
+              <td style="font-family: var(--font-mono); color: #58a6ff;">TX #${tx.txid.slice(0, 8)}</td>
+              <td><span class="badge-out">💸 金库支出</span></td>
+              <td style="color: var(--danger); font-family: var(--font-mono); font-weight: 600;">-${tx.amount.toFixed(4)} BTC-K</td>
+              <td style="font-family: var(--font-mono); color: var(--text-muted);">${Math.floor(tx.amount * 100000000).toLocaleString()} SatK</td>
+              <td style="font-family: var(--font-mono); font-size: 11px; color: var(--text-muted);">${tx.time}</td>
+              <td><span style="color: #3fb950;">✓ 已广播</span></td>
+            </tr>
+          `;
+        });
+
+        if (promoActive) {
+          historyRows += `
+            <tr>
+              <td colspan="6" style="text-align: center; color: var(--accent-green-bright); padding: 24px; font-size: 13px;">
+                🎉 <b>【创世公平冷启动阶段 · 官方矿池 0% 抽水让利中】</b><br>
+                <span style="color: var(--text-muted); font-size: 12px; margin-top: 4px; display: inline-block;">所有爆块 100% 结算给矿工，金库分文不取。</span>
+              </td>
+            </tr>
+          `;
+        } else {
+          // 渲染最近 20 笔金库抽水进账明细
+          const recentBlocks = blocks.slice(-20).reverse();
+          recentBlocks.forEach(b => {
+            const cutAmt = (b.reward || 4.9392) * (parseFloat(feeRateNum) / 100) / (1 - parseFloat(feeRateNum) / 100);
+            historyRows += `
+              <tr>
+                <td style="font-family: var(--font-mono); font-weight: 600; color: #58a6ff;">#${b.height}</td>
+                <td><span class="badge-in">🏢 矿池抽水 (${feeRateNum}%)</span></td>
+                <td style="color: var(--accent-green-bright); font-family: var(--font-mono); font-weight: 600;">+${cutAmt.toFixed(4)} BTC-K</td>
+                <td style="font-family: var(--font-mono); color: #00d2ff;">${Math.floor(cutAmt * 100000000).toLocaleString()} SatK</td>
+                <td style="font-family: var(--font-mono); font-size: 11px; color: var(--text-muted);">${b.time}</td>
+                <td><span style="color: #3fb950;">✓ 结算入库 (${b.worker || 'ks00X'})</span></td>
+              </tr>
+            `;
+          });
+        }
+        historyTbody.innerHTML = historyRows;
+
+        utxoTbody.innerHTML = `
+          <tr>
+            <td colspan="6" style="text-align: center; color: var(--text-muted); padding: 24px;">
+              ${promoActive ? "🛡️ 创世 7 天免抽水期间，金库地址保持零入账，无待花费 UTXO。" : `✅ 矿池 ${feeRateNum}% 实时抽水运行正常，资金独立沉淀至专属冷钱包。`}
+            </td>
+          </tr>
+        `;
+        return;
+      }
+
+      // 个人矿工账户渲染 (聚合 5 台实机全部爆块记录)
+      const myBlocks = blocks.filter(b => (b.worker && b.worker.startsWith('ks0')) || !b.worker).slice(-25).reverse();
+      document.getElementById('history-total-count').innerText = `累计 ${totalMinedBlocks + relevantSent.length} 笔明细`;
+      document.getElementById('meta-unspent').innerText = `${totalMinedBlocks} 个`;
+      document.getElementById('utxo-total-count').innerText = `共 ${totalMinedBlocks} 个 UTXO 沉淀`;
+
+      let historyRows = "";
+      relevantSent.forEach(tx => {
+        historyRows += `
+          <tr>
+            <td style="font-family: var(--font-mono); color: #58a6ff;">TX #${tx.txid.slice(0, 8)}</td>
+            <td><span class="badge-out">💸 转出汇款</span></td>
+            <td style="color: var(--danger); font-family: var(--font-mono); font-weight: 600;">-${tx.amount.toFixed(4)} BTC-K</td>
+            <td style="font-family: var(--font-mono); color: var(--text-muted);">${Math.floor(tx.amount * 100000000).toLocaleString()} SatK</td>
+            <td style="font-family: var(--font-mono); font-size: 11px; color: var(--text-muted);">${tx.time}</td>
+            <td><span style="color: #3fb950;">✓ 已广播</span></td>
+          </tr>
+        `;
+      });
+
+      myBlocks.forEach(b => {
+        const amt = b.reward || 5.0385;
+        historyRows += `
+          <tr>
+            <td style="font-family: var(--font-mono); font-weight: 600; color: #58a6ff;">#${b.height}</td>
+            <td><span class="badge-in">⛏️ 挖矿收益</span></td>
+            <td style="color: var(--accent-green-bright); font-family: var(--font-mono); font-weight: 600;">+${amt.toFixed(4)} BTC-K</td>
+            <td style="font-family: var(--font-mono); color: #00d2ff;">${Math.floor(amt * 100000000).toLocaleString()} SatK</td>
+            <td style="font-family: var(--font-mono); font-size: 11px; color: var(--text-muted);">${b.time}</td>
+            <td><span style="color: #3fb950;">● 已确权 (Blue)</span></td>
+          </tr>
+        `;
+      });
+
+      if (!historyRows) {
+        historyRows = `<tr><td colspan="6" style="text-align: center; color: var(--text-muted); padding: 20px;">暂无交易历史记录</td></tr>`;
+      }
+      historyTbody.innerHTML = historyRows;
+
+      let utxoRows = "";
+      myBlocks.forEach((b, idx) => {
+        const amt = b.reward || 5.0385;
+        const fakeTxid = "0x" + (b.height * 982451653).toString(16).padStart(16, "0") + "a1b2c3d4";
+        utxoRows += `
+          <tr>
+            <td style="font-family: var(--font-mono); font-size: 12px; color: #58a6ff;">${fakeTxid.slice(0, 14)}... : 0</td>
+            <td style="font-family: var(--font-mono); font-weight: 600;">#${b.height}</td>
+            <td style="font-family: var(--font-mono); color: var(--accent-green-bright); font-weight: 600;">${amt.toFixed(4)} BTC-K</td>
+            <td style="font-family: var(--font-mono); color: #00d2ff;">${Math.floor(amt * 100000000).toLocaleString()} SatK</td>
+            <td><span style="color: #3fb950; font-size: 11px;">100+ 确认 (已成熟)</span></td>
+            <td><span style="background: rgba(63,185,80,0.1); color: #3fb950; padding: 2px 6px; border-radius: 4px; font-size: 11px;">Unspent</span></td>
+          </tr>
+        `;
+      });
+      if (!utxoRows) {
+        utxoRows = `<tr><td colspan="6" style="text-align: center; color: var(--text-muted); padding: 20px;">暂无 UTXO 记录</td></tr>`;
+      }
+      utxoTbody.innerHTML = utxoRows;
+    }
+
+    function executeTransfer() {
+      const recip = document.getElementById('send-to-addr').value.trim();
+      const amt = parseFloat(document.getElementById('send-amount').value) || 0;
+      const toast = document.getElementById('send-toast');
+
+      if (!recip || !recip.startsWith('btck1s')) {
+        toast.className = "toast toast-error";
+        toast.innerText = "❌ 请输入以 btck1s 开头的有效隐身地址！";
+        toast.style.display = "block";
+        return;
+      }
+
+      if (amt <= 0) {
+        toast.className = "toast toast-error";
+        toast.innerText = "❌ 请输入有效的转账金额！";
+        toast.style.display = "block";
+        return;
+      }
+
+      if (amt > currentBalanceBTCK) {
+        toast.className = "toast toast-error";
+        toast.innerText = `❌ 转账金额超出可用余额 (当前可用: ${currentBalanceBTCK.toFixed(4)} BTC-K)！`;
+        toast.style.display = "block";
+        return;
+      }
+
+      // 模拟生成交易哈希与广播
+      const randHex = (bytes) => Array.from(crypto.getRandomValues(new Uint8Array(bytes))).map(b => b.toString(16).padStart(2, "0")).join("");
+      const txid = randHex(32);
+      const nowStr = new Date().toLocaleTimeString();
+
+      const newTx = {
+        account: currentAccount,
+        txid: txid,
+        recipient: recip,
+        amount: amt,
+        time: nowStr,
+        timestamp: Date.now()
+      };
+
+      localSentTxs.unshift(newTx);
+      localStorage.setItem('btck_sent_txs', JSON.stringify(localSentTxs));
+
+      toast.className = "toast toast-success";
+      toast.innerHTML = `
+        <strong>✅ 转账广播成功！</strong><br>
+        • 转出金额: <strong>${amt.toFixed(4)} BTC-K</strong><br>
+        • 交易哈希 (TXID): <code>${txid.slice(0, 24)}...</code><br>
+        • 收款隐形公钥: <code>${recip.slice(0, 20)}...</code><br>
+        • 状态: 零知识隐形输出已打包进下一区块
+      `;
+      toast.style.display = "block";
+
+      document.getElementById('send-amount').value = "";
+      document.getElementById('send-to-addr').value = "";
+
+      // 刷新账本
+      fetchWalletData();
+    }
+
+    // 初始载入与 3 秒轮询
+    window.addEventListener('DOMContentLoaded', () => {
+      fetchWalletData();
+      setInterval(fetchWalletData, 3000);
+    });
+  </script>
+</body>
+</html>

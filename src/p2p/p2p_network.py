@@ -211,10 +211,11 @@ class P2PNetwork:
 
         elif m_type == "GET_BLOCKS":
             # Initial block download locator resolution
+            # Search newest-to-oldest to find the most recent common ancestor
             locator = payload.get("locator", [])
             split_idx = 0
             chain = self.dag.virtual_selected_parent_chain
-            for h in locator:
+            for h in reversed(locator):
                 if h in chain:
                     split_idx = chain.index(h) + 1
                     break
@@ -327,20 +328,33 @@ class P2PNetwork:
 
     async def _process_orphans(self, newly_added_hash: str):
         """Recursively resolves orphan blocks once their parents are added"""
-        resolved_hashes = []
-        for orphan_hash, orphan_blk in list(self.orphan_pool.items()):
-            if all(p in self.dag.blocks for p in orphan_blk.parents):
-                try:
-                    if self.dag.add_block(orphan_blk):
-                        logger.info(f"🧩 Resolved orphan block #{orphan_blk.blue_score} ({orphan_hash[:16]}...)")
-                        resolved_hashes.append(orphan_hash)
-                        await self.broadcast_block(orphan_blk.hash)
-                except Exception as e:
-                    logger.debug(f"Failed to add resolved orphan: {e}")
-                    resolved_hashes.append(orphan_hash)
+        while True:
+            progress = False
+            for orphan_hash, orphan_blk in list(self.orphan_pool.items()):
+                if all(p in self.dag.blocks for p in orphan_blk.parents):
+                    try:
+                        if self.dag.add_block(orphan_blk):
+                            logger.info(f"🧩 Resolved orphan block #{orphan_blk.blue_score} ({orphan_hash[:16]}...)")
+                            await self.broadcast_block(orphan_blk.hash)
+                    except Exception as e:
+                        logger.debug(f"Failed to add resolved orphan: {e}")
+                    self.orphan_pool.pop(orphan_hash, None)
+                    progress = True
+            if not progress:
+                break
 
-        for rh in resolved_hashes:
-            self.orphan_pool.pop(rh, None)
+    def get_peers_info(self) -> List[dict]:
+        """Return operational snapshot of connected P2P peers"""
+        info = []
+        for addr, peer in list(self.peers.items()):
+            info.append({
+                "address": addr,
+                "remote_blue_score": peer.remote_blue_score,
+                "score": peer.score,
+                "connected_seconds": round(time.time() - peer.connected_at, 1),
+                "handshake_complete": peer.handshake_complete
+            })
+        return info
 
     async def broadcast_block(self, block_hash: str):
         for peer in list(self.peers.values()):

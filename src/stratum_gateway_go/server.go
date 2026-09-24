@@ -5,7 +5,6 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log"
 	"net"
 	"strings"
@@ -171,7 +170,7 @@ func (s *StratumServer) processMessage(c *StratumClient, req *StratumRequest) er
 			nonce = fmt.Sprintf("%v", req.Params[2])
 		}
 
-		interval := c.RecordShare()
+		_ = c.RecordShare()
 		_ = c.SendJSON(StratumResponse{
 			ID:     req.ID,
 			Result: true,

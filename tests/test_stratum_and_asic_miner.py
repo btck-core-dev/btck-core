@@ -92,6 +92,24 @@ class TestStratumAndAsicMiner(unittest.IsolatedAsyncioTestCase):
         finally:
             await server.stop()
 
+    def test_pool_fee_schedule_logic(self):
+        server = BTCKStratumServer(host="127.0.0.1", port=3339, network_diff=1.0)
+        
+        # Simulated Day 3 (Within first 7 days)
+        import time
+        server.test_start_time = time.time() - (3 * 86400)
+        rate, is_promo, left = server.get_pool_fee_status()
+        self.assertEqual(rate, 0.00)
+        self.assertTrue(is_promo)
+        self.assertGreater(left, 0.0)
+        
+        # Simulated Day 8 (After 7-day promo expires)
+        server.test_start_time = time.time() - (8 * 86400)
+        rate, is_promo, left = server.get_pool_fee_status()
+        self.assertEqual(rate, 0.01)  # 1.0%
+        self.assertFalse(is_promo)
+        self.assertEqual(left, 0.0)
+
 
 if __name__ == "__main__":
     unittest.main()

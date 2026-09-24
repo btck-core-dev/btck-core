@@ -38,8 +38,9 @@ COMBO_MULTIPLIER = 10.0                        # Backward compatibility alias
 K_PER_DAY = 0.15  # Daily damping factor (k = 0.15 day^-1)
 LN_220 = math.log(1.0 + K_PER_DAY * LIFESPAN_DAYS)  # ln(1 + 0.15 * 1460) = ln(220)
 
-# Genesis 72-Hour Security Reserve Target
-GENESIS_72H_BLOCKS = 72 * 3600  # 259,200 blocks (3 days)
+# Genesis Euler Security Reserve & Hard Checkpoint Target (e = 2.71828...)
+GENESIS_CHECKPOINT_BLOCK = 271_828  # Euler's number homage: 271,828 blocks (75.51h, ~7.16% supply)
+GENESIS_72H_BLOCKS = GENESIS_CHECKPOINT_BLOCK
 
 # =====================================================================
 # 2. Deterministic Integer SatK Issuance Table (SSOT Daily Quotas)
@@ -91,12 +92,33 @@ class ComboStageSpec:
     instant_unlock_ratio: float
     streaming_tranches: int
 
+# Consensus AI Standby & Hardware Symbiosis Reserve Ratio (Carved from Combo lottery pool)
+ECO_RESERVE_RATIO = 0.05
+
 COMBO_STAGES: List[ComboStageSpec] = [
-    ComboStageSpec(1, 1, 1, 31_536_000, 0.20, 43_200, 12, 24, 86_400, 1.00, 1),
-    ComboStageSpec(2, 2, 31_536_001, 63_072_000, 0.30, 129_600, 36, 72, 259_200, 0.34, 2),
-    ComboStageSpec(3, 3, 63_072_001, 94_608_000, 0.40, 388_800, 108, 216, 777_600, 0.10, 9),
-    ComboStageSpec(4, 4, 94_608_001, 126_144_000, 0.50, 1_166_400, 324, 648, 2_332_800, 0.10, 9),
+    ComboStageSpec(1, 1, 1, 31_536_000, 0.15, 43_200, 12, 48, 172_800, 0.50, 1),
+    ComboStageSpec(2, 2, 31_536_001, 63_072_000, 0.25, 129_600, 36, 144, 518_400, 0.25, 3),
+    ComboStageSpec(3, 3, 63_072_001, 94_608_000, 0.35, 388_800, 108, 432, 1_555_200, 0.10, 9),
+    ComboStageSpec(4, 4, 94_608_001, 126_144_000, 0.45, 1_166_400, 324, 1296, 4_665_600, 0.10, 15),
 ]
+
+def get_regular_coinbase_maturity_blocks(block_height: int) -> int:
+    """
+    Progressive Regular Coinbase Maturity Schedule:
+    - Year 1 (blocks 1 .. 31,536,000): 7,200 blocks (2 hours)
+    - Year 2 (blocks 31,536,001 .. 63,072,000): 21,600 blocks (6 hours)
+    - Year 3 (blocks 63,072,001 .. 94,608,000): 86,400 blocks (24 hours / 1 day)
+    - Year 4 (blocks 94,608,001 .. 126_144_000): 259,200 blocks (72 hours / 3 days)
+    - Post-4-Year: 259,200 blocks (72 hours)
+    """
+    if block_height <= 31_536_000:
+        return 7_200
+    elif block_height <= 63_072_000:
+        return 21_600
+    elif block_height <= 94_608_000:
+        return 86_400
+    else:
+        return 259_200
 
 def get_combo_spec_for_height(block_height: int) -> Tuple[int, float, int]:
     """
@@ -104,7 +126,7 @@ def get_combo_spec_for_height(block_height: int) -> Tuple[int, float, int]:
     For post-4-year era (block > 126,144,000), returns fee lottery specs.
     """
     if block_height <= 0:
-        return (1, 0.20, 43_200)
+        return (1, 0.15, 43_200)
     for stage in COMBO_STAGES:
         if stage.start_block <= block_height <= stage.end_block:
             return (stage.stage_id, stage.combo_ratio, stage.draw_interval_blocks)
@@ -251,8 +273,9 @@ class BlockIssuanceResult:
     is_combo: bool
     budget_sats: int               # Protocol nominal budget
     minted_sats: int               # Actual newly minted amount (strictly <= remaining cap)
-    miner_base_sats: int           # Immediate base payout to miner (budget - pool_deposit)
+    miner_base_sats: int           # Immediate base payout to miner (budget - pool_deposit - eco_deposit)
     pool_deposit_sats: int         # Ratio deposit into consensus jackpot pool
+    eco_deposit_sats: int          # Consensus AI Standby & Hardware Symbiosis Reserve (5%)
     combo_payout_sats: int         # Jackpot bonus paid out of pool balance
     miner_total_payout_sats: int   # miner_base_sats + combo_payout_sats
     new_pool_balance_sats: int     # Updated consensus jackpot pool balance
@@ -271,22 +294,23 @@ def compute_block_issuance(
     Mathematical Rules:
     1. minted_sats = min(get_block_budget_sats(height), TOTAL_HARD_CAP_SATK - current_issued_sats)
     2. stage_id, combo_ratio, draw_interval = get_combo_spec_for_height(height)
-    3. pool_deposit_sats = int(minted_sats * combo_ratio)
-    4. miner_base_sats = minted_sats - pool_deposit_sats (strictly satisfies miner_base + pool_deposit == minted_sats)
-    5. available_pool = current_pool_balance_sats + pool_deposit_sats
-    6. is_combo = force_combo or is_combo_block(height, block_hash)
-    7. If is_combo:
+    3. eco_deposit_sats = int(minted_sats * ECO_RESERVE_RATIO) (5% consensus hardware symbiosis reserve)
+    4. pool_deposit_sats = int(minted_sats * combo_ratio) (15% -> 45%)
+    5. miner_base_sats = minted_sats - pool_deposit_sats - eco_deposit_sats (strictly 80% / 70% / 60% / 50%)
+    6. available_pool = current_pool_balance_sats + pool_deposit_sats
+    7. is_combo = force_combo or is_combo_block(height, block_hash)
+    8. If is_combo:
          combo_payout_sats = available_pool (awarded to the winning block of this epoch)
        Else:
          combo_payout_sats = 0
-    8. new_pool_balance_sats = available_pool - combo_payout_sats
-    9. miner_total_payout_sats = miner_base_sats + combo_payout_sats
-    10. new_issued_supply_sats = current_issued_sats + minted_sats
+    9. new_pool_balance_sats = available_pool - combo_payout_sats
+    10. miner_total_payout_sats = miner_base_sats + combo_payout_sats
+    11. new_issued_supply_sats = current_issued_sats + minted_sats
     
     Strict Consensus Invariants:
     - minted_sats is INDEPENDENT of combo! Zero tokens are ever created from thin air.
-    - miner_base_sats + pool_deposit_sats == minted_sats
-    - miner_total_payout_sats + new_pool_balance_sats == current_pool_balance_sats + minted_sats
+    - miner_base_sats + pool_deposit_sats + eco_deposit_sats == minted_sats
+    - miner_total_payout_sats + new_pool_balance_sats + eco_deposit_sats == current_pool_balance_sats + minted_sats
     - new_issued_supply_sats <= TOTAL_HARD_CAP_SATK
     - new_pool_balance_sats >= 0
     """
@@ -298,8 +322,9 @@ def compute_block_issuance(
     minted = min(budget, remaining_cap)
     
     _, combo_ratio, _ = get_combo_spec_for_height(block_height)
+    eco_deposit = int(minted * ECO_RESERVE_RATIO) if (0 < block_height <= TOTAL_BLOCKS) else 0
     pool_deposit = int(minted * combo_ratio)
-    miner_base = minted - pool_deposit
+    miner_base = minted - pool_deposit - eco_deposit
     
     available_pool = current_pool_balance_sats + pool_deposit
     is_combo = force_combo or is_combo_block(block_height, block_hash)
@@ -314,8 +339,8 @@ def compute_block_issuance(
     new_issued_supply = current_issued_sats + minted
     
     # Assert consensus invariants
-    assert miner_base + pool_deposit == minted, "Minted partition invariant breached"
-    assert miner_total + new_pool_balance == current_pool_balance_sats + minted, "Jackpot solvency conservation breached"
+    assert miner_base + pool_deposit + eco_deposit == minted, "Minted partition invariant breached"
+    assert miner_total + new_pool_balance + eco_deposit == current_pool_balance_sats + minted, "Jackpot solvency conservation breached"
     assert new_issued_supply <= TOTAL_HARD_CAP_SATK, "Total hard cap breached"
     assert new_pool_balance >= 0, "Negative pool balance detected"
     
@@ -326,6 +351,7 @@ def compute_block_issuance(
         minted_sats=minted,
         miner_base_sats=miner_base,
         pool_deposit_sats=pool_deposit,
+        eco_deposit_sats=eco_deposit,
         combo_payout_sats=combo_payout,
         miner_total_payout_sats=miner_total,
         new_pool_balance_sats=new_pool_balance,
@@ -341,8 +367,9 @@ def get_block_reward_sats(
     budget_sats = get_block_budget_sats(block_height)
     is_combo = is_combo_block(block_height, block_hash)
     _, combo_ratio, _ = get_combo_spec_for_height(block_height)
+    eco_deposit = int(budget_sats * ECO_RESERVE_RATIO) if (0 < block_height <= TOTAL_BLOCKS) else 0
     pool_dep = int(budget_sats * combo_ratio)
-    miner_base = budget_sats - pool_dep
+    miner_base = budget_sats - pool_dep - eco_deposit
     
     if current_pool_balance_sats is not None:
         available = current_pool_balance_sats + pool_dep

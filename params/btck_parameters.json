@@ -125,8 +125,17 @@
           "avg_jackpot_btck": 20633.16031669
         }
       ],
-      "jackpot_maturity_blocks": 86400,
-      "regular_block_maturity_blocks": 120,
+      "jackpot_maturity_blocks": 172800,
+      "regular_block_maturity_blocks": 7200,
+      "progressive_regular_maturation": {
+        "description": "Progressive Regular Coinbase Maturity Schedule by Year (2h -> 6h -> 24h -> 72h)",
+        "stage_rules": [
+          {"stage": 1, "year": 1, "maturation_hours": 2, "maturation_blocks": 7200, "rationale": "Prevents NiceHash 1h flash-rental attacks while ensuring swift 2h cash flow for real miners"},
+          {"stage": 2, "year": 2, "maturation_hours": 6, "maturation_blocks": 21600, "rationale": "Moderate intraday settlement (4 batches/day) as emissions drop"},
+          {"stage": 3, "year": 3, "maturation_hours": 24, "maturation_blocks": 86400, "rationale": "Daily settlement matching mature crypto financial standards"},
+          {"stage": 4, "year": 4, "maturation_hours": 72, "maturation_blocks": 259200, "rationale": "3-day batch settlement for final scarce emission phase"}
+        ]
+      },
       "lottery_algorithm": {
         "name": "Future Random Beacon with Kademlia XOR Geometric Distance (未来随机信标异或几何距离法)",
         "beacon_offset_blocks": 100,
@@ -141,47 +150,49 @@
         ]
       },
       "progressive_maturation": {
-        "formula": "Lock_Duration = 2 * Draw_Interval",
+        "formula": "Lock_Duration = 4 * Draw_Interval",
         "stage_rules": [
           {
             "stage": 1,
             "year": 1,
-            "maturation_hours": 24,
-            "maturation_blocks": 86400,
-            "instant_unlock_ratio": 1.0,
+            "maturation_hours": 48,
+            "maturation_blocks": 172800,
+            "instant_unlock_ratio": 0.5,
             "streaming_tranches": 1,
-            "rationale": "Fast liquidity for founder genesis launch (72h) and early community bootstrap"
+            "tranche_interval_hours": 48,
+            "daily_inflow_btck": 1072.0,
+            "rationale": "Fast liquidity for founder genesis launch (72h) and early community bootstrap with 50% instant"
           },
           {
             "stage": 2,
             "year": 2,
-            "maturation_hours": 72,
-            "maturation_blocks": 259200,
-            "instant_unlock_ratio": 0.34,
+            "maturation_hours": 144,
+            "maturation_blocks": 518400,
+            "instant_unlock_ratio": 0.25,
             "streaming_tranches": 3,
-            "tranche_interval_hours": 24,
-            "daily_inflow_btck": 1100.0
+            "tranche_interval_hours": 48,
+            "daily_inflow_btck": 411.0
           },
           {
             "stage": 3,
             "year": 3,
-            "maturation_hours": 216,
-            "maturation_blocks": 777600,
+            "maturation_hours": 432,
+            "maturation_blocks": 1555200,
             "instant_unlock_ratio": 0.1,
             "streaming_tranches": 9,
-            "tranche_interval_hours": 24,
-            "daily_inflow_btck": 870.0
+            "tranche_interval_hours": 48,
+            "daily_inflow_btck": 386.0
           },
           {
             "stage": 4,
             "year": 4,
-            "maturation_hours": 648,
-            "maturation_blocks": 2332800,
+            "maturation_hours": 1296,
+            "maturation_blocks": 4665600,
             "instant_unlock_ratio": 0.1,
-            "streaming_tranches": 10,
-            "tranche_interval_hours": 72,
-            "daily_inflow_btck": 687.0,
-            "rationale": "Eliminates secondary market crash from 20,620 BTC-K mega jackpot by smoothing inflow over 27 days"
+            "streaming_tranches": 15,
+            "tranche_interval_hours": 86.4,
+            "daily_inflow_btck": 343.0,
+            "rationale": "Eliminates secondary market crash from 20,620 BTC-K mega jackpot by smoothing inflow over 54 days (15 tranches)"
           }
         ]
       }

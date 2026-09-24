@@ -107,6 +107,11 @@ class TestNodeDaemonAndRPC(unittest.IsolatedAsyncioTestCase):
             })
             self.assertEqual(adv_res["result"]["utxo_count"], 0)
 
+            # 7. Verify getPeerInfo RPC
+            peer_info = await async_rpc_call(test_host, test_port, "getPeerInfo", {})
+            self.assertIn("result", peer_info)
+            self.assertIsInstance(peer_info["result"], list)
+
         finally:
             await daemon.stop()
 

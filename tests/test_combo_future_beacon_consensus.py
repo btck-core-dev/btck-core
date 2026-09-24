@@ -16,6 +16,7 @@ from tokenomics.emission_schedule import (
     is_combo_block,
     get_combo_spec_for_height,
     compute_jackpot_vesting_tranches,
+    get_regular_coinbase_maturity_blocks,
     TOTAL_BLOCKS,
     SATK_PER_COIN
 )
@@ -162,14 +163,15 @@ class TestComboFutureBeaconConsensus(unittest.TestCase):
         """
         jackpot = 100_000 * SATK_PER_COIN
 
-        # Stage 1: 100% instant, 1 tranche
+        # Stage 1: 50% instant + 1 streaming = 2 tranches
         t1 = compute_jackpot_vesting_tranches(1, jackpot, 43200)
-        self.assertEqual(len(t1), 1)
-        self.assertEqual(t1[0]["amount_satk"], jackpot)
+        self.assertEqual(len(t1), 2)
+        self.assertEqual(t1[0]["amount_satk"], jackpot // 2)
+        self.assertEqual(sum(t["amount_satk"] for t in t1), jackpot)
 
-        # Stage 2: 34% instant + 2 streaming = 3 tranches
+        # Stage 2: 25% instant + 3 streaming = 4 tranches
         t2 = compute_jackpot_vesting_tranches(2, jackpot, 31_665_600)
-        self.assertEqual(len(t2), 3)
+        self.assertEqual(len(t2), 4)
         self.assertEqual(sum(t["amount_satk"] for t in t2), jackpot)
 
         # Stage 3: 10% instant + 9 streaming = 10 tranches
@@ -177,9 +179,9 @@ class TestComboFutureBeaconConsensus(unittest.TestCase):
         self.assertEqual(len(t3), 10)
         self.assertEqual(sum(t["amount_satk"] for t in t3), jackpot)
 
-        # Stage 4: 10% instant + 9 streaming = 10 tranches
+        # Stage 4: 10% instant + 15 streaming = 16 tranches
         t4 = compute_jackpot_vesting_tranches(4, jackpot, 95_774_400)
-        self.assertEqual(len(t4), 10)
+        self.assertEqual(len(t4), 16)
         self.assertEqual(sum(t["amount_satk"] for t in t4), jackpot)
 
     def test_04_stage_relative_draw_alignment(self):
@@ -225,6 +227,34 @@ class TestComboFutureBeaconConsensus(unittest.TestCase):
         csm.revert_to_height(43190)
         self.assertEqual(len(csm.pending_draws), 0, "Pending draw should be cancelled on rollback")
         self.assertFalse(csm.epochs[1].is_frozen, "Epoch 1 should be unfrozen")
+
+    def test_06_progressive_regular_coinbase_maturity(self):
+        """
+        Validates the 4-year progressive regular block coinbase maturity schedule:
+        - Year 1: 7,200 blocks (2 hours)
+        - Year 2: 21,600 blocks (6 hours)
+        - Year 3: 86,400 blocks (24 hours / 1 day)
+        - Year 4: 259,200 blocks (72 hours / 3 days)
+        - Post-4-Year: 259,200 blocks (72 hours)
+        """
+        # Year 1 (blocks 1 .. 31,536,000)
+        self.assertEqual(get_regular_coinbase_maturity_blocks(1), 7_200)
+        self.assertEqual(get_regular_coinbase_maturity_blocks(31_536_000), 7_200)
+
+        # Year 2 (blocks 31,536,001 .. 63,072,000)
+        self.assertEqual(get_regular_coinbase_maturity_blocks(31_536_001), 21_600)
+        self.assertEqual(get_regular_coinbase_maturity_blocks(63_072_000), 21_600)
+
+        # Year 3 (blocks 63,072,001 .. 94,608,000)
+        self.assertEqual(get_regular_coinbase_maturity_blocks(63_072_001), 86_400)
+        self.assertEqual(get_regular_coinbase_maturity_blocks(94_608_000), 86_400)
+
+        # Year 4 (blocks 94,608,001 .. 126,144,000)
+        self.assertEqual(get_regular_coinbase_maturity_blocks(94_608_001), 259_200)
+        self.assertEqual(get_regular_coinbase_maturity_blocks(126_144_000), 259_200)
+
+        # Post-4-Year
+        self.assertEqual(get_regular_coinbase_maturity_blocks(126_144_001), 259_200)
 
 if __name__ == "__main__":
     unittest.main()

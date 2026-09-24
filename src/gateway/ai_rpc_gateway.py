@@ -22,8 +22,11 @@ import urllib.error
 from typing import Dict, Any, Optional, List, Tuple
 
 import sys
-sys.path.insert(0, '/Users/a1234/btck-core/src')
-sys.path.insert(0, '/Users/a1234/btck-core/sdk')
+import os
+_SRC_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_ROOT_DIR = os.path.dirname(_SRC_DIR)
+sys.path.insert(0, _SRC_DIR)
+sys.path.insert(0, os.path.join(_ROOT_DIR, "sdk"))
 from privacy.stealth_address import StealthKeyPair, sha256
 from privacy.wallet_engine import schnorr_sign, schnorr_verify
 from btck_agent.delegation import DelegationReceipt
@@ -95,6 +98,96 @@ DEFAULT_SERVICE_CARDS = {
         "refund_policy": "refund_on_failure",
         "receipt_schema": "urn:btck:receipt:audit:v1",
         "description": "Smart contract & distributed node security vulnerability scanner"
+    },
+    "llama-3.1-8b": {
+        "service_id": "llama-3.1-8b.v1",
+        "capability": "chat_completion",
+        "service_version": "1.0.0",
+        "price_unit": "task",
+        "price_kcu": 0.8,
+        "price_satk_per_1k": 0.8,
+        "quote_expires_in": 30,
+        "max_charge_satk": 10.0,
+        "success_criteria": {"min_tokens": 1, "max_latency_ms": 5000},
+        "retry_policy": "idempotent_same_quote",
+        "refund_policy": "refund_on_timeout_or_empty",
+        "receipt_schema": "urn:btck:receipt:inference:v1",
+        "description": "Standard 8B instruction model (26.7% of GPT-4o-mini)"
+    },
+    "llama-3.1-8b-uncensored": {
+        "service_id": "llama-3.1-8b-uncensored.v1",
+        "capability": "chat_completion",
+        "service_version": "1.0.0",
+        "price_unit": "task",
+        "price_kcu": 1.6,
+        "price_satk_per_1k": 1.6,
+        "quote_expires_in": 30,
+        "max_charge_satk": 15.0,
+        "success_criteria": {"min_tokens": 1, "max_latency_ms": 5000},
+        "retry_policy": "idempotent_same_quote",
+        "refund_policy": "refund_on_timeout_or_empty",
+        "receipt_schema": "urn:btck:receipt:inference:v1",
+        "description": "Uncensored abliterated 8B model (53.3% of GPT-4o-mini)"
+    },
+    "qwen2.5-32b": {
+        "service_id": "qwen2.5-32b.v1",
+        "capability": "chat_completion",
+        "service_version": "1.0.0",
+        "price_unit": "task",
+        "price_kcu": 12.5,
+        "price_satk_per_1k": 12.5,
+        "quote_expires_in": 30,
+        "max_charge_satk": 50.0,
+        "success_criteria": {"min_tokens": 1, "max_latency_ms": 10000},
+        "retry_policy": "idempotent_same_quote",
+        "refund_policy": "refund_on_timeout_or_empty",
+        "receipt_schema": "urn:btck:receipt:inference:v1",
+        "description": "Standard 32B/35B MoE high-performance model (25% of GPT-4o)"
+    },
+    "qwen2.5-32b-uncensored": {
+        "service_id": "qwen2.5-32b-uncensored.v1",
+        "capability": "chat_completion",
+        "service_version": "1.0.0",
+        "price_unit": "task",
+        "price_kcu": 28.0,
+        "price_satk_per_1k": 28.0,
+        "quote_expires_in": 30,
+        "max_charge_satk": 100.0,
+        "success_criteria": {"min_tokens": 1, "max_latency_ms": 10000},
+        "retry_policy": "idempotent_same_quote",
+        "refund_policy": "refund_on_timeout_or_empty",
+        "receipt_schema": "urn:btck:receipt:inference:v1",
+        "description": "Uncensored abliterated 32B/35B MoE model (56% of GPT-4o)"
+    },
+    "qwen2.5-72b": {
+        "service_id": "qwen2.5-72b.v1",
+        "capability": "chat_completion",
+        "service_version": "1.0.0",
+        "price_unit": "task",
+        "price_kcu": 18.0,
+        "price_satk_per_1k": 18.0,
+        "quote_expires_in": 30,
+        "max_charge_satk": 80.0,
+        "success_criteria": {"min_tokens": 1, "max_latency_ms": 15000},
+        "retry_policy": "idempotent_same_quote",
+        "refund_policy": "refund_on_timeout_or_empty",
+        "receipt_schema": "urn:btck:receipt:inference:v1",
+        "description": "Flagship 72B deep reasoning model (26.1% of Claude 3.5 Sonnet)"
+    },
+    "qwen2.5-72b-uncensored": {
+        "service_id": "qwen2.5-72b-uncensored.v1",
+        "capability": "chat_completion",
+        "service_version": "1.0.0",
+        "price_unit": "task",
+        "price_kcu": 38.0,
+        "price_satk_per_1k": 38.0,
+        "quote_expires_in": 30,
+        "max_charge_satk": 150.0,
+        "success_criteria": {"min_tokens": 1, "max_latency_ms": 15000},
+        "retry_policy": "idempotent_same_quote",
+        "refund_policy": "refund_on_timeout_or_empty",
+        "receipt_schema": "urn:btck:receipt:inference:v1",
+        "description": "Flagship uncensored abliterated 72B model (55.1% of Claude 3.5 Sonnet)"
     }
 }
 
@@ -144,12 +237,20 @@ class TaskCostLedger:
         matched = [r for r in self.records if r.get("agent_stealth_address") == agent_stealth_address]
         return matched[-limit:]
 
+# 14-Day Sandbox Faucet Anti-Sybil Configuration
+FAUCET_VOUCHER_GRANT_SATK = 2500       # Fixed 2,500 SatK Sandbox Grant
+FAUCET_VOUCHER_TTL_SECONDS = 14 * 86400 # 14-Day Auto-Expiry (TTL)
+FAUCET_COOLDOWN_SECONDS = 86400        # 24-Hour Cooldown per IP and per Agent
+
 class AgentLedger:
-    """Consensus-aligned uint64 SatK ledger with persistent storage and strict validation"""
+    """Consensus-aligned uint64 SatK ledger with persistent storage, sandbox vouchers, and strict validation"""
     def __init__(self, persist_path: Optional[str] = None):
         self.persist_path = persist_path
-        self.balances: Dict[str, int] = {}  # stealth_addr -> balance in integer SatK
+        self.balances: Dict[str, int] = {}  # stealth_addr -> paid integer SatK
+        self.vouchers: Dict[str, Dict[str, Any]] = {}  # agent_id -> voucher dict
         self.processed_receipts: set = set()
+        self.claim_history_by_ip: Dict[str, float] = {}
+        self.claim_history_by_agent: Dict[str, float] = {}
         self._load()
 
     def _load(self):
@@ -158,7 +259,10 @@ class AgentLedger:
                 with open(self.persist_path, "r", encoding="utf-8") as f:
                     data = json.load(f)
                     self.balances = {k: int(v) for k, v in data.get("balances", {}).items()}
+                    self.vouchers = data.get("vouchers", {})
                     self.processed_receipts = set(data.get("processed_receipts", []))
+                    self.claim_history_by_ip = data.get("claim_history_by_ip", {})
+                    self.claim_history_by_agent = data.get("claim_history_by_agent", {})
             except Exception as e:
                 logger.warning(f"Failed to load agent ledger from {self.persist_path}: {e}")
 
@@ -169,13 +273,92 @@ class AgentLedger:
                 with open(self.persist_path, "w", encoding="utf-8") as f:
                     json.dump({
                         "balances": self.balances,
-                        "processed_receipts": list(self.processed_receipts)
+                        "vouchers": self.vouchers,
+                        "processed_receipts": list(self.processed_receipts),
+                        "claim_history_by_ip": self.claim_history_by_ip,
+                        "claim_history_by_agent": self.claim_history_by_agent
                     }, f, indent=2)
             except Exception as e:
                 logger.warning(f"Failed to save agent ledger to {self.persist_path}: {e}")
 
+    def get_voucher_balance(self, agent_id: str) -> int:
+        """Returns active, unexpired voucher balance for agent."""
+        v = self.vouchers.get(agent_id)
+        if not v:
+            return 0
+        now = time.time()
+        if now > v.get("expires_at", 0):
+            if v.get("remaining_satk", 0) > 0:
+                logger.info(f"⏳ Voucher for [{agent_id[:16]}...] expired. Burned {v.get('remaining_satk')} SatK.")
+                v["remaining_satk"] = 0
+                v["status"] = "EXPIRED"
+                self._save()
+            return 0
+        return int(v.get("remaining_satk", 0))
+
     def get_balance(self, agent_id: str) -> int:
-        return self.balances.get(agent_id, 0)
+        """Returns total spendable balance (paid SatK + active unexpired voucher SatK)."""
+        return self.balances.get(agent_id, 0) + self.get_voucher_balance(agent_id)
+
+    def is_voucher_only(self, agent_id: str) -> bool:
+        """Returns True if agent relies purely on sandbox trial voucher."""
+        paid = self.balances.get(agent_id, 0)
+        vouch = self.get_voucher_balance(agent_id)
+        return paid == 0 and vouch > 0
+
+    def claim_faucet_voucher(self, agent_id: str, client_ip: str = "127.0.0.1", github_user: str = "") -> Tuple[bool, str, Dict[str, Any]]:
+        """
+        Issues a strictly non-transferable 2,500 SatK Sandbox Voucher with 14-day expiry.
+        Enforces 24h cooldown per IP and per agent address.
+        """
+        now = time.time()
+        if not (agent_id.startswith("btck1s") or agent_id.startswith("btck")):
+            return False, "Invalid agent address: must be a valid BTC-K stealth address starting with 'btck1s'", {}
+
+        # 1. Cooldown by agent
+        last_agent = self.claim_history_by_agent.get(agent_id, 0)
+        if now - last_agent < FAUCET_COOLDOWN_SECONDS:
+            rem_s = int(FAUCET_COOLDOWN_SECONDS - (now - last_agent))
+            return False, f"Agent cooldown active. Try again in {rem_s // 3600}h {(rem_s % 3600) // 60}m.", {}
+
+        # 2. Cooldown by IP (skip for localhost loopback testing)
+        if client_ip and client_ip not in ("127.0.0.1", "localhost", "::1"):
+            last_ip = self.claim_history_by_ip.get(client_ip, 0)
+            if now - last_ip < FAUCET_COOLDOWN_SECONDS:
+                rem_s = int(FAUCET_COOLDOWN_SECONDS - (now - last_ip))
+                return False, f"IP cooldown active: maximum 1 claim per 24 hours per IP. Try again in {rem_s // 3600}h {(rem_s % 3600) // 60}m.", {}
+
+        # 3. Check existing active voucher
+        cur_vouch = self.get_voucher_balance(agent_id)
+        if cur_vouch > 500:
+            return False, f"Active voucher exists with {cur_vouch} SatK remaining. Use current credits before claiming again.", {}
+
+        voucher_id = f"vch_{uuid.uuid4().hex[:12]}"
+        expires_at = now + FAUCET_VOUCHER_TTL_SECONDS
+        voucher = {
+            "voucher_id": voucher_id,
+            "agent_id": agent_id,
+            "grant_satk": FAUCET_VOUCHER_GRANT_SATK,
+            "remaining_satk": FAUCET_VOUCHER_GRANT_SATK,
+            "created_at": now,
+            "expires_at": expires_at,
+            "expires_in_days": 14,
+            "is_transferable": False,
+            "is_withdrawable": False,
+            "max_concurrency": 1,
+            "rpm_limit": 5,
+            "claimed_ip": client_ip,
+            "github_user": github_user or None,
+            "status": "ACTIVE"
+        }
+        self.vouchers[agent_id] = voucher
+        self.claim_history_by_agent[agent_id] = now
+        if client_ip and client_ip not in ("127.0.0.1", "localhost", "::1"):
+            self.claim_history_by_ip[client_ip] = now
+        self._save()
+
+        logger.info(f"🎁 [SANDBOX FAUCET] Issued 2,500 SatK Voucher ({voucher_id}) to [{agent_id[:16]}...] | IP: {client_ip} | Valid for 14 days")
+        return True, "2,500 SatK Sandbox Voucher issued (Valid 14 days, non-transferable)", voucher
 
     def deposit(self, agent_id: str, amount_satk: int):
         if not isinstance(amount_satk, int) or amount_satk <= 0:
@@ -185,14 +368,43 @@ class AgentLedger:
         logger.info(f"💰 Deposited {amount_satk} SatK for Agent [{agent_id[:16]}...]. New Balance: {self.balances[agent_id]} SatK")
 
     def deduct(self, agent_id: str, cost_satk: int) -> bool:
+        """Deducts from active voucher first, then paid balance."""
         if not isinstance(cost_satk, int) or cost_satk <= 0:
             return False
-        current = self.balances.get(agent_id, 0)
-        if current >= cost_satk:
-            self.balances[agent_id] = current - cost_satk
-            self._save()
-            return True
-        return False
+
+        voucher_bal = self.get_voucher_balance(agent_id)
+        paid_bal = self.balances.get(agent_id, 0)
+        total_avail = voucher_bal + paid_bal
+
+        if total_avail < cost_satk:
+            return False
+
+        rem = cost_satk
+        if voucher_bal > 0 and agent_id in self.vouchers:
+            v = self.vouchers[agent_id]
+            deduct_v = min(v["remaining_satk"], rem)
+            v["remaining_satk"] -= deduct_v
+            rem -= deduct_v
+            if v["remaining_satk"] == 0:
+                v["status"] = "EXHAUSTED"
+
+        if rem > 0:
+            self.balances[agent_id] = paid_bal - rem
+
+        self._save()
+        return True
+
+    def transfer(self, from_agent: str, to_agent: str, amount_satk: int) -> Tuple[bool, str]:
+        """Strict non-transferable policy: vouchers CANNOT be transferred or withdrawn."""
+        if amount_satk <= 0:
+            return False, "Amount must be positive"
+        paid_bal = self.balances.get(from_agent, 0)
+        if paid_bal < amount_satk:
+            return False, "Transfer rejected: Voucher trial credits are strictly non-transferable sandbox assets."
+        self.balances[from_agent] = paid_bal - amount_satk
+        self.balances[to_agent] = self.balances.get(to_agent, 0) + amount_satk
+        self._save()
+        return True, "Transfer completed"
 
 class AIRPCGateway:
     def __init__(
@@ -225,6 +437,8 @@ class AIRPCGateway:
         self.registered_workers: Dict[str, Dict[str, Any]] = {}
         self.worker_queues: Dict[str, asyncio.Queue] = {}
         self.worker_pending_tasks: Dict[str, asyncio.Future] = {}
+        self.trial_active_concurrency: Dict[str, int] = {}
+        self.trial_request_timestamps: Dict[str, List[float]] = {}
         self.server: Optional[asyncio.Server] = None
         self.running = False
 
@@ -598,6 +812,91 @@ class AIRPCGateway:
                 await self._send_response(writer, 200, json.dumps(res).encode())
                 return
 
+            # Production Anti-Sybil 14-Day Sandbox Faucet Claim (2,500 SatK Voucher)
+            if method == "POST" and path == "/v1/faucet/claim":
+                try:
+                    cdata = json.loads(body_bytes.decode()) if body_bytes else {}
+                except Exception:
+                    cdata = {}
+                agent = cdata.get("agent_stealth_address") or headers.get("x-agent-stealth-address", "")
+                if not agent:
+                    await self._send_response(writer, 400, json.dumps({
+                        "error": "Missing agent_stealth_address in request payload or X-Agent-Stealth-Address header."
+                    }).encode())
+                    return
+
+                # Determine client IP for anti-sybil rate limits
+                forwarded = headers.get("x-forwarded-for", "")
+                peer_ip = forwarded.split(",")[0].strip() if forwarded else ""
+                if not peer_ip:
+                    try:
+                        peer_ip = writer.get_extra_info('peername')[0]
+                    except Exception:
+                        peer_ip = "127.0.0.1"
+
+                github_user = cdata.get("github_user", "")
+                success, msg, vdata = self.ledger.claim_faucet_voucher(agent, client_ip=peer_ip, github_user=github_user)
+                if not success:
+                    status_code = 429 if "cooldown" in msg.lower() else 400
+                    await self._send_response(writer, status_code, json.dumps({
+                        "success": False,
+                        "error": msg
+                    }).encode())
+                    return
+                await self._send_response(writer, 200, json.dumps({
+                    "success": True,
+                    "message": msg,
+                    "voucher": vdata,
+                    "available_balance_satk": self.ledger.get_balance(agent)
+                }).encode())
+                return
+
+            # Sandbox Faucet Status Check
+            if method == "GET" and path == "/v1/faucet/status":
+                agent = query_params.get("agent") or headers.get("x-agent-stealth-address", "")
+                v = self.ledger.vouchers.get(agent)
+                if not v:
+                    await self._send_response(writer, 200, json.dumps({
+                        "has_voucher": False,
+                        "agent": agent,
+                        "voucher_balance_satk": 0
+                    }).encode())
+                    return
+                rem_satk = self.ledger.get_voucher_balance(agent)
+                now = time.time()
+                rem_sec = max(0, int(v.get("expires_at", 0) - now))
+                await self._send_response(writer, 200, json.dumps({
+                    "has_voucher": True,
+                    "voucher_id": v.get("voucher_id"),
+                    "agent": agent,
+                    "voucher_balance_satk": rem_satk,
+                    "status": v.get("status"),
+                    "expires_at": v.get("expires_at"),
+                    "expires_in_hours": round(rem_sec / 3600.0, 1),
+                    "is_transferable": False,
+                    "rate_limits": {
+                        "max_concurrency": v.get("max_concurrency", 1),
+                        "rpm": v.get("rpm_limit", 5)
+                    }
+                }).encode())
+                return
+
+            # On-chain / Inter-Agent Transfer Endpoint (Enforces Non-transferable Voucher Rule)
+            if method == "POST" and path == "/v1/transfer":
+                try:
+                    tdata = json.loads(body_bytes.decode()) if body_bytes else {}
+                except Exception:
+                    tdata = {}
+                from_agent = tdata.get("from_agent", "")
+                to_agent = tdata.get("to_agent", "")
+                amt = int(tdata.get("amount_satk", 0))
+                ok, tmsg = self.ledger.transfer(from_agent, to_agent, amt)
+                if not ok:
+                    await self._send_response(writer, 403, json.dumps({"success": False, "error": tmsg}).encode())
+                    return
+                await self._send_response(writer, 200, json.dumps({"success": True, "message": tmsg}).encode())
+                return
+
             # Symbiotic GPU Worker Management Endpoints
             if method == "GET" and path == "/v1/workers":
                 workers_list = list(self.registered_workers.values())
@@ -808,129 +1107,162 @@ class AIRPCGateway:
             logger.info(f"🛑 Dispatched HTTP 402 (x402 compliant) to Agent [{agent_stealth_addr[:16]}...]: Required {est_cost_satk} SatK for {model}")
             return
 
+        # 5.5 Sandbox Voucher Anti-Sybil Rate Limits (Concurrency=1, RPM=5)
+        is_trial = self.ledger.is_voucher_only(agent_stealth_addr)
+        if is_trial:
+            now_t = time.time()
+            if self.trial_active_concurrency.get(agent_stealth_addr, 0) >= 1:
+                err_429 = {
+                    "error": {
+                        "code": 429,
+                        "type": "trial_concurrency_exceeded",
+                        "message": "Trial sandbox voucher allows maximum concurrency of 1 request. Please wait for current inference to complete."
+                    }
+                }
+                await self._send_response(writer, 429, json.dumps(err_429).encode())
+                return
+            recent = [t for t in self.trial_request_timestamps.get(agent_stealth_addr, []) if now_t - t < 60.0]
+            if len(recent) >= 5:
+                err_429 = {
+                    "error": {
+                        "code": 429,
+                        "type": "trial_rate_limit_exceeded",
+                        "message": "Trial sandbox voucher rate limit exceeded (maximum 5 requests per minute). Please throttle your agent."
+                    }
+                }
+                await self._send_response(writer, 429, json.dumps(err_429).encode())
+                return
+            recent.append(now_t)
+            self.trial_request_timestamps[agent_stealth_addr] = recent
+            self.trial_active_concurrency[agent_stealth_addr] = self.trial_active_concurrency.get(agent_stealth_addr, 0) + 1
+
         # 6. Execute Completion
-        task_id = f"task_{uuid.uuid4().hex[:12]}"
-        actual_output_text = None
-        worker_used = None
+        try:
+            task_id = f"task_{uuid.uuid4().hex[:12]}"
+            actual_output_text = None
+            worker_used = None
 
-        # Check if a registered symbiotic GPU worker can fulfill this task
-        matching_workers = [
-            w for w in self.registered_workers.values()
-            if (w.get("model_name", "").lower() == model.lower() or 
-                model.lower() in [m.lower() for m in w.get("supported_models", [])])
-            and (time.time() - w.get("last_heartbeat", 0) < 60)
-        ]
+            # Check if a registered symbiotic GPU worker can fulfill this task
+            matching_workers = [
+                w for w in self.registered_workers.values()
+                if (w.get("model_name", "").lower() == model.lower() or 
+                    model.lower() in [m.lower() for m in w.get("supported_models", [])])
+                and (time.time() - w.get("last_heartbeat", 0) < 60)
+            ]
 
-        if matching_workers:
-            target_worker = matching_workers[0]
-            try:
-                task_payload = {
-                    "task_id": task_id,
-                    "prompt": prompt,
-                    "model": model,
-                    "prompt_tokens": len(prompt.split()),
-                    "max_tokens": 512,
+            if matching_workers:
+                target_worker = matching_workers[0]
+                try:
+                    task_payload = {
+                        "task_id": task_id,
+                        "prompt": prompt,
+                        "model": model,
+                        "prompt_tokens": len(prompt.split()),
+                        "max_tokens": 512,
+                    }
+                    actual_output_text = await self._dispatch_task_to_worker(target_worker["worker_id"], task_payload, timeout_sec=6.0)
+                    if actual_output_text:
+                        worker_used = target_worker
+                except Exception as e:
+                    logger.warning(f"Worker dispatch failed ({e}), falling back to local reasoning engine.")
+
+            if not actual_output_text:
+                actual_output_text = self._generate_reasoning_completion(model, prompt)
+
+            input_tokens = len(prompt.split())
+            output_tokens = len(actual_output_text.split())
+            actual_tokens = input_tokens + output_tokens
+            actual_cost_satk = max(1, (actual_tokens * rate_per_1k + 999) // 1000)
+            
+            deducted = self.ledger.deduct(agent_stealth_addr, actual_cost_satk)
+            if not deducted:
+                err_deduct = {
+                    "error": {
+                        "code": 402,
+                        "type": "insufficient_balance",
+                        "message": f"Execution failed: actual cost {actual_cost_satk} SatK exceeds agent balance."
+                    }
                 }
-                actual_output_text = await self._dispatch_task_to_worker(target_worker["worker_id"], task_payload, timeout_sec=6.0)
-                if actual_output_text:
-                    worker_used = target_worker
-            except Exception as e:
-                logger.warning(f"Worker dispatch failed ({e}), falling back to local reasoning engine.")
+                await self._send_response(writer, 402, json.dumps(err_deduct).encode())
+                return
 
-        if not actual_output_text:
-            actual_output_text = self._generate_reasoning_completion(model, prompt)
+            # If worker was used, credit 85% directly to worker's stealth address!
+            if worker_used:
+                worker_payout = max(1, int(actual_cost_satk * 0.85))
+                self.ledger.deposit(worker_used["worker_address"], worker_payout)
+                worker_used["satk_earned"] = worker_used.get("satk_earned", 0) + worker_payout
+                worker_used["tasks_completed"] = worker_used.get("tasks_completed", 0) + 1
+                logger.info(f"💎 Symbiotic GPU Worker [{worker_used['worker_address'][:16]}...] earned {worker_payout} SatK for task {task_id}")
 
-        input_tokens = len(prompt.split())
-        output_tokens = len(actual_output_text.split())
-        actual_tokens = input_tokens + output_tokens
-        actual_cost_satk = max(1, (actual_tokens * rate_per_1k + 999) // 1000)
-        
-        deducted = self.ledger.deduct(agent_stealth_addr, actual_cost_satk)
-        if not deducted:
-            err_deduct = {
-                "error": {
-                    "code": 402,
-                    "type": "insufficient_balance",
-                    "message": f"Execution failed: actual cost {actual_cost_satk} SatK exceeds agent balance."
-                }
+            if delegation_id:
+                self.delegation_spent[delegation_id] = self.delegation_spent.get(delegation_id, 0) + actual_cost_satk
+
+            rem_bal = self.ledger.get_balance(agent_stealth_addr)
+
+            # 7. Cryptographic Proof of Delivery (Doc 27 Section 6)
+            result_digest = hashlib.sha256(actual_output_text.encode('utf-8')).digest()
+            result_hash = f"sha256:{result_digest.hex()}"
+            delivery_sig_bytes = schnorr_sign(self.gateway_keypair.spend_priv, result_digest)
+            delivery_receipt = {
+                "task_id": task_id,
+                "provider_stealth_address": self.treasury_addr,
+                "provider_spend_pub_hex": self.gateway_keypair.spend_pub_bytes.hex(),
+                "result_hash": result_hash,
+                "signature_hex": delivery_sig_bytes.hex(),
+                "status": "delivered",
+                "timestamp": int(time.time())
             }
-            await self._send_response(writer, 402, json.dumps(err_deduct).encode())
-            return
 
-        # If worker was used, credit 85% directly to worker's stealth address!
-        if worker_used:
-            worker_payout = max(1, int(actual_cost_satk * 0.85))
-            self.ledger.deposit(worker_used["worker_address"], worker_payout)
-            worker_used["satk_earned"] = worker_used.get("satk_earned", 0) + worker_payout
-            worker_used["tasks_completed"] = worker_used.get("tasks_completed", 0) + 1
-            logger.info(f"💎 Symbiotic GPU Worker [{worker_used['worker_address'][:16]}...] earned {worker_payout} SatK for task {task_id}")
+            # 8. Record in Task-Level Cost Ledger (Doc 27 Section 4.1)
+            receipt_digest = hashlib.sha256(json.dumps(delivery_receipt, sort_keys=True).encode()).hexdigest()
+            self.task_ledger.record_task({
+                "task_id": task_id,
+                "agent_stealth_address": agent_stealth_addr,
+                "service_id": model,
+                "delegation_id": delegation_id,
+                "idempotency_key": idem_key,
+                "attempt": 1,
+                "input_units": input_tokens,
+                "output_units": output_tokens,
+                "amount_satk": actual_cost_satk,
+                "status": "settled",
+                "result_hash": result_hash,
+                "receipt_hash": f"sha256:{receipt_digest}",
+                "created_at": int(time.time())
+            })
 
-        if delegation_id:
-            self.delegation_spent[delegation_id] = self.delegation_spent.get(delegation_id, 0) + actual_cost_satk
-
-        rem_bal = self.ledger.get_balance(agent_stealth_addr)
-
-        # 7. Cryptographic Proof of Delivery (Doc 27 Section 6)
-        result_digest = hashlib.sha256(actual_output_text.encode('utf-8')).digest()
-        result_hash = f"sha256:{result_digest.hex()}"
-        delivery_sig_bytes = schnorr_sign(self.gateway_keypair.spend_priv, result_digest)
-        delivery_receipt = {
-            "task_id": task_id,
-            "provider_stealth_address": self.treasury_addr,
-            "provider_spend_pub_hex": self.gateway_keypair.spend_pub_bytes.hex(),
-            "result_hash": result_hash,
-            "signature_hex": delivery_sig_bytes.hex(),
-            "status": "delivered",
-            "timestamp": int(time.time())
-        }
-
-        # 8. Record in Task-Level Cost Ledger (Doc 27 Section 4.1)
-        receipt_digest = hashlib.sha256(json.dumps(delivery_receipt, sort_keys=True).encode()).hexdigest()
-        self.task_ledger.record_task({
-            "task_id": task_id,
-            "agent_stealth_address": agent_stealth_addr,
-            "service_id": model,
-            "delegation_id": delegation_id,
-            "idempotency_key": idem_key,
-            "attempt": 1,
-            "input_units": input_tokens,
-            "output_units": output_tokens,
-            "amount_satk": actual_cost_satk,
-            "status": "settled",
-            "result_hash": result_hash,
-            "receipt_hash": f"sha256:{receipt_digest}",
-            "created_at": int(time.time())
-        })
-
-        completion_resp = {
-            "id": f"chatcmpl_{uuid.uuid4().hex[:10]}",
-            "object": "chat.completion",
-            "created": int(time.time()),
-            "model": model,
-            "choices": [{
-                "index": 0,
-                "message": {
-                    "role": "assistant",
-                    "content": actual_output_text
+            completion_resp = {
+                "id": f"chatcmpl_{uuid.uuid4().hex[:10]}",
+                "object": "chat.completion",
+                "created": int(time.time()),
+                "model": model,
+                "choices": [{
+                    "index": 0,
+                    "message": {
+                        "role": "assistant",
+                        "content": actual_output_text
+                    },
+                    "finish_reason": "stop"
+                }],
+                "usage": {
+                    "prompt_tokens": input_tokens,
+                    "completion_tokens": output_tokens,
+                    "total_tokens": actual_tokens,
+                    "cost_satk": actual_cost_satk,
+                    "remaining_balance_satk": rem_bal
                 },
-                "finish_reason": "stop"
-            }],
-            "usage": {
-                "prompt_tokens": input_tokens,
-                "completion_tokens": output_tokens,
-                "total_tokens": actual_tokens,
-                "cost_satk": actual_cost_satk,
-                "remaining_balance_satk": rem_bal
-            },
-            "delivery_receipt": delivery_receipt
-        }
+                "delivery_receipt": delivery_receipt
+            }
 
-        # Cache for idempotency using composite key (Fixes H-02)
-        if composite_idem_key:
-            self.idempotency_cache[composite_idem_key] = completion_resp
+            # Cache for idempotency using composite key (Fixes H-02)
+            if composite_idem_key:
+                self.idempotency_cache[composite_idem_key] = completion_resp
 
-        logger.info(f"⚡ Settled Task [{task_id}] {actual_cost_satk} SatK for Agent [{agent_stealth_addr[:16]}...] on {model}. Rem: {rem_bal} SatK")
-        await self._send_response(writer, 200, json.dumps(completion_resp).encode())
+            logger.info(f"⚡ Settled Task [{task_id}] {actual_cost_satk} SatK for Agent [{agent_stealth_addr[:16]}...] on {model}. Rem: {rem_bal} SatK")
+            await self._send_response(writer, 200, json.dumps(completion_resp).encode())
+        finally:
+            if is_trial:
+                self.trial_active_concurrency[agent_stealth_addr] = max(0, self.trial_active_concurrency.get(agent_stealth_addr, 1) - 1)
 
     def _generate_reasoning_completion(self, model: str, prompt: str) -> str:
         """Autonomous reasoning engine producing deterministic delivery hashes"""
@@ -948,7 +1280,7 @@ class AIRPCGateway:
             return f"[BTCK AI-RPC / {model}]: Completed request for '{prompt}'. Micro-settlement verified on BTCK BlockDAG."
 
     async def _send_response(self, writer: asyncio.StreamWriter, status_code: int, body: bytes, extra_headers: dict = None):
-        status_text = {200: "OK", 400: "Bad Request", 402: "Payment Required", 403: "Forbidden", 404: "Not Found", 500: "Internal Error"}.get(status_code, "OK")
+        status_text = {200: "OK", 400: "Bad Request", 402: "Payment Required", 403: "Forbidden", 404: "Not Found", 429: "Too Many Requests", 500: "Internal Error"}.get(status_code, "OK")
         h_lines = [
             f"HTTP/1.1 {status_code} {status_text}",
             "Content-Type: application/json",

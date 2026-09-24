@@ -99,5 +99,24 @@ class TestStratumTargetVerification(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(resp2["error"][0], 22)
         self.assertIn("Duplicate share", resp2["error"][1])
 
+    async def test_strict_pow_rejects_timeout_fallback_in_production(self):
+        # Ensure that in strict_pow_only=True mode, elapsed time >= 2.5s does NOT award a block if hash > network_target
+        job = self.server.create_new_block_job()
+        self.client.difficulty = 0.000001 # Accept share
+        self.server.strict_pow_only = True
+        self.server.last_global_block_time = 0 # Force dt > 2.5s
+        initial_height = self.server.current_height
+
+        await self.server.process_message(self.client, {
+            "id": 5,
+            "method": "mining.submit",
+            "params": ["test_miner", str(job.job_id), "deadbeef"]
+        })
+        # Share is accepted as valid share
+        resp = json.loads(self.mock_writer.sent_messages[-1])
+        self.assertTrue(resp["result"])
+        # But block height MUST NOT increase because network_diff=1000.0 (hash is not <= network_target)
+        self.assertEqual(self.server.current_height, initial_height)
+
 if __name__ == "__main__":
     unittest.main()
