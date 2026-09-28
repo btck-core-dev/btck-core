@@ -68,6 +68,68 @@ class TestUTXOAtomicity(unittest.TestCase):
         self.assertEqual(utxos._block_spent_undo, {})
         self.assertEqual(utxos._block_created_undo, {})
 
+    def test_virtual_merge_acceptance_skips_later_conflict_deterministically(self):
+        utxos = UTXOSet()
+        outpoint, entry, tx_a, tx_b = make_two_conflicting_transactions()
+        utxos.utxos[outpoint] = entry
+
+        applied, error = utxos.apply_block(
+            block_hash="fd" * 32,
+            block_height=10,
+            coinbase_output=COINBASE_A,
+            reward_sats=0,
+            transactions=[tx_a, tx_b],
+            allow_transaction_skips=True,
+        )
+
+        self.assertTrue(applied, error)
+        self.assertEqual(utxos.get_block_accepted_txids("fd" * 32), [tx_a.txid])
+        self.assertTrue(utxos.has_utxo(tx_a.txid, 0))
+        self.assertFalse(utxos.has_utxo(tx_b.txid, 0))
+
+    def test_dag_merge_records_transaction_acceptance_data(self):
+        dag = BlockDAG()
+        outpoint, entry, tx_a, tx_b = make_two_conflicting_transactions()
+        dag.utxo_set.utxos[outpoint] = entry
+        dag.issued_supply_sats += entry.amount_satk
+        genesis_time = dag.blocks[dag.genesis_hash].timestamp
+
+        branch_a = mine_block(
+            dag,
+            parents=[dag.genesis_hash],
+            timestamp=genesis_time + 1,
+            coinbase_output=COINBASE_A,
+            transactions=[tx_a],
+        )
+        branch_b = mine_block(
+            dag,
+            parents=[dag.genesis_hash],
+            timestamp=genesis_time + 1,
+            coinbase_output=COINBASE_B,
+            transactions=[tx_b],
+            nonce=branch_a.nonce + 1,
+        )
+        selected, side = max((branch_a, branch_b), key=lambda b: b.hash), min(
+            (branch_a, branch_b), key=lambda b: b.hash
+        )
+        dag.add_block(selected)
+        dag.add_block(side)
+        merge = mine_block(
+            dag,
+            parents=[selected.hash, side.hash],
+            timestamp=genesis_time + 2,
+            coinbase_output=COINBASE_A,
+            nonce=branch_b.nonce + 1,
+        )
+        dag.add_block(merge)
+
+        self.assertEqual(
+            dag.utxo_set.get_block_accepted_txids(selected.hash),
+            [selected.transactions[0].txid],
+        )
+        self.assertEqual(dag.utxo_set.get_block_accepted_txids(side.hash), [])
+        self.assertIn(side.hash, dag.virtual_blue_order)
+
     def test_side_branch_does_not_touch_selected_utxo_view(self):
         dag = BlockDAG()
         genesis_time = dag.blocks[dag.genesis_hash].timestamp

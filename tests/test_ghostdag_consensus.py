@@ -75,6 +75,9 @@ class TestGhostDAGConsensus(unittest.TestCase):
         self.assertEqual(merge.merge_set_blues, [merge.selected_parent])
         self.assertEqual(len(merge.merge_set_reds), 1)
         self.assertEqual(merge.blue_score, dag.blocks[merge.selected_parent].blue_score + 1)
+        red_hash = merge.merge_set_reds[0]
+        self.assertNotIn(red_hash, dag.virtual_blue_order)
+        self.assertEqual(dag.blocks[red_hash].minted_sats, 0)
 
     def test_merge_set_contains_transitive_non_selected_past(self):
         dag = BlockDAG()

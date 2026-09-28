@@ -78,7 +78,11 @@ class TestBlockDAGVirtualChainIssuance(unittest.TestCase):
         # Both DAGs must have identical selected tip and identical issued supply
         self.assertEqual(dag1.selected_tip, dag2.selected_tip)
         self.assertEqual(dag1.issued_supply_sats, dag2.issued_supply_sats)
-        self.assertEqual(dag1.issued_supply_sats, get_base_block_reward_sats(1) + get_base_block_reward_sats(2))
+        self.assertEqual(
+            dag1.issued_supply_sats,
+            sum(get_base_block_reward_sats(height) for height in (1, 2, 3)),
+        )
+        self.assertEqual(dag1.virtual_blue_order, dag2.virtual_blue_order)
 
     def test_coinbase_maturity_lock(self):
         dag = BlockDAG()

@@ -3,8 +3,8 @@ BTC-K High-Speed BlockDAG Engine (GHOSTDAG Consensus & Virtual Chain Issuance)
 -----------------------------------------------------------------------------
 1.0 Second BlockDAG architecture:
 1. Multi-parent DAG topologies with GHOSTDAG linear ordering.
-2. Virtual Selected Parent Chain single-path issuance (P0-01):
-   Strictly prevents parallel / red blocks from duplicate currency minting.
+2. Deterministic virtual blue-block order for issuance (P0-01):
+   Blue blocks receive sequential rewards; red/unmerged blocks receive none.
 3. Canonical Block Header serialization aligned with Genesis (P0-04).
 4. Full integration with Minimal Consensus UTXO Set (P0-06).
 """
@@ -112,7 +112,7 @@ class DAGBlock:
 class BlockDAG:
     """
     Persistent GHOSTDAG graph maintaining DAG tips,
-    virtual selected chain, single-path issuance, and UTXO consensus state.
+    virtual blue order, capped sequential issuance, and UTXO consensus state.
     """
     def __init__(self, k_cluster: Optional[int] = None, network: Optional[NetworkConfig | str] = None):
         self.network = network if isinstance(network, NetworkConfig) else load_network(network)
@@ -126,6 +126,7 @@ class BlockDAG:
         self.issued_supply_sats: int = 0
         self.pool_balance_sats: int = 0
         self.virtual_selected_parent_chain: List[str] = []
+        self.virtual_blue_order: List[str] = []
         self.utxo_set = UTXOSet()
         self.combo_machine = ComboStateMachine()
         
@@ -166,6 +167,7 @@ class BlockDAG:
         self.selected_tip = genesis.hash
         self.genesis_hash = genesis.hash
         self.virtual_selected_parent_chain = [genesis.hash]
+        self.virtual_blue_order = [genesis.hash]
 
         # Apply genesis to UTXO set (reward is 0 for genesis)
         self.utxo_set.apply_block(
@@ -185,6 +187,24 @@ class BlockDAG:
             curr = self.blocks[curr].selected_parent if curr in self.blocks else None
         chain.reverse()
         return chain
+
+    def get_virtual_blue_order(self, tip_hash: str) -> List[str]:
+        """Return the deterministic blue-block order for ledger processing."""
+        selected_chain = self.get_selected_parent_chain(tip_hash)
+        order: List[str] = []
+        seen: Set[str] = set()
+        for block_hash in selected_chain:
+            block = self.blocks[block_hash]
+            # The selected parent is already present. Remaining entries follow
+            # canonical merge-set work/hash order and precede the merging block.
+            for blue_hash in block.merge_set_blues[1:]:
+                if blue_hash not in seen:
+                    order.append(blue_hash)
+                    seen.add(blue_hash)
+            if block_hash not in seen:
+                order.append(block_hash)
+                seen.add(block_hash)
+        return order
 
     def _is_dag_ancestor(self, ancestor_hash: str, descendant_hash: str) -> bool:
         """Return whether ancestor_hash is in descendant_hash's inclusive DAG past."""
@@ -329,6 +349,7 @@ class BlockDAG:
             self.issued_supply_sats,
             self.pool_balance_sats,
             self.virtual_selected_parent_chain,
+            self.virtual_blue_order,
             self.utxo_set,
             self.combo_machine,
         ))
@@ -345,6 +366,7 @@ class BlockDAG:
                 self.issued_supply_sats,
                 self.pool_balance_sats,
                 self.virtual_selected_parent_chain,
+                self.virtual_blue_order,
                 self.utxo_set,
                 self.combo_machine,
             ) = snapshot
@@ -389,14 +411,18 @@ class BlockDAG:
         )
 
         if is_new_selected_tip:
-            old_chain = list(self.virtual_selected_parent_chain)
+            old_selected_chain = list(self.virtual_selected_parent_chain)
             if block.selected_parent == self.selected_tip:
                 # Normal one-block extension must remain O(1); rebuilding and
                 # comparing the full chain each second becomes quadratic.
-                new_chain = old_chain + [block.hash]
+                new_selected_chain = old_selected_chain + [block.hash]
+                old_chain = self.virtual_blue_order
+                new_chain = old_chain + block.merge_set_blues[1:] + [block.hash]
                 common_ancestor_idx = len(old_chain)
             else:
-                new_chain = self.get_selected_parent_chain(block.hash)
+                new_selected_chain = self.get_selected_parent_chain(block.hash)
+                old_chain = self.virtual_blue_order
+                new_chain = self.get_virtual_blue_order(block.hash)
                 common_ancestor_idx = 0
                 while common_ancestor_idx < len(old_chain) and common_ancestor_idx < len(new_chain):
                     if old_chain[common_ancestor_idx] == new_chain[common_ancestor_idx]:
@@ -422,13 +448,14 @@ class BlockDAG:
             if common_ancestor_idx > 0:
                 self.combo_machine.revert_to_height(common_ancestor_idx - 1)
 
-            # Mint subsidies strictly for new selected blocks along the canonical sequence
+            # Mint subsidies for blue blocks along the canonical virtual order.
+            selected_chain_set = set(new_selected_chain)
             for idx in range(common_ancestor_idx, len(new_chain)):
                 b_hash = new_chain[idx]
                 b = self.blocks[b_hash]
                 b_hash_bytes = bytes.fromhex(b.hash)
                 
-                # Single-chain sequential issuance: block_height = idx
+                # Sequential blue height preserves the fixed emission cap.
                 issuance: BlockIssuanceResult = compute_block_issuance(
                     block_height=idx,
                     block_hash=b_hash_bytes,
@@ -486,6 +513,7 @@ class BlockDAG:
                     ),
                     pool_deposit_sats=issuance.pool_deposit_sats,
                     pool_payout_sats=pool_deduction,
+                    allow_transaction_skips=b_hash not in selected_chain_set,
                 )
                 if not applied:
                     raise ValueError(f"Consensus failure applying block {b.hash}: {err}")
@@ -497,11 +525,11 @@ class BlockDAG:
                     raise ValueError("Consensus jackpot balance does not match pool UTXOs")
 
             self.selected_tip = block.hash
-            self.virtual_selected_parent_chain = new_chain
+            self.virtual_selected_parent_chain = new_selected_chain
+            self.virtual_blue_order = new_chain
 
         else:
-            # Parallel or non-selected block:
-            # DO NOT mint subsidy! Parallel blocks receive 0 subsidy until merged into selected chain
+            # Unmerged or red block: no subsidy until a future blue merge.
             block.is_combo = False
             block.minted_sats = 0
             block.reward_sats = 0
@@ -545,6 +573,7 @@ class BlockDAG:
                 "pool_deposit_sats": block.pool_deposit_sats,
                 "combo_payout_sats": block.combo_payout_sats,
                 "fees_sats": block.fees_sats,
+                "accepted_txids": self.utxo_set.get_block_accepted_txids(block_hash),
             })
         utxos = []
         for (txid, vout), entry in sorted(self.utxo_set.utxos.items()):
@@ -559,6 +588,7 @@ class BlockDAG:
             "tips": sorted(self.tips),
             "selected_tip": self.selected_tip,
             "selected_chain": self.virtual_selected_parent_chain,
+            "virtual_blue_order": self.virtual_blue_order,
             "issued_supply_sats": self.issued_supply_sats,
             "pool_balance_sats": self.pool_balance_sats,
             "utxos": utxos,
@@ -578,6 +608,7 @@ class BlockDAG:
             "selected_tip": self.selected_tip,
             "max_blue_score": selected.blue_score,
             "virtual_selected_chain_length": len(self.virtual_selected_parent_chain),
+            "virtual_blue_order_length": len(self.virtual_blue_order),
             "total_blocks": len(self.blocks),
             "tips_count": len(self.tips),
             "tips": list(self.tips),

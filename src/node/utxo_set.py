@@ -50,6 +50,7 @@ class UTXOSet:
         # Block hash -> list of created outpoints for rollbacks
         self._block_created_undo: Dict[str, List[Tuple[str, int]]] = {}
         self._block_fees: Dict[str, int] = {}
+        self._block_accepted_txids: Dict[str, List[str]] = {}
 
     def get_utxo(self, txid: str, vout: int) -> Optional[UTXOEntry]:
         return self.utxos.get((txid, vout))
@@ -145,6 +146,7 @@ class UTXOSet:
         eco_output: Optional[Tuple[int, bytes, bytes]] = None,
         pool_deposit_sats: int = 0,
         pool_payout_sats: int = 0,
+        allow_transaction_skips: bool = False,
     ) -> Tuple[bool, str]:
         """
         Applies a block's coinbase output and transactions to the UTXO set atomically.
@@ -156,22 +158,30 @@ class UTXOSet:
         created_undo: List[Tuple[str, int]] = []
         overlay = dict(self.utxos)
         total_fees_sats = 0
+        accepted_txids: List[str] = []
 
         # Validate and stage against an overlay. This catches cross-transaction
         # double spends and guarantees the live map is untouched on failure.
         for tx in transactions:
             valid, err, fee_sats = self.validate_transaction(tx, block_height, overlay)
             if not valid:
+                if allow_transaction_skips:
+                    continue
                 return False, f"Block rejected due to invalid transaction {tx.txid}: {err}"
-            total_fees_sats += fee_sats
+            tx_overlay = dict(overlay)
+            tx_spent: List[Tuple[Tuple[str, int], UTXOEntry]] = []
+            tx_created: List[Tuple[str, int]] = []
             for inp in tx.inputs:
                 outpoint = (inp.prev_txid, inp.prev_vout)
-                utxo = overlay.pop(outpoint)
-                spent_undo.append((outpoint, utxo))
+                utxo = tx_overlay.pop(outpoint)
+                tx_spent.append((outpoint, utxo))
 
             for vout_idx, out in enumerate(tx.outputs):
                 outpoint = (tx.txid, vout_idx)
-                if not tx.txid or outpoint in overlay:
+                if not tx.txid or outpoint in tx_overlay:
+                    if allow_transaction_skips:
+                        tx_overlay = None
+                        break
                     return False, f"Duplicate or empty transaction outpoint: {outpoint}"
                 entry = UTXOEntry(
                     amount_satk=out.amount_satk,
@@ -181,8 +191,15 @@ class UTXOSet:
                     is_coinbase=False,
                     kind="standard",
                 )
-                overlay[outpoint] = entry
-                created_undo.append(outpoint)
+                tx_overlay[outpoint] = entry
+                tx_created.append(outpoint)
+            if tx_overlay is None:
+                continue
+            overlay = tx_overlay
+            spent_undo.extend(tx_spent)
+            created_undo.extend(tx_created)
+            total_fees_sats += fee_sats
+            accepted_txids.append(tx.txid)
 
         # 3. Add Coinbase UTXO (if reward > 0)
         miner_payout_sats = reward_sats + total_fees_sats
@@ -282,6 +299,7 @@ class UTXOSet:
         self._block_spent_undo[block_hash] = spent_undo
         self._block_created_undo[block_hash] = created_undo
         self._block_fees[block_hash] = total_fees_sats
+        self._block_accepted_txids[block_hash] = accepted_txids
         return True, "Block applied successfully"
 
     def revert_block(self, block_hash: str):
@@ -294,9 +312,13 @@ class UTXOSet:
         for outpoint, entry in spent:
             self.utxos[outpoint] = entry
         self._block_fees.pop(block_hash, None)
+        self._block_accepted_txids.pop(block_hash, None)
 
     def get_block_fees(self, block_hash: str) -> int:
         return self._block_fees.get(block_hash, 0)
+
+    def get_block_accepted_txids(self, block_hash: str) -> List[str]:
+        return list(self._block_accepted_txids.get(block_hash, []))
 
     def total_value_sats(self) -> int:
         return sum(entry.amount_satk for entry in self.utxos.values())
