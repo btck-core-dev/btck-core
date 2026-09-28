@@ -1,2 +1,4 @@
 #!/usr/bin/env bash
-python3 /Users/a1234/btck-core/tools/btck_cli.py "$@"
+set -euo pipefail
+PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+exec python3 "${PROJECT_DIR}/tools/btck_cli.py" "$@"

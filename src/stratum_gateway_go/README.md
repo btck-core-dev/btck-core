@@ -1,4 +1,6 @@
-# BTC-K High-Concurrency Go-Stratum + Redis Enterprise Gateway
+# BTC-K Go/Redis Stratum Prototype — DISABLED
+
+> SECURITY: This prototype does not perform the current node-authoritative block validation and must not be run. Its deployment Compose file is a non-runnable tombstone. Use `src/stratum/stratum_server.py` through the root `docker-compose.yml`.
 
 ## Overview
 High-throughput, event-driven Stratum V1 mining pool gateway designed for global multi-thousand ASIC deployment.
@@ -16,16 +18,6 @@ Fully compatible with:
    - Fallback mode: Seamlessly falls back to in-memory channel bus when Redis is offline.
 4. **Vardiff Auto-Adjustment Engine**: Sliding window retargeting to anchor block/share rate to 1.0s.
 
-## Quick Start
+## Historical notes only
 
-### Standalone Run
-```bash
-export STRATUM_PORT=3334
-export REDIS_ADDR=127.0.0.1:6379
-go run .
-```
-
-### Docker Compose Cluster
-```bash
-docker compose -f deploy/docker-compose.pool-cluster.yml up -d
-```
+There is intentionally no start command. The code remains only as archived prototype material pending deletion or a complete rewrite against the node RPC contract.

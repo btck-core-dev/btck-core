@@ -20,6 +20,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..",
 
 from node.daemon import BTCKDaemon
 from privacy.stealth_address import StealthKeyPair
+from tests.pow_helpers import block_rpc_params, mine_block
 
 async def rpc_call(host: str, port: int, method: str, params: dict = None, req_id: int = 1):
     params = params or {}
@@ -88,13 +89,16 @@ class TestP2PDaemonInterconnect(unittest.IsolatedAsyncioTestCase):
             addr1 = miner1.get_public_stealth_address()
             R1, P1 = StealthKeyPair.generate_one_time_stealth_output(addr1)
 
-            submit1 = await rpc_call(host, rpc1_port, "submitBlock", {
-                "parents": parents1,
-                "timestamp": time.time(),
-                "bits": 1,
-                "nonce": 88001,
-                "coinbase_output": [R1.hex(), P1.hex()]
-            })
+            candidate1 = mine_block(
+                daemon1.dag,
+                parents=parents1,
+                timestamp=time.time(),
+                nonce=88001,
+                coinbase_output=(R1, P1),
+            )
+            submit1 = await rpc_call(
+                host, rpc1_port, "submitBlock", block_rpc_params(candidate1)
+            )
             block1_hash = submit1["result"]["hash"]
             print(f"✓ Node 1 mined & submitted Block #{submit1['result']['blue_score']} ({block1_hash[:16]}...)")
 
@@ -119,13 +123,16 @@ class TestP2PDaemonInterconnect(unittest.IsolatedAsyncioTestCase):
             addr2 = miner2.get_public_stealth_address()
             R2, P2 = StealthKeyPair.generate_one_time_stealth_output(addr2)
 
-            submit2 = await rpc_call(host, rpc2_port, "submitBlock", {
-                "parents": parents2,
-                "timestamp": time.time(),
-                "bits": 1,
-                "nonce": 88002,
-                "coinbase_output": [R2.hex(), P2.hex()]
-            })
+            candidate2 = mine_block(
+                daemon2.dag,
+                parents=parents2,
+                timestamp=time.time(),
+                nonce=88002,
+                coinbase_output=(R2, P2),
+            )
+            submit2 = await rpc_call(
+                host, rpc2_port, "submitBlock", block_rpc_params(candidate2)
+            )
             block2_hash = submit2["result"]["hash"]
             print(f"✓ Node 2 mined & submitted Block #{submit2['result']['blue_score']} ({block2_hash[:16]}...)")
 

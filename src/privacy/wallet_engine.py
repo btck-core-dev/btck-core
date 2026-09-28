@@ -117,6 +117,37 @@ class StealthTransaction:
         sighash = self.compute_sighash()
         self.txid = sha256(sighash).hex()
 
+
+def transaction_to_dict(tx: StealthTransaction) -> dict:
+    """Canonical JSON-safe transaction representation used on disk and RPC."""
+    return {
+        "version": tx.version,
+        "lock_time": tx.lock_time,
+        "txid": tx.txid,
+        "inputs": [asdict(tx_input) for tx_input in tx.inputs],
+        "outputs": [asdict(tx_output) for tx_output in tx.outputs],
+    }
+
+
+def transaction_from_dict(payload: dict) -> StealthTransaction:
+    """Parse an untrusted transaction and verify its content-derived ID."""
+    if not isinstance(payload, dict):
+        raise ValueError("Transaction payload must be an object")
+    tx = StealthTransaction(
+        version=int(payload["version"]),
+        inputs=[TxInput(**item) for item in payload["inputs"]],
+        outputs=[TxOutput(**item) for item in payload["outputs"]],
+        lock_time=int(payload["lock_time"]),
+        txid=str(payload.get("txid", "")),
+    )
+    if tx.version != 1 or tx.lock_time < 0:
+        raise ValueError("Unsupported transaction version or lock_time")
+    claimed_txid = tx.txid
+    tx.finalize()
+    if not claimed_txid or claimed_txid != tx.txid:
+        raise ValueError("Transaction ID does not match canonical transaction contents")
+    return tx
+
 class StealthWallet:
     def __init__(self, keypair: Optional[StealthKeyPair] = None, name: str = "default"):
         self.keypair = keypair or StealthKeyPair()
@@ -132,6 +163,8 @@ class StealthWallet:
     def from_keys(cls, spend_priv_hex: str, view_priv_hex: str, name: str = "imported") -> "StealthWallet":
         spend_scalar = int(spend_priv_hex, 16)
         view_scalar = int(view_priv_hex, 16)
+        if not (1 <= spend_scalar < _N and 1 <= view_scalar < _N):
+            raise ValueError("Wallet private scalar is outside the secp256k1 range")
         kp = StealthKeyPair(spend_priv_scalar=spend_scalar, view_priv_scalar=view_scalar)
         return cls(keypair=kp, name=name)
 
@@ -139,10 +172,19 @@ class StealthWallet:
     def load_from_json(cls, filepath: str) -> "StealthWallet":
         with open(filepath, "r", encoding="utf-8") as f:
             data = json.load(f)
-        spend = data.get("spend_priv_scalar") or data.get("spend_priv_hex")
-        view = data.get("view_priv_scalar") or data.get("view_priv_hex")
+        if data.get("spend_priv_hex") and data.get("view_priv_hex"):
+            spend = str(data["spend_priv_hex"])
+            view = str(data["view_priv_hex"])
+        elif data.get("spend_priv_scalar") and data.get("view_priv_scalar"):
+            spend = f"{int(data['spend_priv_scalar']):064x}"
+            view = f"{int(data['view_priv_scalar']):064x}"
+        else:
+            raise ValueError("Wallet file does not contain a complete private key pair")
         name = data.get("name", "loaded")
-        return cls.from_keys(spend, view, name=name)
+        wallet = cls.from_keys(spend, view, name=name)
+        if data.get("address") and data["address"] != wallet.address:
+            raise ValueError("Wallet address does not match its private keys")
+        return wallet
 
     def export_to_dict(self, include_private: bool = False) -> dict:
         d = {

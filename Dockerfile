@@ -2,22 +2,24 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl \
-    git \
-    build-essential \
-    && rm -rf /var/lib/apt/lists/*
-
 # Copy project files
-COPY src/ /app/src/
-COPY sdk/ /app/sdk/
-COPY web/ /app/web/
-COPY scripts/ /app/scripts/
+COPY --chown=10001:10001 src/ /app/src/
+COPY --chown=10001:10001 sdk/ /app/sdk/
+COPY --chown=10001:10001 web/ /app/web/
+COPY --chown=10001:10001 scripts/ /app/scripts/
+COPY --chown=10001:10001 params/ /app/params/
 
 # Install btck-agent SDK
 RUN pip install --no-cache-dir -e /app/sdk
 
-EXPOSE 16110 16112 3333 8080
+RUN groupadd --gid 10001 btck && useradd --uid 10001 --gid 10001 --no-create-home btck \
+    && mkdir -p /app/data && chown -R 10001:10001 /app/data /app
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+USER 10001:10001
+
+EXPOSE 16110 16112 3333
 
 CMD ["python3", "/app/src/node/daemon.py"]

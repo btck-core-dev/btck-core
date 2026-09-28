@@ -7,6 +7,8 @@ Zero external dependencies (uses standard library asyncio).
 """
 
 import asyncio
+import copy
+import hmac
 import json
 import logging
 import time
@@ -21,6 +23,10 @@ from privacy.stealth_address import StealthKeyPair
 from tokenomics.emission_schedule import SATS_PER_COIN
 from p2p.p2p_network import P2PNetwork
 from consensus.safeguards import consensus_guardian, SignedNetworkAlert, NetworkAlertPayload
+from config.network import NetworkConfig, load_network
+from node.chain_store import ChainStore
+from node.utxo_set import UTXOEntry
+from privacy.wallet_engine import transaction_from_dict, transaction_to_dict
 
 logging.basicConfig(
     level=logging.INFO,
@@ -29,16 +35,107 @@ logging.basicConfig(
 logger = logging.getLogger("btckd")
 
 class BTCKDaemon:
-    def __init__(self, host: str = "0.0.0.0", port: int = 16110, p2p_port: int = 16111, seed_peers: Optional[list] = None):
+    def __init__(
+        self,
+        host: str = "127.0.0.1",
+        port: int = 16110,
+        p2p_host: Optional[str] = None,
+        p2p_port: int = 16111,
+        seed_peers: Optional[list] = None,
+        network: Optional[NetworkConfig | str] = None,
+        data_root: Optional[str] = None,
+        persistent: bool = False,
+        rpc_token: Optional[str] = None,
+    ):
         self.host = host
         self.port = port
+        self.p2p_host = p2p_host or host
         self.p2p_port = p2p_port
-        self.dag = BlockDAG()
-        self.p2p = P2PNetwork(dag=self.dag, p2p_host=host, p2p_port=p2p_port, seed_peers=seed_peers)
+        self.rpc_token = rpc_token or os.getenv("BTCK_RPC_TOKEN")
+        if host not in {"127.0.0.1", "::1", "localhost"}:
+            if not self.rpc_token or len(self.rpc_token) < 32:
+                raise ValueError("Non-loopback RPC binding requires BTCK_RPC_TOKEN with at least 32 characters")
+        self.network = network if isinstance(network, NetworkConfig) else load_network(network)
+        self.data_dir = self.network.data_dir(data_root)
+        self.dag = BlockDAG(network=self.network)
+        self.mempool: Dict[str, Any] = {}
+        self.chain_store: Optional[ChainStore] = None
+        self.replayed_blocks = 0
+        if persistent:
+            self.chain_store = ChainStore(self.data_dir / "chain.sqlite3", self.network)
+            self.replayed_blocks = self.chain_store.replay_into(self.dag)
+        self.p2p = P2PNetwork(
+            dag=self.dag,
+            p2p_host=self.p2p_host,
+            p2p_port=p2p_port,
+            seed_peers=seed_peers,
+            block_acceptor=self.accept_block,
+        )
         self.server: Optional[asyncio.Server] = None
         self.running = False
         self.start_time = time.time()
-        logger.info(f"Node initialized with Genesis Block: {self.dag.genesis_hash[:16]}... (P2P on port {self.p2p_port})")
+        logger.info(
+            f"Node initialized on {self.network.name} ({self.network.chain_id}) with "
+            f"Genesis Block: {self.dag.genesis_hash[:16]}... "
+            f"(data: {self.data_dir}, P2P port: {self.p2p_port})"
+        )
+
+    def accept_block(self, block: DAGBlock) -> bool:
+        commit_hook = self.chain_store.append_block if self.chain_store else None
+        accepted = self.dag.add_block(block, commit_hook=commit_hook)
+        if accepted:
+            selected_hashes = set(self.dag.virtual_selected_parent_chain)
+            if block.hash in selected_hashes:
+                for tx in block.transactions:
+                    self.mempool.pop(tx.txid, None)
+            self._revalidate_mempool()
+        return accepted
+
+    def _mempool_overlay(self):
+        overlay = copy.deepcopy(self.dag.utxo_set.utxos)
+        height = len(self.dag.virtual_selected_parent_chain)
+        for tx in self.mempool.values():
+            valid, error, _ = self.dag.utxo_set.validate_transaction(tx, height, overlay)
+            if not valid:
+                raise ValueError(f"Mempool invariant failed for {tx.txid}: {error}")
+            for tx_input in tx.inputs:
+                overlay.pop((tx_input.prev_txid, tx_input.prev_vout))
+            for index, output in enumerate(tx.outputs):
+                overlay[(tx.txid, index)] = UTXOEntry(
+                    amount_satk=output.amount_satk,
+                    P_onetime_hex=output.P_onetime_hex,
+                    R_ephem_hex=output.R_ephem_hex,
+                    block_height=height,
+                    kind="standard",
+                )
+        return overlay
+
+    def _revalidate_mempool(self) -> None:
+        pending = list(self.mempool.values())
+        self.mempool = {}
+        for tx in pending:
+            try:
+                self.submit_transaction(tx)
+            except ValueError:
+                logger.info("Evicted invalidated mempool transaction %s", tx.txid)
+
+    def submit_transaction(self, tx) -> dict:
+        if tx.txid in self.mempool:
+            return {"accepted": True, "txid": tx.txid, "status": "already-in-mempool"}
+        if len(self.mempool) >= 1000:
+            raise ValueError("Mempool capacity reached")
+        if len(tx.inputs) > 100 or len(tx.outputs) > 100:
+            raise ValueError("Transaction exceeds input/output limit")
+        for block in self.dag.blocks.values():
+            if any(existing.txid == tx.txid for existing in block.transactions):
+                return {"accepted": True, "txid": tx.txid, "status": "confirmed"}
+        overlay = self._mempool_overlay()
+        height = len(self.dag.virtual_selected_parent_chain)
+        valid, error, fee_sats = self.dag.utxo_set.validate_transaction(tx, height, overlay)
+        if not valid:
+            raise ValueError(error)
+        self.mempool[tx.txid] = tx
+        return {"accepted": True, "txid": tx.txid, "status": "mempool", "fee_satk": fee_sats}
 
     async def handle_http_request(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
         try:
@@ -67,6 +164,16 @@ class BTCKDaemon:
                     if k.strip().lower() == 'content-length':
                         content_length = int(v.strip())
 
+            if content_length < 0 or content_length > 1_000_000:
+                response_body = b'{"error":"request body too large"}'
+                writer.write(
+                    b"HTTP/1.1 413 Payload Too Large\r\nContent-Type: application/json\r\n"
+                    + f"Content-Length: {len(response_body)}\r\nConnection: close\r\n\r\n".encode()
+                    + response_body
+                )
+                await writer.drain()
+                return
+
             # Read body
             body_bytes = b""
             if content_length > 0:
@@ -76,9 +183,14 @@ class BTCKDaemon:
             if method == "POST" and (path == "/" or path == "/rpc"):
                 try:
                     rpc_req = json.loads(body_bytes.decode('utf-8'))
-                    rpc_res = await self.process_rpc(rpc_req)
-                    response_body = json.dumps(rpc_res).encode('utf-8')
-                    status_line = "HTTP/1.1 200 OK\r\n"
+                    rpc_method = rpc_req.get("method", "") if isinstance(rpc_req, dict) else ""
+                    if self._method_requires_auth(rpc_method) and not self._authorized(headers):
+                        response_body = json.dumps({"jsonrpc": "2.0", "error": {"code": -32001, "message": "RPC authentication required"}, "id": rpc_req.get("id")}).encode()
+                        status_line = "HTTP/1.1 401 Unauthorized\r\n"
+                    else:
+                        rpc_res = await self.process_rpc(rpc_req)
+                        response_body = json.dumps(rpc_res).encode('utf-8')
+                        status_line = "HTTP/1.1 200 OK\r\n"
                 except Exception as e:
                     response_body = json.dumps({"jsonrpc": "2.0", "error": {"code": -32603, "message": str(e)}, "id": None}).encode('utf-8')
                     status_line = "HTTP/1.1 500 Internal Server Error\r\n"
@@ -96,7 +208,7 @@ class BTCKDaemon:
                 f"Content-Type: application/json\r\n"
                 f"Content-Length: {len(response_body)}\r\n"
                 f"Connection: close\r\n"
-                f"Access-Control-Allow-Origin: *\r\n\r\n"
+                f"X-Content-Type-Options: nosniff\r\n\r\n"
             ).encode('utf-8')
 
             writer.write(resp_headers + response_body)
@@ -111,11 +223,33 @@ class BTCKDaemon:
             except Exception:
                 pass
 
+    @staticmethod
+    def _method_requires_auth(method: str) -> bool:
+        return method in {"submitAlert", "addPeer", "submitBlock", "submitTransaction", "scanStealthBalance"}
+
+    def _authorized(self, headers: dict) -> bool:
+        if not self.rpc_token:
+            return self.host in {"127.0.0.1", "::1", "localhost"}
+        supplied = headers.get("authorization", "")
+        expected = f"Bearer {self.rpc_token}"
+        return hmac.compare_digest(supplied, expected)
+
     def get_node_info(self) -> dict:
         dag_info = self.dag.get_dag_info()
         return {
             "version": "1.0.0-cypherpunk",
             "protocol_version": 1,
+            "network": {
+                "name": self.network.name,
+                "chain_id": self.network.chain_id,
+                "p2p_magic": self.network.p2p_magic,
+                "genesis_hash": self.dag.genesis_hash,
+                "consensus_fingerprint": self.network.consensus_fingerprint,
+                "data_dir": str(self.data_dir),
+                "manifest": str(self.network.manifest_path),
+                "persistence_enabled": self.chain_store is not None,
+                "replayed_blocks": self.replayed_blocks,
+            },
             "uptime_seconds": int(time.time() - self.start_time),
             "block_time_target": "1.0s",
             "safeguards": {
@@ -191,9 +325,13 @@ class BTCKDaemon:
                 "jsonrpc": "2.0",
                 "result": {
                     "parents": tips,
-                    "target_bits": 1,
+                    "version": self.network.block_version,
+                    "chain_id": self.network.chain_id,
+                    "target_bits": self.network.pow_limit_bits,
                     "blue_score": selected.blue_score + 1,
-                    "timestamp": time.time()
+                    "timestamp": max(time.time(), max(self.dag.blocks[parent].timestamp for parent in tips) + 0.000001),
+                    "transactions": [transaction_to_dict(tx) for tx in self.mempool.values()],
+                    "mempool_size": len(self.mempool),
                 },
                 "id": req_id
             }
@@ -201,15 +339,27 @@ class BTCKDaemon:
         elif method == "submitBlock":
             # params: {parents, timestamp, bits, nonce, coinbase_output: [R_hex, P_hex]}
             try:
+                if params.get("chain_id", self.network.chain_id) != self.network.chain_id:
+                    raise ValueError("Submitted block chain_id does not match this node")
                 parents = params.get("parents", self.dag.get_tips())
                 ts = params.get("timestamp", time.time())
-                bits = params.get("bits", 1)
+                bits = params.get("bits", self.network.pow_limit_bits)
                 nonce = params.get("nonce", 0)
                 cb = params.get("coinbase_output", ["00" * 33, "00" * 33])
                 cb_tuple = (bytes.fromhex(cb[0]), bytes.fromhex(cb[1]))
+                transactions = [transaction_from_dict(raw) for raw in params.get("transactions", [])]
                 
-                block = DAGBlock(parents, ts, bits, nonce, cb_tuple)
-                success = self.dag.add_block(block)
+                block = DAGBlock(
+                    parents,
+                    ts,
+                    bits,
+                    nonce,
+                    cb_tuple,
+                    transactions=transactions,
+                    version=params.get("version", self.network.block_version),
+                    chain_id=self.network.chain_id,
+                )
+                success = self.accept_block(block)
                 if success:
                     await self.p2p.broadcast_block(block.hash)
                 return {
@@ -225,6 +375,50 @@ class BTCKDaemon:
                 }
             except Exception as e:
                 return {"jsonrpc": "2.0", "error": {"code": -32600, "message": str(e)}, "id": req_id}
+
+        elif method == "submitTransaction":
+            try:
+                tx = transaction_from_dict(params.get("transaction"))
+                result = self.submit_transaction(tx)
+                return {"jsonrpc": "2.0", "result": result, "id": req_id}
+            except Exception as e:
+                return {"jsonrpc": "2.0", "error": {"code": -32602, "message": str(e)}, "id": req_id}
+
+        elif method == "getTransaction":
+            txid = str(params.get("txid", ""))
+            if txid in self.mempool:
+                return {"jsonrpc": "2.0", "result": {"txid": txid, "status": "mempool"}, "id": req_id}
+            for block_hash in self.dag.virtual_selected_parent_chain:
+                block = self.dag.blocks[block_hash]
+                if any(tx.txid == txid for tx in block.transactions):
+                    return {
+                        "jsonrpc": "2.0",
+                        "result": {"txid": txid, "status": "confirmed", "block_hash": block_hash, "blue_score": block.blue_score},
+                        "id": req_id,
+                    }
+            return {"jsonrpc": "2.0", "result": {"txid": txid, "status": "unknown"}, "id": req_id}
+
+        elif method == "getUTXOSet":
+            outputs = []
+            for (txid, vout), entry in sorted(self.dag.utxo_set.utxos.items()):
+                if not entry.R_ephem_hex or not entry.P_onetime_hex:
+                    continue
+                outputs.append({
+                    "txid": txid,
+                    "vout": vout,
+                    "amount_satk": entry.amount_satk,
+                    "R_ephem_hex": entry.R_ephem_hex,
+                    "P_onetime_hex": entry.P_onetime_hex,
+                    "height": entry.block_height,
+                    "is_coinbase": entry.is_coinbase,
+                    "timelock_until_height": entry.timelock_until_height,
+                    "kind": entry.kind,
+                })
+            return {
+                "jsonrpc": "2.0",
+                "result": {"selected_height": len(self.dag.virtual_selected_parent_chain) - 1, "outputs": outputs},
+                "id": req_id,
+            }
 
         elif method == "scanStealthBalance":
             # View-Key-only scanning (Chapter 8 Audit: Spend key NEVER sent to node)
@@ -276,6 +470,7 @@ class BTCKDaemon:
             return {"jsonrpc": "2.0", "error": {"code": -32601, "message": f"Method '{method}' not found"}, "id": req_id}
 
     async def start(self):
+        self.data_dir.mkdir(parents=True, exist_ok=True)
         self.running = True
         await self.p2p.start()
         self.server = await asyncio.start_server(self.handle_http_request, self.host, self.port)
@@ -293,15 +488,32 @@ class BTCKDaemon:
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(description="BTC-K High-Speed BlockDAG Node Daemon (btckd)")
-    parser.add_argument("--host", default="0.0.0.0", help="RPC listen host (default: 0.0.0.0)")
+    parser.add_argument("--host", default="127.0.0.1", help="RPC listen host (default: loopback only)")
     parser.add_argument("--port", type=int, default=16110, help="RPC listen port (default: 16110)")
+    parser.add_argument("--p2p-host", default="0.0.0.0", help="P2P listen host (default: 0.0.0.0)")
     parser.add_argument("--p2p-port", type=int, default=16111, help="P2P listen port (default: 16111)")
     parser.add_argument("--seed", action="append", default=[], help="Seed peer in host:port format (can specify multiple)")
+    parser.add_argument("--network", choices=("devnet", "testnet", "mainnet"), default=os.getenv("BTCK_NETWORK", "devnet"), help="Network to join (default: devnet)")
+    parser.add_argument("--network-manifest", default=os.getenv("BTCK_NETWORK_MANIFEST"), help="Explicit network manifest path")
+    parser.add_argument("--data-root", default=os.getenv("BTCK_DATA_ROOT"), help="Storage root; the network name is always appended")
+    parser.add_argument("--ephemeral", action="store_true", help="Disable the accepted-block journal (tests only)")
+    parser.add_argument("--rpc-token", default=os.getenv("BTCK_RPC_TOKEN"), help="RPC bearer token (prefer BTCK_RPC_TOKEN)")
     args = parser.parse_args()
 
+    selected_network = load_network(args.network, args.network_manifest)
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
-    daemon = BTCKDaemon(host=args.host, port=args.port, p2p_port=args.p2p_port, seed_peers=args.seed)
+    daemon = BTCKDaemon(
+        host=args.host,
+        port=args.port,
+        p2p_host=args.p2p_host,
+        p2p_port=args.p2p_port,
+        seed_peers=args.seed,
+        network=selected_network,
+        data_root=args.data_root,
+        persistent=not args.ephemeral,
+        rpc_token=args.rpc_token,
+    )
     try:
         loop.run_until_complete(daemon.start())
         loop.run_forever()

@@ -12,21 +12,21 @@ from typing import Dict, Any, Optional
 
 import os
 import sys
-import time
 
 base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 src_dir = os.path.join(base_dir, "src")
 if src_dir not in sys.path:
     sys.path.insert(0, src_dir)
 
-from privacy.stealth_address import StealthKeyPair, sha256
-from privacy.wallet_engine import schnorr_sign
+from privacy.stealth_address import StealthKeyPair
+from privacy.wallet_engine import StealthWallet
 from tokenomics.emission_schedule import SATS_PER_COIN
 
 class BTCKWallet:
-    def __init__(self, spend_priv_scalar: Optional[int] = None, view_priv_scalar: Optional[int] = None, rpc_url: str = "http://127.0.0.1:16110/rpc"):
+    def __init__(self, spend_priv_scalar: Optional[int] = None, view_priv_scalar: Optional[int] = None, rpc_url: str = "http://127.0.0.1:16110/rpc", rpc_token: Optional[str] = None):
         self.keypair = StealthKeyPair(spend_priv_scalar, view_priv_scalar)
         self.rpc_url = rpc_url
+        self.rpc_token = rpc_token or os.getenv("BTCK_RPC_TOKEN")
         self.address = self.keypair.get_public_stealth_address()
 
     @classmethod
@@ -46,7 +46,10 @@ class BTCKWallet:
 
     def _rpc_call(self, method: str, params: dict) -> dict:
         payload = json.dumps({"jsonrpc": "2.0", "method": method, "params": params, "id": 1}).encode('utf-8')
-        req = urllib.request.Request(self.rpc_url, data=payload, headers={"Content-Type": "application/json"})
+        headers = {"Content-Type": "application/json"}
+        if self.rpc_token:
+            headers["Authorization"] = f"Bearer {self.rpc_token}"
+        req = urllib.request.Request(self.rpc_url, data=payload, headers=headers)
         try:
             with urllib.request.urlopen(req, timeout=5.0) as resp:
                 data = json.loads(resp.read().decode('utf-8'))
@@ -57,47 +60,22 @@ class BTCKWallet:
             raise ConnectionError(f"Failed to connect to BTC-K node at {self.rpc_url}: {e}")
 
     def get_balance(self) -> Dict[str, Any]:
-        """Scan node DAG for stealth UTXOs belonging to this wallet"""
-        res = self._rpc_call("scanStealthBalance", {
-            "view_priv_scalar": str(self.keypair.view_priv),
-            "spend_priv_scalar": str(self.keypair.spend_priv)
-        })
+        """Fetch public outputs and scan locally; no private key leaves this process."""
+        snapshot = self._rpc_call("getUTXOSet", {})
+        wallet = StealthWallet(self.keypair, "sdk")
+        wallet.scan_chain_outputs(snapshot.get("outputs", []))
         return {
             "address": self.address,
-            "total_sats": res.get("total_sats", 0),
-            "total_btck": res.get("total_btck", 0.0),
-            "utxo_count": res.get("utxo_count", 0),
-            "utxos": res.get("utxos", [])
+            "total_sats": wallet.get_balance_satk(),
+            "total_btck": wallet.get_balance_btck(),
+            "utxo_count": len(wallet.utxos),
+            "utxos": [vars(utxo) for utxo in wallet.utxos],
         }
 
     def pay_invoice(self, invoice: dict) -> dict:
         """
-        Pay an HTTP 402 AI-RPC invoice using Sats with Schnorr signature verification
+        Legacy self-signed receipts are not payments and are intentionally disabled.
         """
-        raw_amt = invoice.get("amount_satk", invoice.get("amount_sats", 0))
-        amount_satk = int(raw_amt)
-        recipient_addr = invoice.get("payment_address")
-        invoice_id = invoice.get("invoice_id")
-        nonce = invoice.get("nonce", "")
-        timestamp = int(time.time())
-        
-        # Derive one-time stealth output for recipient
-        R_ephem, P_onetime = StealthKeyPair.generate_one_time_stealth_output(recipient_addr)
-        
-        # Digest matching gateway canonical digest
-        digest = sha256(f"{invoice_id}_{amount_satk}_{recipient_addr}_{nonce}_{timestamp}".encode())
-        sig = schnorr_sign(self.keypair.spend_priv, digest)
-        
-        tx_receipt = {
-            "invoice_id": invoice_id,
-            "amount_satk": amount_satk,
-            "amount_sats": amount_satk,
-            "payer_stealth_address": self.address,
-            "payer_spend_pub_hex": self.keypair.spend_pub_bytes.hex(),
-            "recipient_one_time_output": P_onetime.hex(),
-            "ephemeral_pubkey": R_ephem.hex(),
-            "timestamp": timestamp,
-            "payment_signature": sig.hex(),
-            "status": "PAID"
-        }
-        return tx_receipt
+        raise RuntimeError(
+            "HTTP 402 settlement is disabled: use a real UTXO transaction and node confirmation"
+        )

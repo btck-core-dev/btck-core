@@ -1,0 +1,42 @@
+{
+  "manifest_version": 1,
+  "network": "mainnet",
+  "chain_id": "btck-mainnet-unreleased",
+  "p2p_magic": "4254434d",
+  "data_subdir": "mainnet",
+  "release": {
+    "approved": false,
+    "approval_id": "",
+    "note": "LOCKED TEMPLATE. Replace genesis after independent review; never approve by copying devnet/testnet values."
+  },
+  "consensus": {
+    "block_version": 2,
+    "pow_limit_bits": "0x1d00ffff",
+    "max_future_seconds": 120,
+    "max_parents": 8,
+    "eco_fund_output": [
+      "020000000000000000000000000000000000000000000000000000000000000000",
+      "030000000000000000000000000000000000000000000000000000000000000000"
+    ]
+  },
+  "genesis": {
+    "version": 1,
+    "timestamp": 1.0,
+    "bits": 1,
+    "nonce": "0x0",
+    "headline": "UNRELEASED BTC-K MAINNET TEMPLATE - DO NOT USE",
+    "coinbase_output": [
+      "020000000000000000000000000000000000000000000000000000000000000000",
+      "020000000000000000000000000000000000000000000000000000000000000000"
+    ],
+    "expected_hash": "0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "features": {
+    "stratum": false,
+    "ai_payments": false,
+    "web_wallet_send": false,
+    "dex": false,
+    "bridge": false,
+    "exchange_adapter": false
+  }
+}

@@ -10,7 +10,10 @@ BTC-K High-Speed BlockDAG Engine (GHOSTDAG Consensus & Virtual Chain Issuance)
 """
 
 import hashlib
+import copy
+import json
 import time
+from dataclasses import asdict
 from typing import List, Dict, Set, Optional, Tuple
 import sys
 import os
@@ -18,7 +21,7 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from consensus.kheavyhash import kheavyhash
-from consensus.genesis import serialize_block_header, generate_genesis_block, GENESIS_HASH
+from consensus.genesis import serialize_block_header, generate_genesis_block
 from tokenomics.emission_schedule import (
     get_base_block_reward_sats,
     is_combo_block,
@@ -31,6 +34,22 @@ from tokenomics.emission_schedule import (
 from node.utxo_set import UTXOSet
 from privacy.wallet_engine import StealthTransaction
 from consensus.combo_state_machine import ComboStateMachine
+from config.network import NetworkConfig, load_network
+from consensus.pow import block_work, hash_meets_target
+
+
+def transaction_commitment(transactions: List[StealthTransaction]) -> bytes:
+    """Commit to transaction count and ordered transaction IDs."""
+    payload = len(transactions).to_bytes(4, "little")
+    for tx in transactions:
+        try:
+            txid = bytes.fromhex(tx.txid)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("Transaction ID must be hex") from exc
+        if len(txid) != 32:
+            raise ValueError("Transaction ID must be 32 bytes")
+        payload += txid
+    return hashlib.sha256(payload).digest()
 
 class DAGBlock:
     def __init__(
@@ -41,11 +60,14 @@ class DAGBlock:
         nonce: int,
         coinbase_output: Tuple[bytes, bytes], # (R_ephem, P_onetime)
         transactions: Optional[List[StealthTransaction]] = None,
-        version: int = 1,
+        version: Optional[int] = None,
         blue_score: int = 0,
-        payload_hash: bytes = b""
+        payload_hash: bytes = b"",
+        chain_id: Optional[str] = None,
     ):
-        self.version = version
+        default_network = load_network() if version is None or chain_id is None else None
+        self.version = version if version is not None else default_network.block_version
+        self.chain_id = chain_id if chain_id is not None else default_network.chain_id
         self.parents = parents # List of parent block hashes
         self.timestamp = timestamp
         self.bits = bits
@@ -53,7 +75,7 @@ class DAGBlock:
         self.blue_score = blue_score
         self.coinbase_output = coinbase_output
         self.transactions: List[StealthTransaction] = transactions or []
-        self.payload_hash = payload_hash
+        self.payload_hash = payload_hash or transaction_commitment(self.transactions)
         
         # GHOSTDAG topological fields
         self.blue_work: int = 0
@@ -65,27 +87,23 @@ class DAGBlock:
         self.reward_sats: int = 0
         self.miner_base_sats: int = 0
         self.pool_deposit_sats: int = 0
+        self.eco_deposit_sats: int = 0
         self.combo_payout_sats: int = 0
+        self.fees_sats: int = 0
         
         # Calculate Block Hash with canonical serialization
         self.hash = self.compute_hash()
 
     def compute_hash(self) -> str:
-        # If payload_hash is empty, calculate tx merkle root
-        tx_hash = self.payload_hash
-        if not tx_hash and self.transactions:
-            combined_txids = "".join(tx.txid for tx in self.transactions).encode('utf-8')
-            tx_hash = hashlib.sha256(combined_txids).digest()
-
         header_payload = serialize_block_header(
             version=self.version,
+            chain_id=self.chain_id,
             parents=self.parents,
             timestamp=self.timestamp,
             bits=self.bits,
             nonce=self.nonce,
-            blue_score=self.blue_score,
             coinbase_output=self.coinbase_output,
-            payload_hash=tx_hash
+            payload_hash=self.payload_hash
         )
         return kheavyhash(header_payload).hex()
 
@@ -94,7 +112,8 @@ class BlockDAG:
     Persistent GHOSTDAG graph maintaining DAG tips,
     virtual selected chain, single-path issuance, and UTXO consensus state.
     """
-    def __init__(self, k_cluster: int = 18):
+    def __init__(self, k_cluster: int = 18, network: Optional[NetworkConfig | str] = None):
+        self.network = network if isinstance(network, NetworkConfig) else load_network(network)
         self.k_cluster = k_cluster # GHOSTDAG K-parameter
         self.blocks: Dict[str, DAGBlock] = {}
         self.tips: Set[str] = set()
@@ -110,7 +129,7 @@ class BlockDAG:
 
     def _init_genesis(self):
         """Construct the Immutable Genesis Block #0 with cypherpunk headline"""
-        g = generate_genesis_block()
+        g = generate_genesis_block(self.network)
         
         genesis_cb = (bytes.fromhex(g["coinbase_output"][0]), bytes.fromhex(g["coinbase_output"][1]))
         headline_hash = bytes.fromhex(g["headline_hash"])
@@ -122,7 +141,8 @@ class BlockDAG:
             coinbase_output=genesis_cb,
             version=g.get("version", 1),
             blue_score=0,
-            payload_hash=headline_hash
+            payload_hash=headline_hash,
+            chain_id=self.network.chain_id,
         )
         genesis.blue_score = 0
         genesis.blue_work = 1
@@ -130,7 +150,13 @@ class BlockDAG:
         genesis.reward_sats = g["reward_sats"]
         genesis.minted_sats = 0
         
-        assert genesis.hash == g["hash"] == GENESIS_HASH, f"Genesis hash mismatch: {genesis.hash} != {GENESIS_HASH}"
+        if genesis.hash != g["hash"] or genesis.hash != self.network.genesis.expected_hash:
+            raise ValueError(
+                f"{self.network.name} genesis hash mismatch: {genesis.hash} != "
+                f"{self.network.genesis.expected_hash}"
+            )
+        if not hash_meets_target(bytes.fromhex(genesis.hash), genesis.bits, self.network.pow_limit_bits):
+            raise ValueError(f"{self.network.name} genesis does not satisfy its proof-of-work target")
         
         self.blocks[genesis.hash] = genesis
         self.tips.add(genesis.hash)
@@ -157,19 +183,81 @@ class BlockDAG:
         chain.reverse()
         return chain
 
-    def add_block(self, block: DAGBlock) -> bool:
-        """
-        Validate and insert a new block into the BlockDAG.
-        Executes GHOSTDAG parent selection, blue score calculation,
-        Virtual Selected Chain single-path issuance, and UTXO state application.
-        """
+    def _validate_block(self, block: DAGBlock) -> None:
+        """Validate every stateless/header rule without mutating consensus state."""
         if block.hash in self.blocks:
-            return False
+            raise ValueError("Block already exists")
+        if block.chain_id != self.network.chain_id:
+            raise ValueError("Block chain_id does not match this node's network")
+        if block.version != self.network.block_version:
+            raise ValueError(f"Unsupported block version: {block.version}")
+        if not block.parents:
+            raise ValueError("Non-genesis block must have at least one parent")
+        if len(block.parents) > self.network.max_parents:
+            raise ValueError("Block exceeds the network parent limit")
+        if len(set(block.parents)) != len(block.parents):
+            raise ValueError("Block contains duplicate parents")
+        if block.bits != self.network.pow_limit_bits:
+            raise ValueError("Block target bits do not match the current fixed network target")
+        if len(block.coinbase_output) != 2 or any(
+            len(point) != 33 or point[0] not in (2, 3) for point in block.coinbase_output
+        ):
+            raise ValueError("Coinbase output must contain two compressed secp256k1 points")
+        if len(block.payload_hash) != 32:
+            raise ValueError("Block payload commitment must be 32 bytes")
+        if block.payload_hash != transaction_commitment(block.transactions):
+            raise ValueError("Block payload commitment does not match its transactions")
+        if block.compute_hash() != block.hash:
+            raise ValueError("Block header was mutated after hashing")
 
         # Validate parents exist
         for parent_hash in block.parents:
             if parent_hash not in self.blocks:
                 raise ValueError(f"Parent block {parent_hash} not found in DAG")
+        newest_parent_time = max(self.blocks[parent].timestamp for parent in block.parents)
+        if block.timestamp <= newest_parent_time:
+            raise ValueError("Block timestamp must be greater than every parent timestamp")
+        if block.timestamp > time.time() + self.network.max_future_seconds:
+            raise ValueError("Block timestamp is too far in the future")
+        if not hash_meets_target(bytes.fromhex(block.hash), block.bits, self.network.pow_limit_bits):
+            raise ValueError("Block proof of work does not meet target")
+
+    def add_block(self, block: DAGBlock, commit_hook=None) -> bool:
+        """Validate and atomically apply a block to all in-memory consensus state."""
+        if block.hash in self.blocks:
+            return False
+        self._validate_block(block)
+
+        snapshot = copy.deepcopy((
+            self.blocks,
+            self.tips,
+            self.selected_tip,
+            self.issued_supply_sats,
+            self.pool_balance_sats,
+            self.virtual_selected_parent_chain,
+            self.utxo_set,
+            self.combo_machine,
+        ))
+        try:
+            accepted = self._commit_validated_block(block)
+            if accepted and commit_hook is not None:
+                commit_hook(block, self.state_root())
+            return accepted
+        except Exception:
+            (
+                self.blocks,
+                self.tips,
+                self.selected_tip,
+                self.issued_supply_sats,
+                self.pool_balance_sats,
+                self.virtual_selected_parent_chain,
+                self.utxo_set,
+                self.combo_machine,
+            ) = snapshot
+            raise
+
+    def _commit_validated_block(self, block: DAGBlock) -> bool:
+        """Mutating half of add_block; caller provides rollback protection."""
 
         # 1. Select Selected Parent (parent with highest blue work, tie-break by blue_score and hash)
         selected_parent_hash = max(
@@ -189,10 +277,7 @@ class BlockDAG:
         # 3. Calculate Blue Score and Blue Work
         blue_add = 1 + sum(1 for m in merge_set if self.blocks[m].is_blue)
         block.blue_score = selected_parent.blue_score + blue_add
-        block.blue_work = selected_parent.blue_work + (1 << max(1, block.bits))
-
-        # Re-compute hash with confirmed blue score
-        block.hash = block.compute_hash()
+        block.blue_work = selected_parent.blue_work + block_work(block.bits, self.network.pow_limit_bits)
 
         # Insert block into blocks map
         self.blocks[block.hash] = block
@@ -221,9 +306,14 @@ class BlockDAG:
                 # Deduct un-minted subsidy exactly
                 self.issued_supply_sats -= orphaned_blk.minted_sats
                 self.pool_balance_sats -= orphaned_blk.pool_deposit_sats
+                self.pool_balance_sats += orphaned_blk.combo_payout_sats
                 orphaned_blk.minted_sats = 0
                 orphaned_blk.reward_sats = 0
                 orphaned_blk.miner_base_sats = 0
+                orphaned_blk.pool_deposit_sats = 0
+                orphaned_blk.eco_deposit_sats = 0
+                orphaned_blk.combo_payout_sats = 0
+                orphaned_blk.fees_sats = 0
             if common_ancestor_idx > 0:
                 self.combo_machine.revert_to_height(common_ancestor_idx - 1)
 
@@ -273,6 +363,7 @@ class BlockDAG:
                 b.reward_sats = issuance.miner_base_sats
                 b.miner_base_sats = issuance.miner_base_sats
                 b.pool_deposit_sats = issuance.pool_deposit_sats
+                b.eco_deposit_sats = issuance.eco_deposit_sats
                 b.combo_payout_sats = pool_deduction if resolution else 0
 
                 # Apply block to UTXO set
@@ -282,10 +373,23 @@ class BlockDAG:
                     coinbase_output=b.coinbase_output,
                     reward_sats=b.reward_sats,
                     transactions=b.transactions,
-                    vesting_outputs=vesting_outputs
+                    vesting_outputs=vesting_outputs,
+                    eco_output=(
+                        issuance.eco_deposit_sats,
+                        self.network.eco_fund_output[0],
+                        self.network.eco_fund_output[1],
+                    ),
+                    pool_deposit_sats=issuance.pool_deposit_sats,
+                    pool_payout_sats=pool_deduction,
                 )
                 if not applied:
                     raise ValueError(f"Consensus failure applying block {b.hash}: {err}")
+                b.fees_sats = self.utxo_set.get_block_fees(b.hash)
+
+                if self.utxo_set.total_value_sats() != self.issued_supply_sats:
+                    raise ValueError("Consensus asset conservation failure: UTXO total != issued supply")
+                if self.utxo_set.value_by_kind_sats("jackpot_pool") != self.pool_balance_sats:
+                    raise ValueError("Consensus jackpot balance does not match pool UTXOs")
 
             self.selected_tip = block.hash
             self.virtual_selected_parent_chain = new_chain
@@ -298,18 +402,13 @@ class BlockDAG:
             block.reward_sats = 0
             block.miner_base_sats = 0
             block.pool_deposit_sats = 0
+            block.eco_deposit_sats = 0
             block.combo_payout_sats = 0
+            block.fees_sats = 0
 
-            # Still apply transactions if valid without coinbase
-            applied, err = self.utxo_set.apply_block(
-                block_hash=block.hash,
-                block_height=block.blue_score,
-                coinbase_output=block.coinbase_output,
-                reward_sats=0,
-                transactions=block.transactions
-            )
-            if not applied:
-                raise ValueError(f"Parallel block rejected by UTXO validation: {err}")
+            # Side-branch transactions are stored with the block but never touch
+            # the selected-chain UTXO view. They are validated/applied only if a
+            # later block makes this branch canonical.
 
         # Update DAG tips: remove parents from tips, add new block
         for p in block.parents:
@@ -321,9 +420,53 @@ class BlockDAG:
     def get_tips(self) -> List[str]:
         return list(self.tips)
 
+    def state_root(self) -> str:
+        """Deterministic commitment used to verify persisted replay results."""
+        blocks = []
+        for block_hash in sorted(self.blocks):
+            block = self.blocks[block_hash]
+            blocks.append({
+                "hash": block_hash,
+                "parents": sorted(block.parents),
+                "selected_parent": block.selected_parent,
+                "merge_set": sorted(block.merge_set),
+                "blue_score": block.blue_score,
+                "blue_work": block.blue_work,
+                "minted_sats": block.minted_sats,
+                "miner_base_sats": block.miner_base_sats,
+                "eco_deposit_sats": block.eco_deposit_sats,
+                "pool_deposit_sats": block.pool_deposit_sats,
+                "combo_payout_sats": block.combo_payout_sats,
+                "fees_sats": block.fees_sats,
+            })
+        utxos = []
+        for (txid, vout), entry in sorted(self.utxo_set.utxos.items()):
+            utxos.append({"txid": txid, "vout": vout, **asdict(entry)})
+        epochs = {
+            str(epoch_id): asdict(epoch)
+            for epoch_id, epoch in sorted(self.combo_machine.epochs.items())
+        }
+        payload = {
+            "chain_id": self.network.chain_id,
+            "blocks": blocks,
+            "tips": sorted(self.tips),
+            "selected_tip": self.selected_tip,
+            "selected_chain": self.virtual_selected_parent_chain,
+            "issued_supply_sats": self.issued_supply_sats,
+            "pool_balance_sats": self.pool_balance_sats,
+            "utxos": utxos,
+            "combo_epochs": epochs,
+            "combo_pending": sorted(self.combo_machine.pending_draws),
+            "combo_active": self.combo_machine.active_epoch_id,
+        }
+        encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        return hashlib.sha256(encoded).hexdigest()
+
     def get_dag_info(self) -> dict:
         selected = self.blocks[self.selected_tip]
         return {
+            "network": self.network.name,
+            "chain_id": self.network.chain_id,
             "genesis_hash": self.genesis_hash,
             "selected_tip": self.selected_tip,
             "max_blue_score": selected.blue_score,
@@ -334,5 +477,8 @@ class BlockDAG:
             "issued_supply_sats": self.issued_supply_sats,
             "issued_supply_btck": self.issued_supply_sats / SATS_PER_COIN,
             "pool_balance_sats": self.pool_balance_sats,
-            "pool_balance_btck": self.pool_balance_sats / SATS_PER_COIN
+            "pool_balance_btck": self.pool_balance_sats / SATS_PER_COIN,
+            "utxo_total_sats": self.utxo_set.total_value_sats(),
+            "eco_fund_utxo_sats": self.utxo_set.value_by_kind_sats("eco"),
+            "state_root": self.state_root(),
         }

@@ -227,14 +227,17 @@
     "target_block_rate_bps": 1.0,
     "anticone_k": 18,
     "pow_algorithm": "kHeavyHash (Kaspa byte-compatible)",
+    "network_identity_source": "params/networks/{devnet,testnet,mainnet}.json",
     "genesis_block": {
-      "hash": "ba5dd8db259ce65da57a335acef7cc9c020f10b3171e1929b9ad4bb3619663dd",
-      "version": 1,
+      "network": "devnet",
+      "status": "NO REAL VALUE; canonical values are enforced by params/networks/devnet.json",
+      "hash": "2a6023b87c8edd27a85de9fc3eb3bc77dd576777cce097ca0901a8cedc964a0f",
+      "version": 2,
       "timestamp": 1788912000.0,
-      "bits": 1,
-      "nonce": "0x4254432d4b204745",
-      "headline": "2026/09/10 Sovereign AI Agents Break Free: Physical Proof-of-Work Meets Uncensorable Privacy",
-      "headline_hash": "5c5970e348c59725c6e5138a30a26cf9972b1da5482e6e55c37599319b0ca828",
+      "bits": 545259519,
+      "nonce": "0x2",
+      "headline": "BTC-K DEVNET v2 - NO REAL VALUE - 2026-09-28",
+      "headline_hash": "8b962b36bdf96f02b82dfa25eaf0c151ce4d2645f92ace8191a8a1a462734abd",
       "coinbase_outputs": [
         "02ac791bd3152f0347a07c84bd32355f8625e034c4c43b8783421a3bd6f7a40321",
         "025eb0c909e619a0f7baef61b20ceee8cd6b5d6bdd4dd8f97827be831016f957d0"

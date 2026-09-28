@@ -23,6 +23,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..",
 from node.blockdag import BlockDAG, DAGBlock
 from p2p.p2p_network import P2PNetwork
 from privacy.stealth_address import StealthKeyPair
+from tests.pow_helpers import mine_block
 
 class TestP2PMultiNodeMesh(unittest.IsolatedAsyncioTestCase):
 
@@ -61,10 +62,9 @@ class TestP2PMultiNodeMesh(unittest.IsolatedAsyncioTestCase):
         # 2. Node 1 mines Block A and broadcasts to mesh
         miner1 = StealthKeyPair().get_public_stealth_address()
         R1, P1 = StealthKeyPair.generate_one_time_stealth_output(miner1)
-        block_a = DAGBlock(
+        block_a = mine_block(dag1,
             parents=dag1.get_tips(),
             timestamp=1788912200.0,
-            bits=1,
             nonce=1001,
             coinbase_output=(R1, P1)
         )
@@ -85,10 +85,9 @@ class TestP2PMultiNodeMesh(unittest.IsolatedAsyncioTestCase):
         # 3. Node 2 mines Block B referencing Block A and broadcasts
         miner2 = StealthKeyPair().get_public_stealth_address()
         R2, P2 = StealthKeyPair.generate_one_time_stealth_output(miner2)
-        block_b = DAGBlock(
+        block_b = mine_block(dag2,
             parents=dag2.get_tips(),
             timestamp=1788912205.0,
-            bits=1,
             nonce=2002,
             coinbase_output=(R2, P2)
         )
@@ -115,10 +114,9 @@ class TestP2PMultiNodeMesh(unittest.IsolatedAsyncioTestCase):
         # Node 1 mines Block C and broadcasts
         miner3 = StealthKeyPair().get_public_stealth_address()
         R3, P3 = StealthKeyPair.generate_one_time_stealth_output(miner3)
-        block_c = DAGBlock(
+        block_c = mine_block(dag1,
             parents=dag1.get_tips(),
             timestamp=1788912210.0,
-            bits=1,
             nonce=3003,
             coinbase_output=(R3, P3)
         )

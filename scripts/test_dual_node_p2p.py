@@ -23,7 +23,25 @@ import time
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
 
 from node.daemon import BTCKDaemon
+from node.blockdag import DAGBlock
+from consensus.pow import hash_meets_target
 from privacy.stealth_address import StealthKeyPair
+
+
+def mine_candidate(dag, parents, timestamp, coinbase_output, start_nonce):
+    for nonce in range(start_nonce, start_nonce + 100_000):
+        block = DAGBlock(
+            parents=parents,
+            timestamp=timestamp,
+            bits=dag.network.pow_limit_bits,
+            nonce=nonce,
+            coinbase_output=coinbase_output,
+            version=dag.network.block_version,
+            chain_id=dag.network.chain_id,
+        )
+        if hash_meets_target(bytes.fromhex(block.hash), block.bits, dag.network.pow_limit_bits):
+            return block
+    raise RuntimeError("Unable to find devnet proof of work")
 
 async def rpc_query(host: str, port: int, method: str, params: dict = None) -> dict:
     params = params or {}
@@ -75,11 +93,19 @@ async def main():
         for i in range(1, 4):
             tpl = await rpc_query(host, 16120, "getBlockTemplate")
             R, P = StealthKeyPair.generate_one_time_stealth_output(addr)
+            candidate = mine_candidate(
+                node_a.dag,
+                tpl["result"]["parents"],
+                time.time(),
+                (R, P),
+                50000 + i,
+            )
             res = await rpc_query(host, 16120, "submitBlock", {
-                "parents": tpl["result"]["parents"],
-                "timestamp": time.time(),
-                "bits": 1,
-                "nonce": 50000 + i,
+                "version": candidate.version,
+                "parents": candidate.parents,
+                "timestamp": candidate.timestamp,
+                "bits": candidate.bits,
+                "nonce": candidate.nonce,
                 "coinbase_output": [R.hex(), P.hex()]
             })
             b_hash = res["result"]["hash"]

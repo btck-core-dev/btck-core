@@ -15,14 +15,18 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..",
 
 from node.daemon import BTCKDaemon
 from privacy.stealth_address import StealthKeyPair
+from tests.pow_helpers import block_rpc_params, mine_block
 
-async def async_rpc_call(host: str, port: int, method: str, params: dict, req_id: int = 1):
+TEST_RPC_TOKEN = "test-token-which-is-at-least-32-characters"
+
+async def async_rpc_call(host: str, port: int, method: str, params: dict, req_id: int = 1, token: str = TEST_RPC_TOKEN):
     reader, writer = await asyncio.open_connection(host, port)
     body = json.dumps({"jsonrpc": "2.0", "method": method, "params": params, "id": req_id}).encode('utf-8')
     req_header = (
         f"POST /rpc HTTP/1.1\r\n"
         f"Host: {host}:{port}\r\n"
         f"Content-Type: application/json\r\n"
+        + (f"Authorization: Bearer {token}\r\n" if token else "") +
         f"Content-Length: {len(body)}\r\n"
         f"Connection: close\r\n\r\n"
     ).encode('utf-8')
@@ -47,7 +51,7 @@ class TestNodeDaemonAndRPC(unittest.IsolatedAsyncioTestCase):
     async def test_daemon_rpc_workflow(self):
         test_host = "127.0.0.1"
         test_port = 16180
-        daemon = BTCKDaemon(host=test_host, port=test_port, p2p_port=16181)
+        daemon = BTCKDaemon(host=test_host, port=test_port, p2p_port=16181, rpc_token=TEST_RPC_TOKEN)
         await daemon.start()
         await asyncio.sleep(0.2)
         
@@ -60,6 +64,9 @@ class TestNodeDaemonAndRPC(unittest.IsolatedAsyncioTestCase):
             tpl = await async_rpc_call(test_host, test_port, "getBlockTemplate", {})
             parents = tpl["result"]["parents"]
             self.assertGreater(len(parents), 0)
+
+            unauthorized = await async_rpc_call(test_host, test_port, "submitBlock", {}, token="")
+            self.assertEqual(unauthorized["error"]["code"], -32001)
             
             # 3. Create a miner stealth wallet
             miner_wallet = StealthKeyPair()
@@ -69,13 +76,16 @@ class TestNodeDaemonAndRPC(unittest.IsolatedAsyncioTestCase):
             for i in range(1, 6):
                 R_ephem, P_onetime = StealthKeyPair.generate_one_time_stealth_output(miner_addr)
                 
-                submit_res = await async_rpc_call(test_host, test_port, "submitBlock", {
-                    "parents": parents,
-                    "timestamp": 1788912400.0 + i,
-                    "bits": 1,
-                    "nonce": i * 1000,
-                    "coinbase_output": [R_ephem.hex(), P_onetime.hex()]
-                })
+                candidate = mine_block(
+                    daemon.dag,
+                    parents=parents,
+                    timestamp=1788912400.0 + i,
+                    nonce=i * 1000,
+                    coinbase_output=(R_ephem, P_onetime),
+                )
+                submit_res = await async_rpc_call(
+                    test_host, test_port, "submitBlock", block_rpc_params(candidate)
+                )
                 
                 block_info = submit_res["result"]
                 self.assertTrue(block_info["accepted"])

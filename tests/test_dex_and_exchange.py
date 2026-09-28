@@ -19,6 +19,7 @@ from gateway.exchange_rpc import ExchangeRPCAdapter
 from node.blockdag import BlockDAG, DAGBlock
 from privacy.stealth_address import StealthKeyPair
 from tokenomics.emission_schedule import SATK_PER_COIN
+from tests.pow_helpers import mine_block
 
 
 class TestDexAndExchange(unittest.TestCase):
@@ -62,10 +63,9 @@ class TestDexAndExchange(unittest.TestCase):
 
         # Mine a block to deposit_addr to fund the exchange wallet
         R_cb, P_cb = StealthKeyPair.generate_one_time_stealth_output(deposit_addr)
-        b1 = DAGBlock(
+        b1 = mine_block(dag,
             parents=[dag.genesis_hash],
             timestamp=1788912001.0,
-            bits=1,
             nonce=1,
             coinbase_output=(R_cb, P_cb)
         )

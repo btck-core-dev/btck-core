@@ -15,6 +15,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..",
 from node.blockdag import BlockDAG, DAGBlock
 from p2p.p2p_network import P2PNetwork
 from privacy.stealth_address import StealthKeyPair
+from tests.pow_helpers import mine_block
 
 class TestP2PGossip(unittest.IsolatedAsyncioTestCase):
 
@@ -37,10 +38,9 @@ class TestP2PGossip(unittest.IsolatedAsyncioTestCase):
         miner_addr = StealthKeyPair().get_public_stealth_address()
         R_ephem, P_out = StealthKeyPair.generate_one_time_stealth_output(miner_addr)
         
-        new_blk = DAGBlock(
+        new_blk = mine_block(dag_a,
             parents=dag_a.get_tips(),
             timestamp=1788912100.0,
-            bits=1,
             nonce=9999,
             coinbase_output=(R_ephem, P_out)
         )

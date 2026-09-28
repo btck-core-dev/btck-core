@@ -14,6 +14,7 @@ sys.path.insert(0, '/Users/a1234/btck-core/src')
 from node.blockdag import BlockDAG, DAGBlock
 from tokenomics.emission_schedule import get_base_block_reward_sats, SATS_PER_COIN
 from privacy.wallet_engine import TxInput, TxOutput, StealthTransaction, schnorr_sign, sha256
+from tests.pow_helpers import mine_block
 
 class TestBlockDAGVirtualChainIssuance(unittest.TestCase):
 
@@ -27,10 +28,9 @@ class TestBlockDAGVirtualChainIssuance(unittest.TestCase):
         g_hash = dag.genesis_hash
 
         # Block 1A: parent is Genesis
-        b1a = DAGBlock(
+        b1a = mine_block(dag,
             parents=[g_hash],
             timestamp=1788912001.0,
-            bits=1,
             nonce=101,
             coinbase_output=self.cb1
         )
@@ -41,10 +41,9 @@ class TestBlockDAGVirtualChainIssuance(unittest.TestCase):
         self.assertEqual(len(dag.virtual_selected_parent_chain), 2)
         
         # Block 1B: parallel block, ALSO parent is Genesis
-        b1b = DAGBlock(
+        b1b = mine_block(dag,
             parents=[g_hash],
             timestamp=1788912001.5,
-            bits=1,
             nonce=102,
             coinbase_output=self.cb2
         )
@@ -60,20 +59,20 @@ class TestBlockDAGVirtualChainIssuance(unittest.TestCase):
         # Scenario 1: 1A then 1B, then Block 2 merges [1A, 1B]
         dag1 = BlockDAG()
         g = dag1.genesis_hash
-        b1a = DAGBlock(parents=[g], timestamp=1788912001.0, bits=1, nonce=101, coinbase_output=self.cb1)
-        b1b = DAGBlock(parents=[g], timestamp=1788912001.0, bits=1, nonce=102, coinbase_output=self.cb2)
+        b1a = mine_block(dag1, parents=[g], timestamp=1788912001.0, nonce=101, coinbase_output=self.cb1)
+        b1b = mine_block(dag1, parents=[g], timestamp=1788912001.0, nonce=102, coinbase_output=self.cb2)
         dag1.add_block(b1a)
         dag1.add_block(b1b)
-        b2_1 = DAGBlock(parents=[b1a.hash, b1b.hash], timestamp=1788912002.0, bits=1, nonce=201, coinbase_output=self.cb3)
+        b2_1 = mine_block(dag1, parents=[b1a.hash, b1b.hash], timestamp=1788912002.0, nonce=201, coinbase_output=self.cb3)
         dag1.add_block(b2_1)
 
         # Scenario 2: 1B then 1A, then Block 2 merges [1A, 1B]
         dag2 = BlockDAG()
-        b1a_clone = DAGBlock(parents=[g], timestamp=1788912001.0, bits=1, nonce=101, coinbase_output=self.cb1)
-        b1b_clone = DAGBlock(parents=[g], timestamp=1788912001.0, bits=1, nonce=102, coinbase_output=self.cb2)
+        b1a_clone = mine_block(dag2, parents=[g], timestamp=1788912001.0, nonce=101, coinbase_output=self.cb1)
+        b1b_clone = mine_block(dag2, parents=[g], timestamp=1788912001.0, nonce=102, coinbase_output=self.cb2)
         dag2.add_block(b1b_clone)
         dag2.add_block(b1a_clone)
-        b2_2 = DAGBlock(parents=[b1a_clone.hash, b1b_clone.hash], timestamp=1788912002.0, bits=1, nonce=201, coinbase_output=self.cb3)
+        b2_2 = mine_block(dag2, parents=[b1a_clone.hash, b1b_clone.hash], timestamp=1788912002.0, nonce=201, coinbase_output=self.cb3)
         dag2.add_block(b2_2)
 
         # Both DAGs must have identical selected tip and identical issued supply
@@ -86,7 +85,7 @@ class TestBlockDAGVirtualChainIssuance(unittest.TestCase):
         g = dag.genesis_hash
 
         # Block 1 mined
-        b1 = DAGBlock(parents=[g], timestamp=1788912001.0, bits=1, nonce=101, coinbase_output=self.cb1)
+        b1 = mine_block(dag, parents=[g], timestamp=1788912001.0, nonce=101, coinbase_output=self.cb1)
         dag.add_block(b1)
 
         cb_outpoint = (f"cb_{b1.hash}", 0)

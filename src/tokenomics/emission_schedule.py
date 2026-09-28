@@ -289,7 +289,12 @@ def compute_block_issuance(
     force_combo: bool = False
 ) -> BlockIssuanceResult:
     """
-    Core Consensus Combo Jackpot Pool and Supply Invariant Engine.
+    Core issuance partition engine.
+
+    Jackpot payouts are intentionally NOT performed here. The future-beacon
+    ComboStateMachine freezes a draw and releases the matching pool UTXOs only
+    when its later beacon block resolves. ``force_combo`` is retained only for
+    API compatibility and never authorizes an immediate payout.
     
     Mathematical Rules:
     1. minted_sats = min(get_block_budget_sats(height), TOTAL_HARD_CAP_SATK - current_issued_sats)
@@ -298,13 +303,10 @@ def compute_block_issuance(
     4. pool_deposit_sats = int(minted_sats * combo_ratio) (15% -> 45%)
     5. miner_base_sats = minted_sats - pool_deposit_sats - eco_deposit_sats (strictly 80% / 70% / 60% / 50%)
     6. available_pool = current_pool_balance_sats + pool_deposit_sats
-    7. is_combo = force_combo or is_combo_block(height, block_hash)
-    8. If is_combo:
-         combo_payout_sats = available_pool (awarded to the winning block of this epoch)
-       Else:
-         combo_payout_sats = 0
-    9. new_pool_balance_sats = available_pool - combo_payout_sats
-    10. miner_total_payout_sats = miner_base_sats + combo_payout_sats
+    7. is_combo marks a scheduled draw only; payout waits for the future beacon
+    8. combo_payout_sats = 0
+    9. new_pool_balance_sats = available_pool
+    10. miner_total_payout_sats = miner_base_sats
     11. new_issued_supply_sats = current_issued_sats + minted_sats
     
     Strict Consensus Invariants:
@@ -329,13 +331,9 @@ def compute_block_issuance(
     available_pool = current_pool_balance_sats + pool_deposit
     is_combo = force_combo or is_combo_block(block_height, block_hash)
     
-    if is_combo and available_pool > 0:
-        combo_payout = available_pool
-    else:
-        combo_payout = 0
-        
-    new_pool_balance = available_pool - combo_payout
-    miner_total = miner_base + combo_payout
+    combo_payout = 0
+    new_pool_balance = available_pool
+    miner_total = miner_base
     new_issued_supply = current_issued_sats + minted
     
     # Assert consensus invariants
@@ -386,4 +384,3 @@ def get_block_reward_btck(
     """Returns (miner_payout_btck, is_combo) in human-readable coin units."""
     sats, is_combo = get_block_reward_sats(block_height, block_hash, current_pool_balance_sats)
     return sats / SATK_PER_COIN, is_combo
-

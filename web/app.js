@@ -77,15 +77,7 @@ function sendMessage() {
 
 // Wallet Generation
 function generateNewWallet() {
-  const randHex = (bytes) => Array.from(crypto.getRandomValues(new Uint8Array(bytes))).map(b => b.toString(16).padStart(2, '0')).join('');
-  const addr = 'btck1s02' + randHex(32) + '03' + randHex(32) + 'a1b2c3d4';
-  const viewKey = '0x' + randHex(32);
-  const spendKey = '0x' + randHex(32);
-
-  document.getElementById('wallet-addr').value = addr;
-  document.getElementById('wallet-view').value = viewKey;
-  document.getElementById('wallet-spend').value = spendKey;
-  alert('✨ New Stealth Keypair generated! Keep your Private Spend Key offline.');
+  alert('Browser key generation is disabled. Use btck-cli new on a trusted offline machine.');
 }
 
 function renderWalletUTXOs(blocks) {
@@ -227,46 +219,11 @@ document.getElementById('chat-input')?.addEventListener('keypress', function (e)
 const BIP39_WORDS = ["abandon", "ability", "able", "about", "above", "absent", "absorb", "abstract", "absurd", "abuse", "access", "accident", "account", "accuse", "achieve", "acid", "acoustic", "acquire", "across", "act", "action", "actor", "actress", "actual", "adapt", "add", "addict", "address", "adjust", "admit", "adult", "advance", "advice", "aerobic", "affair", "afford", "afraid", "again", "age", "agent", "agree", "ahead", "aim", "air", "airport", "aisle", "alarm", "album", "alcohol", "alert", "alien", "all", "alley", "allow", "almost", "alone", "alpha", "already", "also", "alter", "always", "amateur", "amazing", "among", "amount", "amused", "analyst", "anchor", "ancient", "anger", "angle", "angry", "animal", "ankle", "announce", "annual", "another", "answer", "antenna", "antique", "anxiety", "any", "apart", "apology", "appear", "apple", "approve", "april", "arch", "arctic", "area", "arena", "argue", "arm", "armed", "armor", "army", "around", "arrange", "arrest", "arrive", "arrow", "art", "artefact", "artist", "artwork", "ask", "aspect", "assault", "asset", "assist", "assume", "asthma", "athlete", "atom", "attack", "attend", "attitude", "attract", "auction", "audit", "august", "aunt", "author", "auto", "autumn", "average", "avocado", "avoid", "awake", "aware", "away", "awesome", "awful", "awkward", "axis", "baby", "bachelor", "bacon", "badge", "bag", "balance", "balcony", "ball", "bamboo", "banana", "banner", "bar", "barely", "bargain", "barrel", "base", "basic", "basket", "battle", "beach", "bean", "beauty", "because", "become", "beef", "before", "begin", "behave", "behind", "believe", "below", "belt", "bench", "benefit", "best", "betray", "better", "between", "beyond", "bicycle", "bid", "bike", "bind", "biology", "bird", "birth", "bitter", "black", "blade", "blame", "blanket", "blast", "bleak", "bless", "blind", "blood", "blossom", "blouse", "blue", "blur", "blush", "board", "boat", "body", "boil", "bomb", "bone", "bonus", "book", "boost", "border", "boring", "borrow", "boss", "bottom", "bounce", "box", "boy", "bracket", "brain", "brand", "brass", "brave", "bread", "breeze", "brick", "bridge", "brief", "bright", "bring", "brisk", "broccoli", "broken", "bronze", "broom", "brother", "brown", "brush", "bubble", "buddy", "budget", "buffalo", "build", "bulb", "bulk", "bullet", "bundle", "bunker", "burden", "burger", "burst", "bus", "business", "busy", "butter", "buyer", "buzz"];
 
 function generateMnemonicWallet() {
-  const words = [];
-  for (let i = 0; i < 12; i++) {
-    const idx = Math.floor(Math.random() * BIP39_WORDS.length);
-    words.push(BIP39_WORDS[idx]);
-  }
-  const mnemonicStr = words.join(" ");
-  document.getElementById("mnemonic-words").innerText = mnemonicStr;
-  document.getElementById("mnemonic-box").style.display = "block";
-
-  // Generate stealth address derived from seed
-  generateNewWallet();
+  alert("Browser key generation is disabled. Use btck-cli new on a trusted offline machine.");
 }
 
 function sendStealthTransfer() {
-  const recip = document.getElementById("tx-recipient").value.trim();
-  const amt = parseFloat(document.getElementById("tx-amount").value) || 0;
-  if (!recip || !recip.startsWith("btck1s")) {
-    alert("Please enter a valid recipient stealth address starting with btck1s");
-    return;
-  }
-  if (amt <= 0) {
-    alert("Please enter a valid amount");
-    return;
-  }
-
-  const randHex = (bytes) => Array.from(crypto.getRandomValues(new Uint8Array(bytes))).map(b => b.toString(16).padStart(2, "0")).join("");
-  const txid = randHex(32);
-  const r_ephem = "02" + randHex(32);
-  const sig = randHex(33) + randHex(32);
-
-  document.getElementById("res-txid").innerText = txid;
-  document.getElementById("res-r").innerText = r_ephem;
-  document.getElementById("res-sig").innerText = sig.substring(0, 32) + "...";
-  document.getElementById("tx-result-box").style.display = "block";
-
-  const satk = Math.floor(amt * 100000000);
-  userBalanceSatK = Math.max(0, userBalanceSatK - satk);
-  document.getElementById("header-balance").innerText = `${userBalanceSatK.toLocaleString()} SatK`;
-
-  alert(`✅ Stealth Transfer Broadcasted!\nSent: ${amt} BTC-K\nTXID: ${txid.substring(0, 16)}...`);
+  alert("Web transfer is read-only and cannot broadcast. Use btck-cli transfer or btck-cli broadcast.");
 }
 
 // BlockDAG Visual Explorer
@@ -697,4 +654,3 @@ window.addEventListener("DOMContentLoaded", () => {
     switchTab('tab-explorer');
   }
 });
-

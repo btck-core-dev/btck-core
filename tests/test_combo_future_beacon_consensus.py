@@ -11,6 +11,7 @@ import os
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
 
 from node.blockdag import BlockDAG, DAGBlock
+from node.utxo_set import UTXOEntry
 from consensus.combo_state_machine import ComboStateMachine, FUTURE_BEACON_DELAY_BLOCKS
 from tokenomics.emission_schedule import (
     is_combo_block,
@@ -27,6 +28,7 @@ from privacy.wallet_engine import (
     schnorr_sign,
     sha256
 )
+from tests.pow_helpers import mine_block
 
 class TestComboFutureBeaconConsensus(unittest.TestCase):
 
@@ -39,13 +41,11 @@ class TestComboFutureBeaconConsensus(unittest.TestCase):
         if parents is None:
             parents = [self.dag.selected_tip]
         cb = (bytes.fromhex(self.miner_R_hex), bytes.fromhex(self.miner_P_hex))
-        blk = DAGBlock(
+        blk = mine_block(self.dag,
             parents=parents,
             timestamp=1788912000.0 + height,
-            bits=1,
             nonce=height,
             coinbase_output=cb,
-            version=1
         )
         self.dag.add_block(blk)
         return blk
@@ -117,13 +117,23 @@ class TestComboFutureBeaconConsensus(unittest.TestCase):
 
         # Apply block at height 100 with the vesting output
         blk_hash = "mock_draw_blk"
+        pool_amount = 5000 * SATK_PER_COIN
+        self.dag.utxo_set.utxos[("pool_seed", 0)] = UTXOEntry(
+            amount_satk=pool_amount,
+            P_onetime_hex="",
+            R_ephem_hex="",
+            block_height=1,
+            is_coinbase=True,
+            kind="jackpot_pool",
+        )
         self.dag.utxo_set.apply_block(
             block_hash=blk_hash,
             block_height=100,
             coinbase_output=(bytes.fromhex(self.miner_R_hex), bytes.fromhex(self.miner_P_hex)),
             reward_sats=1000 * SATK_PER_COIN,
             transactions=[],
-            vesting_outputs=vesting_outputs
+            vesting_outputs=vesting_outputs,
+            pool_payout_sats=pool_amount,
         )
 
         outpoint = (f"vesting_{blk_hash}_1", 0)

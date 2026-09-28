@@ -2,7 +2,7 @@
 BTC-K High-Speed P2P Gossip Network Engine (P1-04 / Chapter 7)
 --------------------------------------------------------------
 Features:
-1. Wire Protocol Envelope with Network Magic ("BTCK") and max size limit (2 MB).
+1. Per-network Wire Protocol Envelope and max size limit (2 MB).
 2. Genesis Block Hash validation and Peer Handshakes.
 3. Peer Scoring & Automated Ban List for misbehaving/corrupt peers.
 4. Initial Block Download (IBD) with locator hashes and INV sync.
@@ -15,27 +15,32 @@ import asyncio
 import json
 import logging
 import time
-from typing import Dict, List, Set, Optional, Tuple
+from typing import Callable, Dict, List, Set, Optional, Tuple
 
 import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from node.blockdag import BlockDAG, DAGBlock
-from privacy.wallet_engine import StealthTransaction, TxInput, TxOutput
+from privacy.wallet_engine import transaction_from_dict, transaction_to_dict
 
 logger = logging.getLogger("btck-p2p")
 
-NETWORK_MAGIC = "BTCK"
+# Legacy export for callers that imported it directly. Runtime connections use
+# dag.network.p2p_magic and never this compatibility value.
+NETWORK_MAGIC = "4244434b"
 MAX_MESSAGE_BYTES = 2 * 1024 * 1024  # 2MB anti-DoS limit
 INITIAL_PEER_SCORE = 100
 MIN_VALID_PEER_SCORE = 20
+MAX_PEERS = 128
+MAX_ORPHANS = 1000
 
 class PeerConnection:
-    def __init__(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter, peer_addr: str):
+    def __init__(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter, peer_addr: str, network_magic: str):
         self.reader = reader
         self.writer = writer
         self.peer_addr = peer_addr
+        self.network_magic = network_magic
         self.remote_blue_score = 0
         self.handshake_complete = False
         self.connected_at = time.time()
@@ -44,7 +49,7 @@ class PeerConnection:
 
     async def send_msg(self, msg_type: str, payload: dict):
         envelope = {
-            "magic": NETWORK_MAGIC,
+            "magic": self.network_magic,
             "type": msg_type,
             "payload": payload,
             "ts": time.time()
@@ -66,12 +71,16 @@ class P2PNetwork:
         dag: BlockDAG,
         p2p_host: str = "0.0.0.0",
         p2p_port: int = 16111,
-        seed_peers: Optional[List[str]] = None
+        seed_peers: Optional[List[str]] = None,
+        block_acceptor: Optional[Callable[[DAGBlock], bool]] = None,
     ):
         self.dag = dag
+        self.network = dag.network
+        self.network_magic = self.network.p2p_magic
         self.p2p_host = p2p_host
         self.p2p_port = p2p_port
         self.seed_peers = seed_peers or []
+        self.block_acceptor = block_acceptor or self.dag.add_block
         self.peers: Dict[str, PeerConnection] = {}
         self.banned_addrs: Set[str] = set()
         self.orphan_pool: Dict[str, DAGBlock] = {}  # block_hash -> DAGBlock awaiting missing parents
@@ -81,7 +90,9 @@ class P2PNetwork:
 
     async def start(self):
         self.running = True
-        self.server = await asyncio.start_server(self._handle_incoming, self.p2p_host, self.p2p_port)
+        self.server = await asyncio.start_server(
+            self._handle_incoming, self.p2p_host, self.p2p_port, limit=MAX_MESSAGE_BYTES + 1
+        )
         logger.info(f"🌐 P2P Gossip Engine listening on {self.p2p_host}:{self.p2p_port}")
         
         # Connect to seed peers
@@ -95,14 +106,17 @@ class P2PNetwork:
             return
         try:
             host, port = peer_str.split(":")
-            reader, writer = await asyncio.open_connection(host, int(port))
-            peer = PeerConnection(reader, writer, peer_str)
+            reader, writer = await asyncio.open_connection(host, int(port), limit=MAX_MESSAGE_BYTES + 1)
+            peer = PeerConnection(reader, writer, peer_str, self.network_magic)
             self.peers[peer_str] = peer
             logger.info(f"🔗 Outbound connected to peer: {peer_str}")
             
             # Send Handshake
             local_tip = self.dag.blocks[self.dag.selected_tip]
             await peer.send_msg("HANDSHAKE", {
+                "network": self.network.name,
+                "chain_id": self.network.chain_id,
+                "consensus_fingerprint": self.network.consensus_fingerprint,
                 "genesis_hash": self.dag.genesis_hash,
                 "blue_score": local_tip.blue_score,
                 "version": "1.1.0"
@@ -117,11 +131,11 @@ class P2PNetwork:
         """Inbound peer connection"""
         addr = writer.get_extra_info('peername')
         peer_addr = f"{addr[0]}:{addr[1]}"
-        if peer_addr in self.banned_addrs:
+        if peer_addr in self.banned_addrs or len(self.peers) >= MAX_PEERS:
             writer.close()
             return
 
-        peer = PeerConnection(reader, writer, peer_addr)
+        peer = PeerConnection(reader, writer, peer_addr, self.network_magic)
         self.peers[peer_addr] = peer
         logger.info(f"📥 Incoming peer connection from {peer_addr}")
         
@@ -145,10 +159,10 @@ class P2PNetwork:
                     peer.adjust_score(-20)
                     continue
 
-                if msg.get("magic") != NETWORK_MAGIC:
+                if msg.get("magic") != self.network_magic:
                     logger.warning(f"Peer {peer.peer_addr} sent invalid network magic: {msg.get('magic')}")
-                    peer.adjust_score(-30)
-                    continue
+                    peer.adjust_score(-100)
+                    break
 
                 await self._process_msg(peer, msg)
                 if peer.banned:
@@ -170,9 +184,19 @@ class P2PNetwork:
         m_type = msg.get("type")
         payload = msg.get("payload", {})
 
+        if not peer.handshake_complete and m_type not in {"HANDSHAKE", "HANDSHAKE_ACK"}:
+            peer.adjust_score(-100)
+            peer.writer.close()
+            return
+
         if m_type == "HANDSHAKE":
-            if payload.get("genesis_hash") != self.dag.genesis_hash:
-                logger.warning(f"Peer {peer.peer_addr} genesis mismatch! Banning.")
+            if (
+                payload.get("network") != self.network.name
+                or payload.get("chain_id") != self.network.chain_id
+                or payload.get("consensus_fingerprint") != self.network.consensus_fingerprint
+                or payload.get("genesis_hash") != self.dag.genesis_hash
+            ):
+                logger.warning(f"Peer {peer.peer_addr} network identity mismatch! Banning.")
                 peer.adjust_score(-100)
                 peer.writer.close()
                 return
@@ -184,6 +208,9 @@ class P2PNetwork:
             # Reciprocate handshake ack
             local_tip = self.dag.blocks[self.dag.selected_tip]
             await peer.send_msg("HANDSHAKE_ACK", {
+                "network": self.network.name,
+                "chain_id": self.network.chain_id,
+                "consensus_fingerprint": self.network.consensus_fingerprint,
                 "genesis_hash": self.dag.genesis_hash,
                 "blue_score": local_tip.blue_score,
                 "version": "1.1.0"
@@ -195,7 +222,12 @@ class P2PNetwork:
                 await peer.send_msg("GET_BLOCKS", {"locator": locator})
 
         elif m_type == "HANDSHAKE_ACK":
-            if payload.get("genesis_hash") != self.dag.genesis_hash:
+            if (
+                payload.get("network") != self.network.name
+                or payload.get("chain_id") != self.network.chain_id
+                or payload.get("consensus_fingerprint") != self.network.consensus_fingerprint
+                or payload.get("genesis_hash") != self.dag.genesis_hash
+            ):
                 peer.adjust_score(-100)
                 peer.writer.close()
                 return
@@ -234,34 +266,17 @@ class P2PNetwork:
             h = payload.get("hash")
             if h in self.dag.blocks:
                 b = self.dag.blocks[h]
-                # Serialize transactions
-                txs_payload = []
-                for tx in b.transactions:
-                    txs_payload.append({
-                        "version": tx.version,
-                        "lock_time": tx.lock_time,
-                        "inputs": [{
-                            "prev_txid": inp.prev_txid,
-                            "prev_vout": inp.prev_vout,
-                            "amount_satk": inp.amount_satk,
-                            "P_onetime_hex": inp.P_onetime_hex,
-                            "signature_hex": inp.signature_hex
-                        } for inp in tx.inputs],
-                        "outputs": [{
-                            "amount_satk": out.amount_satk,
-                            "P_onetime_hex": out.P_onetime_hex,
-                            "R_ephem_hex": out.R_ephem_hex
-                        } for out in tx.outputs]
-                    })
-
                 await peer.send_msg("BLOCK", {
                     "hash": b.hash,
+                    "version": b.version,
+                    "chain_id": b.chain_id,
                     "parents": b.parents,
                     "timestamp": b.timestamp,
                     "bits": b.bits,
                     "nonce": b.nonce,
+                    "payload_hash": b.payload_hash.hex(),
                     "coinbase_output": [b.coinbase_output[0].hex(), b.coinbase_output[1].hex()],
-                    "transactions": txs_payload
+                    "transactions": [transaction_to_dict(tx) for tx in b.transactions]
                 })
 
         elif m_type == "BLOCK":
@@ -270,31 +285,9 @@ class P2PNetwork:
                 cb = payload.get("coinbase_output", ["00"*33, "00"*33])
                 cb_tuple = (bytes.fromhex(cb[0]), bytes.fromhex(cb[1]))
                 
-                # Reconstruct transactions
-                deserialized_txs = []
-                for tx_dict in payload.get("transactions", []):
-                    try:
-                        inputs = [TxInput(
-                            prev_txid=inp["prev_txid"],
-                            prev_vout=inp["prev_vout"],
-                            amount_satk=inp["amount_satk"],
-                            P_onetime_hex=inp["P_onetime_hex"],
-                            signature_hex=inp["signature_hex"]
-                        ) for inp in tx_dict["inputs"]]
-                        outputs = [TxOutput(
-                            amount_satk=out["amount_satk"],
-                            P_onetime_hex=out["P_onetime_hex"],
-                            R_ephem_hex=out["R_ephem_hex"]
-                        ) for out in tx_dict["outputs"]]
-                        deserialized_txs.append(StealthTransaction(
-                            version=tx_dict.get("version", 1),
-                            inputs=inputs,
-                            outputs=outputs,
-                            lock_time=tx_dict.get("lock_time", 0)
-                        ))
-                    except Exception as te:
-                        logger.warning(f"Malformed transaction in block from {peer.peer_addr}: {te}")
-                        peer.adjust_score(-10)
+                if payload.get("chain_id") != self.network.chain_id:
+                    raise ValueError("Peer block chain_id mismatch")
+                deserialized_txs = [transaction_from_dict(raw) for raw in payload.get("transactions", [])]
 
                 blk = DAGBlock(
                     parents=payload["parents"],
@@ -302,20 +295,28 @@ class P2PNetwork:
                     bits=payload["bits"],
                     nonce=payload["nonce"],
                     coinbase_output=cb_tuple,
-                    transactions=deserialized_txs
+                    transactions=deserialized_txs,
+                    version=payload.get("version"),
+                    payload_hash=bytes.fromhex(payload.get("payload_hash", "")),
+                    chain_id=self.network.chain_id,
                 )
+                if blk.hash != h:
+                    raise ValueError("Peer block hash does not match the serialized header")
 
                 # Check if parents exist locally
                 missing_parents = [p for p in blk.parents if p not in self.dag.blocks]
                 if missing_parents:
                     # Stash in orphan pool and request missing parents
+                    if len(self.orphan_pool) >= MAX_ORPHANS:
+                        oldest = next(iter(self.orphan_pool))
+                        self.orphan_pool.pop(oldest, None)
                     self.orphan_pool[blk.hash] = blk
                     for mp in missing_parents:
                         await peer.send_msg("GET_BLOCK", {"hash": mp})
                     return
 
                 try:
-                    added = self.dag.add_block(blk)
+                    added = self.block_acceptor(blk)
                     if added:
                         logger.info(f"📦 Synchronized new BlockDAG block #{blk.blue_score} ({blk.hash[:16]}...) from {peer.peer_addr}")
                         peer.adjust_score(1)  # Reward valid block propagation
@@ -333,7 +334,7 @@ class P2PNetwork:
             for orphan_hash, orphan_blk in list(self.orphan_pool.items()):
                 if all(p in self.dag.blocks for p in orphan_blk.parents):
                     try:
-                        if self.dag.add_block(orphan_blk):
+                        if self.block_acceptor(orphan_blk):
                             logger.info(f"🧩 Resolved orphan block #{orphan_blk.blue_score} ({orphan_hash[:16]}...)")
                             await self.broadcast_block(orphan_blk.hash)
                     except Exception as e:

@@ -9,6 +9,7 @@ import (
 
 func main() {
 	log.SetFlags(log.Ldate | log.Ltime | log.Lmicroseconds)
+	log.Fatal("SECURITY: deprecated Go/Redis Stratum is disabled; use the node-backed Python bridge")
 
 	cfg := LoadConfig()
 	bus := NewRedisBus(cfg)

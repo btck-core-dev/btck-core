@@ -1,0 +1,38 @@
+{
+  "manifest_version": 1,
+  "network": "devnet",
+  "chain_id": "btck-devnet-v2",
+  "p2p_magic": "4244434b",
+  "data_subdir": "devnet",
+  "release": {"approved": true, "approval_id": "local-development-only"},
+  "consensus": {
+    "block_version": 2,
+    "pow_limit_bits": "0x207fffff",
+    "max_future_seconds": 120,
+    "max_parents": 8,
+    "eco_fund_output": [
+      "031bb56983f2832306f2469712e7ec5399c3256a1033c833d65171b9d5fdb727e5",
+      "02fc2baaf911545b226d719e6906561dde6d5df7c47b714912808586780c588a45"
+    ]
+  },
+  "genesis": {
+    "version": 2,
+    "timestamp": 1788912000.0,
+    "bits": 545259519,
+    "nonce": "0x2",
+    "headline": "BTC-K DEVNET v2 - NO REAL VALUE - 2026-09-28",
+    "coinbase_output": [
+      "02ac791bd3152f0347a07c84bd32355f8625e034c4c43b8783421a3bd6f7a40321",
+      "025eb0c909e619a0f7baef61b20ceee8cd6b5d6bdd4dd8f97827be831016f957d0"
+    ],
+    "expected_hash": "2a6023b87c8edd27a85de9fc3eb3bc77dd576777cce097ca0901a8cedc964a0f"
+  },
+  "features": {
+    "stratum": true,
+    "ai_payments": false,
+    "web_wallet_send": false,
+    "dex": false,
+    "bridge": false,
+    "exchange_adapter": false
+  }
+}

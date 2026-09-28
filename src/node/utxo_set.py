@@ -36,6 +36,7 @@ class UTXOEntry:
     block_height: int
     is_coinbase: bool = False
     timelock_until_height: int = 0
+    kind: str = "standard"
 
 class UTXOSet:
     """
@@ -48,6 +49,7 @@ class UTXOSet:
         self._block_spent_undo: Dict[str, List[Tuple[Tuple[str, int], UTXOEntry]]] = {}
         # Block hash -> list of created outpoints for rollbacks
         self._block_created_undo: Dict[str, List[Tuple[str, int]]] = {}
+        self._block_fees: Dict[str, int] = {}
 
     def get_utxo(self, txid: str, vout: int) -> Optional[UTXOEntry]:
         return self.utxos.get((txid, vout))
@@ -57,16 +59,19 @@ class UTXOSet:
 
     def compute_tx_sighash(self, tx: StealthTransaction) -> bytes:
         """Deterministic transaction digest for signing and verification"""
-        inp_str = "".join(f"{inp.prev_txid}:{inp.prev_vout}:{inp.amount_satk}:{inp.P_onetime_hex}" for inp in tx.inputs)
-        out_str = "".join(f"{out.amount_satk}:{out.R_ephem_hex}:{out.P_onetime_hex}" for out in tx.outputs)
-        raw = f"{tx.version}_{inp_str}_{out_str}_{tx.lock_time}".encode('utf-8')
-        return sha256(raw)
+        return tx.compute_sighash()
 
-    def validate_transaction(self, tx: StealthTransaction, current_height: int) -> Tuple[bool, str, int]:
+    def validate_transaction(
+        self,
+        tx: StealthTransaction,
+        current_height: int,
+        utxos: Optional[Dict[Tuple[str, int], UTXOEntry]] = None,
+    ) -> Tuple[bool, str, int]:
         """
         Validates a transaction against current UTXO set.
         Returns (is_valid, error_msg, fee_satk).
         """
+        view = self.utxos if utxos is None else utxos
         if not tx.inputs:
             return False, "Transaction has no inputs", 0
         if not tx.outputs:
@@ -81,9 +86,11 @@ class UTXOSet:
                 return False, f"Duplicate input in transaction: {outpoint}", 0
             seen_inputs.add(outpoint)
 
-            utxo = self.utxos.get(outpoint)
+            utxo = view.get(outpoint)
             if not utxo:
                 return False, f"Referenced UTXO does not exist or already spent: {outpoint}", 0
+            if utxo.kind == "jackpot_pool":
+                return False, f"Protocol jackpot output cannot be spent by a transaction: {outpoint}", 0
 
             # Streaming timelock enforcement (Combo jackpot tranches)
             if utxo.timelock_until_height > 0:
@@ -134,70 +141,147 @@ class UTXOSet:
         coinbase_output: Tuple[bytes, bytes],
         reward_sats: int,
         transactions: List[StealthTransaction],
-        vesting_outputs: Optional[List[Dict[str, Any]]] = None
+        vesting_outputs: Optional[List[Dict[str, Any]]] = None,
+        eco_output: Optional[Tuple[int, bytes, bytes]] = None,
+        pool_deposit_sats: int = 0,
+        pool_payout_sats: int = 0,
     ) -> Tuple[bool, str]:
         """
         Applies a block's coinbase output and transactions to the UTXO set atomically.
         """
+        if block_hash in self._block_spent_undo or block_hash in self._block_created_undo:
+            return False, f"Block {block_hash} was already applied"
+
         spent_undo: List[Tuple[Tuple[str, int], UTXOEntry]] = []
         created_undo: List[Tuple[str, int]] = []
+        overlay = dict(self.utxos)
+        total_fees_sats = 0
 
-        # 1. Validate all transactions first (atomic check)
+        # Validate and stage against an overlay. This catches cross-transaction
+        # double spends and guarantees the live map is untouched on failure.
         for tx in transactions:
-            valid, err, _ = self.validate_transaction(tx, block_height)
+            valid, err, fee_sats = self.validate_transaction(tx, block_height, overlay)
             if not valid:
                 return False, f"Block rejected due to invalid transaction {tx.txid}: {err}"
-
-        # 2. Spend transaction inputs
-        for tx in transactions:
+            total_fees_sats += fee_sats
             for inp in tx.inputs:
                 outpoint = (inp.prev_txid, inp.prev_vout)
-                utxo = self.utxos.pop(outpoint)
+                utxo = overlay.pop(outpoint)
                 spent_undo.append((outpoint, utxo))
 
-            # Add transaction outputs
             for vout_idx, out in enumerate(tx.outputs):
                 outpoint = (tx.txid, vout_idx)
+                if not tx.txid or outpoint in overlay:
+                    return False, f"Duplicate or empty transaction outpoint: {outpoint}"
                 entry = UTXOEntry(
                     amount_satk=out.amount_satk,
                     P_onetime_hex=out.P_onetime_hex,
                     R_ephem_hex=out.R_ephem_hex,
                     block_height=block_height,
-                    is_coinbase=False
+                    is_coinbase=False,
+                    kind="standard",
                 )
-                self.utxos[outpoint] = entry
+                overlay[outpoint] = entry
                 created_undo.append(outpoint)
 
         # 3. Add Coinbase UTXO (if reward > 0)
-        if reward_sats > 0:
+        miner_payout_sats = reward_sats + total_fees_sats
+        if miner_payout_sats > 0:
             cb_outpoint = (f"cb_{block_hash}", 0)
+            if cb_outpoint in overlay:
+                return False, f"Duplicate coinbase outpoint: {cb_outpoint}"
             cb_entry = UTXOEntry(
-                amount_satk=reward_sats,
+                amount_satk=miner_payout_sats,
                 P_onetime_hex=coinbase_output[1].hex(),
                 R_ephem_hex=coinbase_output[0].hex(),
                 block_height=block_height,
-                is_coinbase=True
+                is_coinbase=True,
+                kind="miner",
             )
-            self.utxos[cb_outpoint] = cb_entry
+            overlay[cb_outpoint] = cb_entry
             created_undo.append(cb_outpoint)
 
-        # 4. Add Vesting Outputs (e.g. streaming lottery payouts)
+        # Explicit ecosystem reserve output.
+        if eco_output and eco_output[0] > 0:
+            eco_amount, eco_r, eco_p = eco_output
+            eco_outpoint = (f"eco_{block_hash}", 0)
+            if eco_outpoint in overlay:
+                return False, f"Duplicate ecosystem outpoint: {eco_outpoint}"
+            overlay[eco_outpoint] = UTXOEntry(
+                amount_satk=eco_amount,
+                P_onetime_hex=eco_p.hex(),
+                R_ephem_hex=eco_r.hex(),
+                block_height=block_height,
+                is_coinbase=True,
+                kind="eco",
+            )
+            created_undo.append(eco_outpoint)
+
+        # Explicit jackpot reserve output. It is protocol-controlled and cannot
+        # be spent by a normal signed transaction.
+        if pool_deposit_sats < 0 or pool_payout_sats < 0:
+            return False, "Jackpot pool amounts cannot be negative"
+        if pool_deposit_sats > 0:
+            pool_outpoint = (f"pool_{block_hash}", 0)
+            if pool_outpoint in overlay:
+                return False, f"Duplicate jackpot pool outpoint: {pool_outpoint}"
+            overlay[pool_outpoint] = UTXOEntry(
+                amount_satk=pool_deposit_sats,
+                P_onetime_hex="",
+                R_ephem_hex="",
+                block_height=block_height,
+                is_coinbase=True,
+                kind="jackpot_pool",
+            )
+            created_undo.append(pool_outpoint)
+
+        if pool_payout_sats > 0:
+            remaining = pool_payout_sats
+            pool_entries = sorted(
+                (
+                    (outpoint, entry)
+                    for outpoint, entry in overlay.items()
+                    if entry.kind == "jackpot_pool"
+                ),
+                key=lambda item: (item[1].block_height, item[0]),
+            )
+            for outpoint, entry in pool_entries:
+                if remaining <= 0:
+                    break
+                if entry.amount_satk > remaining:
+                    return False, "Jackpot payout does not align with frozen pool deposits"
+                overlay.pop(outpoint)
+                spent_undo.append((outpoint, entry))
+                remaining -= entry.amount_satk
+            if remaining != 0:
+                return False, "Jackpot pool UTXOs are insufficient for payout"
+
+        # Add resolved, timelocked jackpot outputs.
+        vesting_total = sum(int(vo.get("amount_satk", 0)) for vo in (vesting_outputs or []))
+        if vesting_total != pool_payout_sats:
+            return False, "Jackpot vesting outputs do not equal the pool payout"
         if vesting_outputs:
             for vo in vesting_outputs:
                 vo_outpoint = (f"vesting_{block_hash}_{vo['tranche_index']}", 0)
+                if vo_outpoint in overlay:
+                    return False, f"Duplicate vesting outpoint: {vo_outpoint}"
                 vo_entry = UTXOEntry(
                     amount_satk=vo["amount_satk"],
                     P_onetime_hex=vo.get("P_onetime_hex", coinbase_output[1].hex()),
                     R_ephem_hex=vo.get("R_ephem_hex", coinbase_output[0].hex()),
                     block_height=block_height,
                     is_coinbase=True,
-                    timelock_until_height=vo.get("unlock_block_height", 0)
+                    timelock_until_height=vo.get("unlock_block_height", 0),
+                    kind="vesting",
                 )
-                self.utxos[vo_outpoint] = vo_entry
+                overlay[vo_outpoint] = vo_entry
                 created_undo.append(vo_outpoint)
 
+        # Single commit point.
+        self.utxos = overlay
         self._block_spent_undo[block_hash] = spent_undo
         self._block_created_undo[block_hash] = created_undo
+        self._block_fees[block_hash] = total_fees_sats
         return True, "Block applied successfully"
 
     def revert_block(self, block_hash: str):
@@ -209,6 +293,16 @@ class UTXOSet:
         spent = self._block_spent_undo.pop(block_hash, [])
         for outpoint, entry in spent:
             self.utxos[outpoint] = entry
+        self._block_fees.pop(block_hash, None)
+
+    def get_block_fees(self, block_hash: str) -> int:
+        return self._block_fees.get(block_hash, 0)
+
+    def total_value_sats(self) -> int:
+        return sum(entry.amount_satk for entry in self.utxos.values())
+
+    def value_by_kind_sats(self, kind: str) -> int:
+        return sum(entry.amount_satk for entry in self.utxos.values() if entry.kind == kind)
 
 if __name__ == "__main__":
     print("Self-testing UTXOSet...")

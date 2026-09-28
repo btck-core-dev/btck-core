@@ -1,0 +1,38 @@
+{
+  "manifest_version": 1,
+  "network": "testnet",
+  "chain_id": "btck-testnet-v2",
+  "p2p_magic": "42544354",
+  "data_subdir": "testnet",
+  "release": {"approved": true, "approval_id": "public-test-no-value"},
+  "consensus": {
+    "block_version": 2,
+    "pow_limit_bits": "0x207fffff",
+    "max_future_seconds": 120,
+    "max_parents": 8,
+    "eco_fund_output": [
+      "03c395438119021d49471729edef452582963699a3cff50b8761de539cf3de0f38",
+      "0225d7284b0c28657971333c47e5fbb95a8ed9d03320ac8cc9c20816b0ee419159"
+    ]
+  },
+  "genesis": {
+    "version": 2,
+    "timestamp": 1790553600.0,
+    "bits": 545259519,
+    "nonce": "0x2",
+    "headline": "BTC-K TESTNET v2 - NO REAL VALUE - 2026-09-28",
+    "coinbase_output": [
+      "022ff5964dd5b9d00196bfa3893c5316a0b4ec4eb4ae5f7a2b776ed15a0511eabd",
+      "02139eb3a21706ed3adee3d03f66398e940d256811ab6f172de8348772b247d659"
+    ],
+    "expected_hash": "a135506d82d120b9739c3ae672b5f4b8c0eeace74d27cdca34203719d9664f02"
+  },
+  "features": {
+    "stratum": true,
+    "ai_payments": false,
+    "web_wallet_send": false,
+    "dex": false,
+    "bridge": false,
+    "exchange_adapter": false
+  }
+}

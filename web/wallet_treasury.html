@@ -432,11 +432,11 @@
           <div id="keys-drawer" style="display: none;">
             <div class="form-group">
               <label class="form-label">Private View Key (审计只读私钥 - 用于解密链上 UTXO 入账):</label>
-              <input type="text" class="input-field" readonly style="font-size: 11px;" value="66201572170707996501882780928531792762739948192484620147488064855281589560986">
+              <input type="text" class="input-field" readonly value="REMOVED - browser key display disabled">
             </div>
             <div class="form-group">
               <label class="form-label">Private Spend Key (金库支出签名私钥 - 离线保管，切勿泄露):</label>
-              <input type="text" class="input-field" readonly style="font-size: 11px; color: var(--accent-gold-bright);" value="69799504316366570365823196673640599517012480615774702040540885871695164708625">
+              <input type="text" class="input-field" readonly value="REMOVED - use offline wallet">
             </div>
           </div>
         </div>
@@ -544,8 +544,8 @@
         title: "钱包总可用余额 (个人挖矿所得)",
         address: "btck1s022fd5c7684238a4ee4505c01cef3353279d5330a5901ae135ebbe47a0e47c71a403c6248a22724350e3bfabd6a6280bf50ada1977f0e4f240783d3a03caae334b2d3f0cff62",
         note: "● 此地址为您当前 01 物理矿机（ks001）绑定的主收款地址。每次出块都会在链上派生一次性隐私公钥，杜绝地址复用与链上溯源。",
-        viewKey: "35650287451124063434608634651407222902230626040393156367375332508677970782609",
-        spendKey: "73009076868915846913647403941957592819953784420351773782465227640704657696321",
+        viewKey: "REMOVED",
+        spendKey: "REMOVED",
         keyFile: "secrets/genesis_wallet.json",
         blocksLbl: "已确权出块数"
       },
@@ -555,8 +555,8 @@
         title: "矿池抽水金库累计余额 (1% 运维金库)",
         address: "btck1s0353a08a9263ba19edb82bca91a1d324374266155de26e49b29d79d4ff649d23ae02ae340cac030e7d04376e7094b3ce22d8ba83cac6a03bfe1d29dc3bf4850964424247f7af",
         note: "● 此地址为官方商业矿池 1% 抽水与全球种子节点运维专属冷金库。资金与个人挖矿绝对物理隔离，专款专用。",
-        viewKey: "66201572170707996501882780928531792762739948192484620147488064855281589560986",
-        spendKey: "69799504316366570365823196673640599517012480615774702040540885871695164708625",
+        viewKey: "REMOVED",
+        spendKey: "REMOVED",
         keyFile: "secrets/pool_treasury_wallet.json",
         blocksLbl: "抽水策略状态"
       },
@@ -566,8 +566,8 @@
         title: "协议生态与智算储备基金累计余额 (5% L1 共识)",
         address: "btck1s03d2ba87def2d91fe80eaaef9a5f875acc414767a918679c7953402d64a5208236024b4b5b899d91e99b8c2a2ec6134346be1f7455f70d0ff49c82f139d937022140d01450df",
         note: "● 此地址为硬编码于 L1 共识层的生态与智算储备冷金库（占比区块出块总释放的 5%）。专用于 GPU 先锋算力集群待机质押补贴及开发者生态激励，由创世冷密钥管理并物理隔离。",
-        viewKey: "65306111160205216684749551915598371141186421261661459659144620294169027344247",
-        spendKey: "95629196421474596904999870702402974396691817452041373843011320492677824594263",
+        viewKey: "REMOVED",
+        spendKey: "REMOVED",
         keyFile: "secrets/eco_fund_wallet.json",
         blocksLbl: "共识划扣比例"
       }
@@ -826,63 +826,10 @@
     }
 
     function executeTransfer() {
-      const recip = document.getElementById('send-to-addr').value.trim();
-      const amt = parseFloat(document.getElementById('send-amount').value) || 0;
       const toast = document.getElementById('send-toast');
-
-      if (!recip || !recip.startsWith('btck1s')) {
-        toast.className = "toast toast-error";
-        toast.innerText = "❌ 请输入以 btck1s 开头的有效隐身地址！";
-        toast.style.display = "block";
-        return;
-      }
-
-      if (amt <= 0) {
-        toast.className = "toast toast-error";
-        toast.innerText = "❌ 请输入有效的转账金额！";
-        toast.style.display = "block";
-        return;
-      }
-
-      if (amt > currentBalanceBTCK) {
-        toast.className = "toast toast-error";
-        toast.innerText = `❌ 转账金额超出可用余额 (当前可用: ${currentBalanceBTCK.toFixed(4)} BTC-K)！`;
-        toast.style.display = "block";
-        return;
-      }
-
-      // 模拟生成交易哈希与广播
-      const randHex = (bytes) => Array.from(crypto.getRandomValues(new Uint8Array(bytes))).map(b => b.toString(16).padStart(2, "0")).join("");
-      const txid = randHex(32);
-      const nowStr = new Date().toLocaleTimeString();
-
-      const newTx = {
-        account: currentAccount,
-        txid: txid,
-        recipient: recip,
-        amount: amt,
-        time: nowStr,
-        timestamp: Date.now()
-      };
-
-      localSentTxs.unshift(newTx);
-      localStorage.setItem('btck_sent_txs', JSON.stringify(localSentTxs));
-
-      toast.className = "toast toast-success";
-      toast.innerHTML = `
-        <strong>✅ 转账广播成功！</strong><br>
-        • 转出金额: <strong>${amt.toFixed(4)} BTC-K</strong><br>
-        • 交易哈希 (TXID): <code>${txid.slice(0, 24)}...</code><br>
-        • 收款隐形公钥: <code>${recip.slice(0, 20)}...</code><br>
-        • 状态: 零知识隐形输出已打包进下一区块
-      `;
+      toast.className = "toast toast-error";
+      toast.innerText = "金库网页目前仅供只读查看。浏览器端支出已关闭，请使用离线签名和 btck-cli broadcast。";
       toast.style.display = "block";
-
-      document.getElementById('send-amount').value = "";
-      document.getElementById('send-to-addr').value = "";
-
-      // 刷新账本
-      fetchWalletData();
     }
 
     // 初始载入与 3 秒轮询

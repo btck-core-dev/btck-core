@@ -1,182 +1,191 @@
 #!/usr/bin/env python3
-"""
-BTC-K Unified CLI Toolkit (btck-cli)
------------------------------------
-Command-line interface for:
-- Creating and managing Monero-grade Dual-Key Stealth Wallets
-- Scanning the BlockDAG for stealth coinbase and transaction outputs
-- Offline Spend Key signing of transactions
-- Transaction consensus verification and broadcast
-"""
+"""Minimal node-backed BTC-K wallet CLI for devnet/testnet."""
 
-import sys
-import os
+from __future__ import annotations
+
 import argparse
 import json
+import os
+import sys
+from decimal import Decimal, InvalidOperation
+from pathlib import Path
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
 
-# Add src to path
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, os.path.join(BASE_DIR, "src"))
+BASE_DIR = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(BASE_DIR / "src"))
 
-from privacy.wallet_engine import StealthWallet, StealthTransaction, SATK_PER_COIN
-from privacy.stealth_address import StealthKeyPair
+from privacy.wallet_engine import SATK_PER_COIN, StealthWallet, transaction_to_dict
+
+
+class CLIError(RuntimeError):
+    pass
+
+
+def rpc_call(args, method: str, params: dict | None = None):
+    payload = json.dumps({"jsonrpc": "2.0", "id": 1, "method": method, "params": params or {}}).encode()
+    headers = {"Content-Type": "application/json"}
+    token = args.rpc_token or os.getenv("BTCK_RPC_TOKEN")
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    request = Request(args.rpc_url, data=payload, headers=headers, method="POST")
+    try:
+        with urlopen(request, timeout=args.timeout) as response:
+            result = json.loads(response.read().decode())
+    except (HTTPError, URLError, TimeoutError, json.JSONDecodeError) as exc:
+        raise CLIError(f"Node RPC request failed: {exc}") from exc
+    if "error" in result:
+        raise CLIError(result["error"].get("message", "Node RPC error"))
+    return result.get("result")
+
+
+def amount_to_satk(value: str) -> int:
+    try:
+        amount = Decimal(value)
+    except InvalidOperation as exc:
+        raise CLIError("Amount must be a decimal number") from exc
+    satk = amount * SATK_PER_COIN
+    if amount <= 0 or satk != satk.to_integral_value():
+        raise CLIError("Amount must be positive with no more than 8 decimal places")
+    return int(satk)
+
+
+def load_wallet(path: str) -> StealthWallet:
+    wallet_path = Path(path)
+    if not wallet_path.is_file():
+        raise CLIError(f"Wallet file not found: {wallet_path}")
+    return StealthWallet.load_from_json(str(wallet_path))
+
+
+def scan_wallet(args, wallet: StealthWallet):
+    snapshot = rpc_call(args, "getUTXOSet")
+    wallet.scan_chain_outputs(snapshot["outputs"])
+    return snapshot
+
 
 def cmd_new(args):
     wallet = StealthWallet.generate(name=args.name)
-    data = wallet.export_to_dict(include_private=True)
-    out_file = args.output or f"{args.name}_wallet.json"
-    
-    with open(out_file, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2)
-    os.chmod(out_file, 0o600)
-    
-    print("====================================================================")
-    print("           ✨ NEW BTC-K STEALTH WALLET CREATED                      ")
-    print("====================================================================")
-    print(f"Name:            {args.name}")
-    print(f"Stealth Address: {wallet.address}")
-    print(f"Saved To:        {out_file} (chmod 600 secured)")
-    print("--------------------------------------------------------------------")
-    print("🔑 View Key (Scan Only):  " + data["view_priv_hex"][:16] + "..." + data["view_priv_hex"][-8:])
-    print("🔒 Spend Key (SIGN/SPEND): " + data["spend_priv_hex"][:16] + "..." + data["spend_priv_hex"][-8:])
-    print("====================================================================")
-    print("TIP: Share only your Stealth Address (btck1s...) for mining and payments.")
+    output = Path(args.output or f"{args.name}_wallet.json")
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+    try:
+        descriptor = os.open(output, flags, 0o600)
+    except FileExistsError as exc:
+        raise CLIError(f"Refusing to overwrite existing wallet: {output}") from exc
+    with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+        json.dump(wallet.export_to_dict(include_private=True), handle, indent=2)
+        handle.write("\n")
+    print(f"Wallet created: {output} (mode 600)")
+    print(f"Address: {wallet.address}")
+    print("Back up this file offline. Private keys were not printed.")
+
 
 def cmd_info(args):
-    if not os.path.exists(args.wallet):
-        print(f"Error: Wallet file {args.wallet} not found.", file=sys.stderr)
-        sys.exit(1)
-    with open(args.wallet, "r", encoding="utf-8") as f:
-        data = json.load(f)
-        
-    print("====================================================================")
-    print(f"             BTC-K WALLET INFO: {data.get("name", "Wallet")}        ")
-    print("====================================================================")
-    print(f"Stealth Address: {data.get("address")}")
-    print(f"Spend PubKey:    {data.get("spend_pub_hex")}")
-    print(f"View PubKey:     {data.get("view_pub_hex")}")
+    wallet = load_wallet(args.wallet)
+    print(f"Name: {wallet.name}")
+    print(f"Address: {wallet.address}")
+    print(f"Spend public key: {wallet.keypair.spend_pub_bytes.hex()}")
+    print(f"View public key: {wallet.keypair.view_pub_bytes.hex()}")
     if args.show_private:
-        print(f"Spend Private:   {data.get("spend_priv_hex")}")
-        print(f"View Private:    {data.get("view_priv_hex")}")
-    else:
-        print("Spend Private:   **************************************************************** (use --show-private to view)")
-    print("====================================================================")
+        if not args.i_understand:
+            raise CLIError("Printing secrets requires --i-understand-private-key-risk")
+        print(f"Spend private key: {wallet.keypair.spend_priv:064x}")
+        print(f"View private key: {wallet.keypair.view_priv:064x}")
 
-def cmd_transfer(args):
-    wallet = StealthWallet.load_from_json(args.wallet)
-    amount_satk = int(args.amount * SATK_PER_COIN)
-    fee_satk = int(args.fee * SATK_PER_COIN) if args.fee else 10_000
-    
-    # Load utxos cache if available
-    utxo_file = args.wallet.replace(".json", "_utxos.json")
-    if os.path.exists(utxo_file):
-        with open(utxo_file, "r") as f:
-            raw_utxos = json.load(f)
-            wallet.scan_chain_outputs(raw_utxos)
-    else:
-        print(f"Warning: No local UTXO file {utxo_file} found. Looking up live balance...")
-
-    print(f"Preparing to send {args.amount} BTC-K to {args.to}...")
-    try:
-        tx = wallet.create_and_sign_transfer(
-            recipient_stealth_addr=args.to,
-            amount_satk=amount_satk,
-            fee_satk=fee_satk
-        )
-        tx_data = {
-            "txid": tx.txid,
-            "version": tx.version,
-            "inputs": [inp.__dict__ for inp in tx.inputs],
-            "outputs": [out.__dict__ for out in tx.outputs],
-            "lock_time": tx.lock_time
-        }
-        out_tx_file = args.out or f"tx_{tx.txid[:8]}.json"
-        with open(out_tx_file, "w") as f:
-            json.dump(tx_data, f, indent=2)
-        print("====================================================================")
-        print("         ✅ TRANSACTION SIGNED SUCCESSFULLY                         ")
-        print("====================================================================")
-        print(f"TXID:       {tx.txid}")
-        print(f"Recipient:  {args.to}")
-        print(f"Amount:     {args.amount} BTC-K ({amount_satk} SatK)")
-        print(f"Network Fee:{fee_satk / SATK_PER_COIN} BTC-K ({fee_satk} SatK)")
-        print(f"Saved TX:   {out_tx_file}")
-        print("====================================================================")
-    except Exception as e:
-        print(f"Transfer failed: {e}", file=sys.stderr)
-        sys.exit(1)
 
 def cmd_balance(args):
-    wallet_file = args.wallet
-    if not os.path.exists(wallet_file):
-        print(f"Error: Wallet file {wallet_file} not found.", file=sys.stderr)
-        sys.exit(1)
-    with open(wallet_file, "r", encoding="utf-8") as f:
-        data = json.load(f)
-    addr = data.get("address", "")
-    
-    state_file = os.path.join(BASE_DIR, "data", "chain_state.json")
-    height = 0
-    issued_btck = 0.0
-    pool_btck = 0.0
-    if os.path.exists(state_file):
-        with open(state_file, "r") as f:
-            st = json.load(f)
-            height = st.get("current_height", 0)
-            issued_btck = st.get("issued_supply_btck", 0.0)
-            pool_btck = st.get("pool_balance_btck", 0.0)
+    wallet = load_wallet(args.wallet)
+    snapshot = scan_wallet(args, wallet)
+    print(f"Network height: {snapshot['selected_height']}")
+    print(f"Address: {wallet.address}")
+    print(f"Spendable/tracked outputs: {len(wallet.utxos)}")
+    print(f"Balance: {wallet.get_balance_satk()} SatK ({wallet.get_balance_btck():.8f} BTC-K)")
 
-    stratum_log = os.path.join(BASE_DIR, "logs", "stratum.log")
-    combos = 0
-    if os.path.exists(stratum_log):
-        with open(stratum_log, "r", encoding="utf-8", errors="ignore") as f:
-            import re
-            combos = len(re.findall(r"10x COMBO JACKPOT TRIGGERED", f.read()))
-            
-    print("====================================================================")
-    print(f"         💰 BTC-K STEALTH BALANCE AUDIT: {data.get('name', 'Genesis')} ")
-    print("====================================================================")
-    print(f"Stealth Address:       {addr[:32]}...{addr[-8:]}")
-    print(f"Current Ledger Height: #{height:,}")
-    print(f"Total Mined Reserve:   {issued_btck:,.2f} BTC-K")
-    print(f"Combo Jackpots Won:    {combos} times (10x Lucky Share Direct Payout)")
-    print(f"Consensus Pool Fund:   {pool_btck:,.2f} BTC-K")
-    print("--------------------------------------------------------------------")
-    print("Status:                100% Cryptographically Bound & Solvency Verified")
-    print("====================================================================")
+
+def cmd_transfer(args):
+    wallet = load_wallet(args.wallet)
+    scan_wallet(args, wallet)
+    tx = wallet.create_and_sign_transfer(
+        recipient_stealth_addr=args.to,
+        amount_satk=amount_to_satk(args.amount),
+        fee_satk=amount_to_satk(args.fee),
+    )
+    raw = transaction_to_dict(tx)
+    if args.offline:
+        output = Path(args.out or f"tx_{tx.txid}.json")
+        output.write_text(json.dumps(raw, indent=2) + "\n", encoding="utf-8")
+        print(f"Signed transaction saved but not broadcast: {output}")
+    else:
+        result = rpc_call(args, "submitTransaction", {"transaction": raw})
+        if not result.get("accepted"):
+            raise CLIError("Node did not accept the transaction")
+        print(f"Accepted by node: {result['txid']}")
+        print(f"Status: {result['status']}")
+        print(f"Fee: {result.get('fee_satk', 0)} SatK")
+
+
+def cmd_broadcast(args):
+    try:
+        raw = json.loads(Path(args.transaction).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise CLIError(f"Cannot read signed transaction: {exc}") from exc
+    result = rpc_call(args, "submitTransaction", {"transaction": raw})
+    print(json.dumps(result, indent=2))
+
+
+def cmd_status(args):
+    result = rpc_call(args, "getTransaction", {"txid": args.txid})
+    print(json.dumps(result, indent=2))
+
+
+def build_parser():
+    parser = argparse.ArgumentParser(description="BTC-K node-backed wallet CLI")
+    parser.add_argument("--rpc-url", default=os.getenv("BTCK_RPC_URL", "http://127.0.0.1:16110/rpc"))
+    parser.add_argument("--rpc-token", help="RPC bearer token (prefer BTCK_RPC_TOKEN environment variable)")
+    parser.add_argument("--timeout", type=float, default=10.0)
+    commands = parser.add_subparsers(dest="command", required=True)
+
+    new = commands.add_parser("new", help="Create a wallet file")
+    new.add_argument("--name", default="my_wallet")
+    new.add_argument("-o", "--output")
+    new.set_defaults(func=cmd_new)
+
+    info = commands.add_parser("info", help="Show wallet information")
+    info.add_argument("wallet")
+    info.add_argument("--show-private", action="store_true")
+    info.add_argument("--i-understand-private-key-risk", dest="i_understand", action="store_true")
+    info.set_defaults(func=cmd_info)
+
+    balance = commands.add_parser("balance", help="Scan the node UTXO set locally")
+    balance.add_argument("wallet")
+    balance.set_defaults(func=cmd_balance)
+
+    transfer = commands.add_parser("transfer", help="Create, sign and submit a transfer")
+    transfer.add_argument("wallet")
+    transfer.add_argument("--to", required=True)
+    transfer.add_argument("--amount", required=True, help="BTC-K decimal amount")
+    transfer.add_argument("--fee", default="0.0001", help="BTC-K decimal fee")
+    transfer.add_argument("--offline", action="store_true", help="Save without broadcasting")
+    transfer.add_argument("--out")
+    transfer.set_defaults(func=cmd_transfer)
+
+    broadcast = commands.add_parser("broadcast", help="Submit an offline-signed transaction")
+    broadcast.add_argument("transaction")
+    broadcast.set_defaults(func=cmd_broadcast)
+
+    status = commands.add_parser("status", help="Query mempool/confirmation status")
+    status.add_argument("txid")
+    status.set_defaults(func=cmd_status)
+    return parser
+
 
 def main():
-    parser = argparse.ArgumentParser(description="BTC-K Unified CLI Toolkit")
-    subparsers = parser.add_subparsers(dest="command", required=True)
-    
-    # new
-    p_new = subparsers.add_parser("new", help="Generate a new Stealth Wallet")
-    p_new.add_argument("--name", default="my_wallet", help="Wallet name tag")
-    p_new.add_argument("-o", "--output", help="Output file path")
-    p_new.set_defaults(func=cmd_new)
-    
-    # info
-    p_info = subparsers.add_parser("info", help="Display wallet public and private info")
-    p_info.add_argument("wallet", help="Path to wallet.json")
-    p_info.add_argument("--show-private", action="store_true", help="Print unmasked private keys")
-    p_info.set_defaults(func=cmd_info)
-    
-    # balance
-    p_bal = subparsers.add_parser("balance", help="Audit on-chain stealth balance and jackpot combos")
-    p_bal.add_argument("wallet", help="Path to wallet.json")
-    p_bal.set_defaults(func=cmd_balance)
+    args = build_parser().parse_args()
+    try:
+        args.func(args)
+    except (CLIError, ValueError, KeyError) as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        raise SystemExit(1)
 
-    # transfer
-    p_tx = subparsers.add_parser("transfer", help="Sign an offline stealth transfer")
-    p_tx.add_argument("wallet", help="Path to wallet.json")
-    p_tx.add_argument("--to", required=True, help="Recipient stealth address (btck1s...)")
-    p_tx.add_argument("--amount", type=float, required=True, help="Amount in BTC-K")
-    p_tx.add_argument("--fee", type=float, default=0.0001, help="Network fee in BTC-K")
-    p_tx.add_argument("--out", help="Output signed tx json file")
-    p_tx.set_defaults(func=cmd_transfer)
-    
-    args = parser.parse_args()
-    args.func(args)
 
 if __name__ == "__main__":
     main()

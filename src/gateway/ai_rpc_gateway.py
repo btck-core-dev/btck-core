@@ -1312,6 +1312,8 @@ class AIRPCGateway:
         logger.info("AI-RPC Gateway stopped.")
 
 if __name__ == "__main__":
+    from config.network import require_feature
+    require_feature("ai_payments")
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     gw = AIRPCGateway(port=8080)
