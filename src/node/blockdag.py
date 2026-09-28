@@ -81,7 +81,9 @@ class DAGBlock:
         self.blue_work: int = 0
         self.selected_parent: Optional[str] = None
         self.merge_set: List[str] = []
-        self.is_blue: bool = True
+        self.merge_set_blues: List[str] = []
+        self.merge_set_reds: List[str] = []
+        self.blue_anticone_sizes: Dict[str, int] = {}
         self.is_combo: bool = False
         self.minted_sats: int = 0
         self.reward_sats: int = 0
@@ -112,9 +114,11 @@ class BlockDAG:
     Persistent GHOSTDAG graph maintaining DAG tips,
     virtual selected chain, single-path issuance, and UTXO consensus state.
     """
-    def __init__(self, k_cluster: int = 18, network: Optional[NetworkConfig | str] = None):
+    def __init__(self, k_cluster: Optional[int] = None, network: Optional[NetworkConfig | str] = None):
         self.network = network if isinstance(network, NetworkConfig) else load_network(network)
-        self.k_cluster = k_cluster # GHOSTDAG K-parameter
+        if k_cluster is not None and k_cluster != self.network.ghostdag_k:
+            raise ValueError("GHOSTDAG K is consensus-bound by the network manifest")
+        self.k_cluster = self.network.ghostdag_k
         self.blocks: Dict[str, DAGBlock] = {}
         self.tips: Set[str] = set()
         self.selected_tip: Optional[str] = None
@@ -145,8 +149,7 @@ class BlockDAG:
             chain_id=self.network.chain_id,
         )
         genesis.blue_score = 0
-        genesis.blue_work = 1
-        genesis.is_blue = True
+        genesis.blue_work = 0
         genesis.reward_sats = g["reward_sats"]
         genesis.minted_sats = 0
         
@@ -182,6 +185,97 @@ class BlockDAG:
             curr = self.blocks[curr].selected_parent if curr in self.blocks else None
         chain.reverse()
         return chain
+
+    def _is_dag_ancestor(self, ancestor_hash: str, descendant_hash: str) -> bool:
+        """Return whether ancestor_hash is in descendant_hash's inclusive DAG past."""
+        if ancestor_hash == descendant_hash:
+            return True
+        pending = list(self.blocks[descendant_hash].parents)
+        visited: Set[str] = set()
+        while pending:
+            current = pending.pop()
+            if current == ancestor_hash:
+                return True
+            if current in visited:
+                continue
+            visited.add(current)
+            pending.extend(self.blocks[current].parents)
+        return False
+
+    def _calculate_merge_set(self, selected_parent_hash: str, parents: List[str]) -> List[str]:
+        """Calculate past(parents) minus past(selected parent), then order deterministically."""
+        merge_set: Set[str] = set()
+        pending = [parent for parent in parents if parent != selected_parent_hash]
+        while pending:
+            current = pending.pop()
+            if current in merge_set or self._is_dag_ancestor(current, selected_parent_hash):
+                continue
+            merge_set.add(current)
+            if len(merge_set) > self.network.max_merge_set_size:
+                raise ValueError("Block merge set exceeds the network consensus limit")
+            pending.extend(self.blocks[current].parents)
+        return sorted(merge_set, key=lambda h: (self.blocks[h].blue_work, h))
+
+    def _blue_anticone_size(
+        self, blue_hash: str, selected_parent_hash: str, current_sizes: Dict[str, int]
+    ) -> int:
+        """Find the newest stored anticone size for a blue in this context."""
+        if blue_hash in current_sizes:
+            return current_sizes[blue_hash]
+        current: Optional[str] = selected_parent_hash
+        while current is not None:
+            block = self.blocks[current]
+            if blue_hash in block.blue_anticone_sizes:
+                return block.blue_anticone_sizes[blue_hash]
+            current = block.selected_parent
+        raise ValueError("Corrupt GHOSTDAG state: missing blue anticone size")
+
+    def _classify_merge_set(
+        self, selected_parent_hash: str, ordered_merge_set: List[str]
+    ) -> Tuple[List[str], List[str], Dict[str, int]]:
+        """Greedily construct the K-cluster using bounded context metadata."""
+        merge_blues = [selected_parent_hash]
+        merge_reds: List[str] = []
+        anticone_sizes: Dict[str, int] = {selected_parent_hash: 0}
+
+        for candidate in ordered_merge_set:
+            if len(merge_blues) == self.k_cluster + 1:
+                merge_reds.append(candidate)
+                continue
+
+            candidate_anticone_size = 0
+            affected: Dict[str, int] = {}
+            context_blues = list(merge_blues)
+            current: Optional[str] = None
+            is_blue = True
+
+            while True:
+                if current is not None and self._is_dag_ancestor(current, candidate):
+                    break
+                for peer in context_blues:
+                    if peer == candidate or peer in affected or self._is_dag_ancestor(peer, candidate):
+                        continue
+                    peer_size = self._blue_anticone_size(
+                        peer, selected_parent_hash, anticone_sizes
+                    )
+                    candidate_anticone_size += 1
+                    if candidate_anticone_size > self.k_cluster or peer_size >= self.k_cluster:
+                        is_blue = False
+                        break
+                    affected[peer] = peer_size
+                if not is_blue or current == self.genesis_hash:
+                    break
+                current = selected_parent_hash if current is None else self.blocks[current].selected_parent
+                context_blues = self.blocks[current].merge_set_blues if current is not None else []
+
+            if is_blue:
+                merge_blues.append(candidate)
+                anticone_sizes[candidate] = candidate_anticone_size
+                for peer, old_size in affected.items():
+                    anticone_sizes[peer] = old_size + 1
+            else:
+                merge_reds.append(candidate)
+        return merge_blues, merge_reds, anticone_sizes
 
     def _validate_block(self, block: DAGBlock) -> None:
         """Validate every stateless/header rule without mutating consensus state."""
@@ -259,45 +353,56 @@ class BlockDAG:
     def _commit_validated_block(self, block: DAGBlock) -> bool:
         """Mutating half of add_block; caller provides rollback protection."""
 
-        # 1. Select Selected Parent (parent with highest blue work, tie-break by blue_score and hash)
+        # 1. Select Selected Parent using the GHOSTDAG work/hash ordering.
         selected_parent_hash = max(
             block.parents,
-            key=lambda p: (self.blocks[p].blue_work, self.blocks[p].blue_score, self.blocks[p].hash)
+            key=lambda p: (self.blocks[p].blue_work, self.blocks[p].hash)
         )
         selected_parent = self.blocks[selected_parent_hash]
         block.selected_parent = selected_parent_hash
 
-        # 2. Compute GHOSTDAG Merge Set
-        merge_set = []
-        for p in block.parents:
-            if p not in merge_set and p != selected_parent_hash:
-                merge_set.append(p)
-        block.merge_set = merge_set
+        # 2. Compute the complete merge set and classify it into the K-cluster.
+        block.merge_set = self._calculate_merge_set(selected_parent_hash, block.parents)
+        (
+            block.merge_set_blues,
+            block.merge_set_reds,
+            block.blue_anticone_sizes,
+        ) = self._classify_merge_set(selected_parent_hash, block.merge_set)
 
-        # 3. Calculate Blue Score and Blue Work
-        blue_add = 1 + sum(1 for m in merge_set if self.blocks[m].is_blue)
-        block.blue_score = selected_parent.blue_score + blue_add
-        block.blue_work = selected_parent.blue_work + block_work(block.bits, self.network.pow_limit_bits)
+        # 3. Blue score/work include the selected parent and all accepted merge blues.
+        block.blue_score = selected_parent.blue_score + len(block.merge_set_blues)
+        block.blue_work = selected_parent.blue_work + sum(
+            block_work(self.blocks[blue].bits, self.network.pow_limit_bits)
+            for blue in block.merge_set_blues
+        )
 
         # Insert block into blocks map
         self.blocks[block.hash] = block
 
         # 4. Check if this block advances or reorganizes the Selected Tip
         selected_block = self.blocks[self.selected_tip]
-        # In GHOSTDAG, only blocks with strictly higher blue work reorganize the tip
-        is_new_selected_tip = (block.blue_work > selected_block.blue_work)
+        # Work/hash tie-breaking must be arrival-order independent across nodes.
+        is_new_selected_tip = (
+            block.blue_work, block.hash
+        ) > (
+            selected_block.blue_work, selected_block.hash
+        )
 
         if is_new_selected_tip:
             old_chain = list(self.virtual_selected_parent_chain)
-            new_chain = self.get_selected_parent_chain(block.hash)
-
-            # Check common ancestor
-            common_ancestor_idx = 0
-            while common_ancestor_idx < len(old_chain) and common_ancestor_idx < len(new_chain):
-                if old_chain[common_ancestor_idx] == new_chain[common_ancestor_idx]:
-                    common_ancestor_idx += 1
-                else:
-                    break
+            if block.selected_parent == self.selected_tip:
+                # Normal one-block extension must remain O(1); rebuilding and
+                # comparing the full chain each second becomes quadratic.
+                new_chain = old_chain + [block.hash]
+                common_ancestor_idx = len(old_chain)
+            else:
+                new_chain = self.get_selected_parent_chain(block.hash)
+                common_ancestor_idx = 0
+                while common_ancestor_idx < len(old_chain) and common_ancestor_idx < len(new_chain):
+                    if old_chain[common_ancestor_idx] == new_chain[common_ancestor_idx]:
+                        common_ancestor_idx += 1
+                    else:
+                        break
 
             # If reorg occurred, revert orphaned blocks in reverse order
             for orphaned_hash in reversed(old_chain[common_ancestor_idx:]):
@@ -414,7 +519,6 @@ class BlockDAG:
         for p in block.parents:
             self.tips.discard(p)
         self.tips.add(block.hash)
-
         return True
 
     def get_tips(self) -> List[str]:
@@ -430,6 +534,9 @@ class BlockDAG:
                 "parents": sorted(block.parents),
                 "selected_parent": block.selected_parent,
                 "merge_set": sorted(block.merge_set),
+                "merge_set_blues": block.merge_set_blues,
+                "merge_set_reds": block.merge_set_reds,
+                "blue_anticone_sizes": dict(sorted(block.blue_anticone_sizes.items())),
                 "blue_score": block.blue_score,
                 "blue_work": block.blue_work,
                 "minted_sats": block.minted_sats,

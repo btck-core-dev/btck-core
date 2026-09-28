@@ -94,7 +94,7 @@ def generate_genesis_block(network: Optional[NetworkConfig] = None) -> dict:
         "bits": spec.bits,
         "nonce": hex(spec.nonce),
         "blue_score": 0,
-        "blue_work": 1,
+        "blue_work": 0,
         "reward_btck": 0.0,
         "reward_sats": 0,
         "coinbase_output": [cb_r.hex(), cb_p.hex()]

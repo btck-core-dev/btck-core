@@ -71,23 +71,26 @@ class TestUTXOAtomicity(unittest.TestCase):
     def test_side_branch_does_not_touch_selected_utxo_view(self):
         dag = BlockDAG()
         genesis_time = dag.blocks[dag.genesis_hash].timestamp
-        selected = mine_block(
+        branch_a = mine_block(
             dag,
             parents=[dag.genesis_hash],
             timestamp=genesis_time + 1,
             coinbase_output=COINBASE_A,
         )
-        dag.add_block(selected)
-        before_utxos = copy.deepcopy(dag.utxo_set.utxos)
-        before_undo = copy.deepcopy(dag.utxo_set._block_created_undo)
-
-        side = mine_block(
+        branch_b = mine_block(
             dag,
             parents=[dag.genesis_hash],
             timestamp=genesis_time + 2,
             coinbase_output=COINBASE_B,
             nonce=100,
         )
+        selected, side = max((branch_a, branch_b), key=lambda b: b.hash), min(
+            (branch_a, branch_b), key=lambda b: b.hash
+        )
+        dag.add_block(selected)
+        before_utxos = copy.deepcopy(dag.utxo_set.utxos)
+        before_undo = copy.deepcopy(dag.utxo_set._block_created_undo)
+
         dag.add_block(side)
 
         self.assertEqual(dag.selected_tip, selected.hash)
@@ -97,14 +100,6 @@ class TestUTXOAtomicity(unittest.TestCase):
     def test_failed_reorg_restores_every_consensus_view(self):
         dag = BlockDAG()
         genesis_time = dag.blocks[dag.genesis_hash].timestamp
-        selected = mine_block(
-            dag,
-            parents=[dag.genesis_hash],
-            timestamp=genesis_time + 1,
-            coinbase_output=COINBASE_A,
-        )
-        dag.add_block(selected)
-
         invalid_tx = StealthTransaction(
             version=1,
             inputs=[TxInput(
@@ -112,7 +107,7 @@ class TestUTXOAtomicity(unittest.TestCase):
                 prev_vout=0,
                 amount_satk=100,
                 P_onetime_hex=COINBASE_A[1].hex(),
-                signature_hex="00" * 65,
+                signature_hex="00" * 64,
             )],
             outputs=[TxOutput(
                 amount_satk=90,
@@ -130,6 +125,23 @@ class TestUTXOAtomicity(unittest.TestCase):
             transactions=[invalid_tx],
             nonce=100,
         )
+        selected = mine_block(
+            dag,
+            parents=[dag.genesis_hash],
+            timestamp=genesis_time + 1,
+            coinbase_output=COINBASE_A,
+        )
+        nonce = selected.nonce + 1
+        while selected.hash <= side.hash:
+            selected = mine_block(
+                dag,
+                parents=[dag.genesis_hash],
+                timestamp=genesis_time + 1,
+                coinbase_output=COINBASE_A,
+                nonce=nonce,
+            )
+            nonce = selected.nonce + 1
+        dag.add_block(selected)
         dag.add_block(side)
         before = (
             set(dag.blocks),

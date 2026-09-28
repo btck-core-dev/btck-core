@@ -25,45 +25,95 @@ from privacy.stealth_address import (
 )
 from tokenomics.emission_schedule import SATK_PER_COIN
 
-def schnorr_sign(privkey_scalar: int, message_hash: bytes) -> bytes:
-    """Produce 65-byte Schnorr signature: R_compressed(33) + s(32)"""
-    pub_point = _point_mul(privkey_scalar, _G)
-    pub_bytes = _pubkey_to_bytes(pub_point, compressed=True)
-    
-    # Deterministic nonce k = H(priv || msg) mod N
-    k = int.from_bytes(sha256(privkey_scalar.to_bytes(32, "big") + message_hash), "big") % _N
-    if k == 0:
-        k = 1
-    R_point = _point_mul(k, _G)
-    R_bytes = _pubkey_to_bytes(R_point, compressed=True)
-    
-    # Challenge e = H(R || Pub || msg) mod N
-    e = int.from_bytes(sha256(R_bytes + pub_bytes + message_hash), "big") % _N
-    
-    # s = (k + e * priv) mod N
-    s = (k + e * privkey_scalar) % _N
-    return R_bytes + s.to_bytes(32, "big")
+def _tagged_hash(tag: str, payload: bytes) -> bytes:
+    tag_hash = hashlib.sha256(tag.encode("ascii")).digest()
+    return hashlib.sha256(tag_hash + tag_hash + payload).digest()
+
+
+def _lift_x_even(x_coord: int):
+    """BIP-340 lift_x: return the curve point with the even Y coordinate."""
+    if not 0 <= x_coord < _P:
+        return None
+    y_squared = (pow(x_coord, 3, _P) + 7) % _P
+    y_coord = pow(y_squared, (_P + 1) // 4, _P)
+    if pow(y_coord, 2, _P) != y_squared:
+        return None
+    return (x_coord, y_coord if y_coord % 2 == 0 else _P - y_coord)
+
+
+def bip340_pubkey(privkey_scalar: int) -> bytes:
+    """Return the canonical 32-byte x-only BIP-340 public key."""
+    if not isinstance(privkey_scalar, int) or not 1 <= privkey_scalar < _N:
+        raise ValueError("BIP-340 private key must be in the secp256k1 scalar range")
+    point = _point_mul(privkey_scalar, _G)
+    return point[0].to_bytes(32, "big")
+
+
+def schnorr_sign(privkey_scalar: int, message_hash: bytes, aux_rand: Optional[bytes] = None) -> bytes:
+    """Create a standard 64-byte BIP-340 Schnorr signature."""
+    if not isinstance(privkey_scalar, int) or not 1 <= privkey_scalar < _N:
+        raise ValueError("BIP-340 private key must be in the secp256k1 scalar range")
+    if not isinstance(message_hash, bytes):
+        raise TypeError("BIP-340 message must be bytes")
+    if aux_rand is None:
+        aux_rand = secrets.token_bytes(32)
+    if not isinstance(aux_rand, bytes) or len(aux_rand) != 32:
+        raise ValueError("BIP-340 auxiliary randomness must be exactly 32 bytes")
+
+    public_point = _point_mul(privkey_scalar, _G)
+    normalized_secret = privkey_scalar if public_point[1] % 2 == 0 else _N - privkey_scalar
+    public_x = public_point[0].to_bytes(32, "big")
+    aux_hash = _tagged_hash("BIP0340/aux", aux_rand)
+    masked_secret = bytes(
+        left ^ right for left, right in zip(normalized_secret.to_bytes(32, "big"), aux_hash)
+    )
+    nonce_seed = _tagged_hash("BIP0340/nonce", masked_secret + public_x + message_hash)
+    nonce = int.from_bytes(nonce_seed, "big") % _N
+    if nonce == 0:
+        raise RuntimeError("BIP-340 nonce generation produced zero")
+    nonce_point = _point_mul(nonce, _G)
+    if nonce_point[1] % 2:
+        nonce = _N - nonce
+        nonce_point = _point_mul(nonce, _G)
+    r_bytes = nonce_point[0].to_bytes(32, "big")
+    challenge = int.from_bytes(
+        _tagged_hash("BIP0340/challenge", r_bytes + public_x + message_hash), "big"
+    ) % _N
+    signature = r_bytes + ((nonce + challenge * normalized_secret) % _N).to_bytes(32, "big")
+    if not schnorr_verify(public_x, message_hash, signature):
+        raise RuntimeError("Created BIP-340 signature did not verify")
+    return signature
+
 
 def schnorr_verify(pubkey_bytes: bytes, message_hash: bytes, signature_bytes: bytes) -> bool:
-    """Verify Schnorr signature: check s * G == R + e * PubKey"""
-    if len(signature_bytes) != 65:
+    """Verify BIP-340 using a 32-byte x-only or 33-byte compressed public key."""
+    if not all(isinstance(value, bytes) for value in (pubkey_bytes, message_hash, signature_bytes)):
         return False
-    R_bytes = signature_bytes[:33]
-    s = int.from_bytes(signature_bytes[33:], "big")
-    if s >= _N:
+    if len(signature_bytes) != 64 or len(pubkey_bytes) not in (32, 33):
         return False
-        
-    pub_point = _bytes_to_pubkey(pubkey_bytes)
-    R_point = _bytes_to_pubkey(R_bytes)
-    if pub_point is None or R_point is None:
+    if len(pubkey_bytes) == 33:
+        if _bytes_to_pubkey(pubkey_bytes) is None:
+            return False
+        public_x = pubkey_bytes[1:]
+    else:
+        public_x = pubkey_bytes
+    public_point = _lift_x_even(int.from_bytes(public_x, "big"))
+    r_coord = int.from_bytes(signature_bytes[:32], "big")
+    s_scalar = int.from_bytes(signature_bytes[32:], "big")
+    if public_point is None or r_coord >= _P or s_scalar >= _N:
         return False
-        
-    e = int.from_bytes(sha256(R_bytes + pubkey_bytes + message_hash), "big") % _N
-    
-    sG = _point_mul(s, _G)
-    ePub = _point_mul(e, pub_point)
-    R_plus_ePub = _point_add(R_point, ePub)
-    return sG == R_plus_ePub
+    challenge = int.from_bytes(
+        _tagged_hash("BIP0340/challenge", signature_bytes[:32] + public_x + message_hash), "big"
+    ) % _N
+    verification_point = _point_add(
+        _point_mul(s_scalar, _G),
+        _point_mul((_N - challenge) % _N, public_point),
+    )
+    return (
+        verification_point is not None
+        and verification_point[1] % 2 == 0
+        and verification_point[0] == r_coord
+    )
 
 @dataclass
 class UTXO:

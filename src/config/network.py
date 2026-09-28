@@ -58,6 +58,8 @@ class NetworkConfig:
     pow_limit_bits: int
     max_future_seconds: int
     max_parents: int
+    ghostdag_k: int
+    max_merge_set_size: int
     eco_fund_output: tuple[bytes, bytes]
     genesis: GenesisConfig
     features: Mapping[str, bool]
@@ -117,10 +119,14 @@ def _parse_manifest(path: Path, requested_name: str) -> NetworkConfig:
     pow_limit_bits = int(str(consensus.get("pow_limit_bits", "0")), 0)
     max_future_seconds = int(consensus.get("max_future_seconds", 0))
     max_parents = int(consensus.get("max_parents", 0))
+    ghostdag_k = int(consensus.get("ghostdag_k", -1))
+    max_merge_set_size = int(consensus.get("max_merge_set_size", 0))
     _require(block_version >= 2, "block_version must use the post-audit v2 header or later")
     _require(0 < pow_limit_bits <= 0xFFFFFFFF, "pow_limit_bits must be a uint32 compact target")
     _require(0 < max_future_seconds <= 7200, "max_future_seconds is outside the safe range")
     _require(0 < max_parents <= 64, "max_parents is outside the safe range")
+    _require(0 <= ghostdag_k <= 64, "ghostdag_k is outside the safe range")
+    _require(0 < max_merge_set_size <= 4096, "max_merge_set_size is outside the safe range")
     eco_output = consensus.get("eco_fund_output", [])
     _require(
         isinstance(eco_output, list)
@@ -177,6 +183,8 @@ def _parse_manifest(path: Path, requested_name: str) -> NetworkConfig:
         pow_limit_bits=pow_limit_bits,
         max_future_seconds=max_future_seconds,
         max_parents=max_parents,
+        ghostdag_k=ghostdag_k,
+        max_merge_set_size=max_merge_set_size,
         eco_fund_output=(bytes.fromhex(eco_output[0]), bytes.fromhex(eco_output[1])),
         genesis=genesis,
         features=dict(features),

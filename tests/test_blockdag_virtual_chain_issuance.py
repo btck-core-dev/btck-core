@@ -94,7 +94,7 @@ class TestBlockDAGVirtualChainIssuance(unittest.TestCase):
         # Try to spend Coinbase at height 2 (only 1 confirmation, requires 120!)
         premature_tx = StealthTransaction(
             version=1,
-            inputs=[TxInput(prev_txid=cb_outpoint[0], prev_vout=cb_outpoint[1], amount_satk=b1.reward_sats, P_onetime_hex=self.cb1[1].hex(), signature_hex="00"*65)],
+            inputs=[TxInput(prev_txid=cb_outpoint[0], prev_vout=cb_outpoint[1], amount_satk=b1.reward_sats, P_onetime_hex=self.cb1[1].hex(), signature_hex="00"*64)],
             outputs=[TxOutput(amount_satk=b1.reward_sats - 1000, R_ephem_hex=self.cb2[0].hex(), P_onetime_hex=self.cb2[1].hex())],
             lock_time=0
         )

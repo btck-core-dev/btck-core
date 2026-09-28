@@ -55,7 +55,7 @@ bin/btck-cli --rpc-token "$BTCK_RPC_TOKEN" transfer miner_wallet.json \
 bin/btck-cli status <txid>
 ```
 
-离线签名使用 `transfer --offline`，随后在联网机器使用 `broadcast <tx.json>`。当前格式是项目自定义 Schnorr，不是 BIP-340；在主网格式冻结前不得承载真实价值。
+离线签名使用 `transfer --offline`，随后在联网机器使用 `broadcast <tx.json>`。签名格式现为 64 字节 BIP-340（x-only 公钥语义、tagged hash、偶数 Y 归一化），并由官方向量回归；主网格式冻结和独立外审完成前仍不得承载真实价值。
 
 ## Docker DEVNET
 

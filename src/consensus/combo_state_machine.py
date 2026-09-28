@@ -198,3 +198,15 @@ class ComboStateMachine:
             epoch.beacon_height = 0
             epoch.frozen_jackpot_satk = 0
             self.active_epoch_id = eid
+
+        # Candidate hashes are consensus state too.  Trim each surviving epoch
+        # to the number of canonical heights that still belong to it so a
+        # same-height replacement cannot leave an orphan candidate behind.
+        for epoch in self.epochs.values():
+            last_kept_height = min(
+                target_height,
+                epoch.draw_height if epoch.is_frozen else target_height,
+            )
+            keep_count = max(0, last_kept_height - epoch.start_height + 1)
+            del epoch.candidates[keep_count:]
+        self.pending_draws.sort()

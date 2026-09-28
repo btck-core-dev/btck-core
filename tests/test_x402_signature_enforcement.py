@@ -62,7 +62,7 @@ class TestX402SignatureEnforcement(unittest.TestCase):
             "amount_satk": 10000,
             "payer_stealth_address": self.payer_addr,
             "payer_spend_pub_hex": self.payer_pub_hex,
-            "payment_signature": "00" * 65  # Invalid/forged signature
+            "payment_signature": "00" * 64  # Invalid/forged BIP-340 signature
         }
         success, msg = self.gateway.process_payment_receipt(receipt)
         self.assertFalse(success)
