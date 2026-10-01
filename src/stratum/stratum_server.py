@@ -184,7 +184,7 @@ class BTCKStratumServer:
         rpc_token: Optional[str] = None,
         network: Optional[NetworkConfig | str] = None,
         share_target: Optional[int] = None,
-        job_ttl_seconds: int = 120,
+        job_ttl_seconds: int = 3600,
         max_clients: int = 256,
     ):
         self.host = host
@@ -210,7 +210,7 @@ class BTCKStratumServer:
         if not 0 < share_target <= MAX_UINT256:
             raise ValueError("share_target must be a positive uint256")
         self.share_target = share_target
-        self.job_ttl_seconds = job_ttl_seconds
+        self.job_ttl_seconds = int(os.getenv("BTCK_STRATUM_JOB_TTL", job_ttl_seconds))
         self.max_clients = max_clients
         self.clients: Dict[str, StratumClient] = {}
         self.current_jobs: Dict[str, MiningJob] = {}
@@ -329,9 +329,9 @@ class BTCKStratumServer:
         stale = [job_id for job_id, job in self.current_jobs.items() if job.created_at < cutoff]
         for job_id in stale:
             self.current_jobs.pop(job_id, None)
-        if len(self.current_jobs) > 2000:
+        if len(self.current_jobs) > 10000:
             ordered = sorted(self.current_jobs.values(), key=lambda job: job.created_at)
-            for job in ordered[:-2000]:
+            for job in ordered[:-10000]:
                 self.current_jobs.pop(job.job_id, None)
         live_ids = set(self.current_jobs)
         self.submitted_shares = {key for key in self.submitted_shares if key[0] in live_ids}
@@ -739,7 +739,7 @@ class BTCKStratumServer:
 
     async def _refresh_loop(self) -> None:
         while self.running:
-            await asyncio.sleep(min(10, max(1, self.job_ttl_seconds // 2)))
+            await asyncio.sleep(10)
             for client in list(self.clients.values()):
                 if client.authorized:
                     try:
