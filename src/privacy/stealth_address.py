@@ -92,6 +92,43 @@ def _bytes_to_pubkey(data: bytes) -> Optional[Tuple[int, int]]:
 def sha256(data: bytes) -> bytes:
     return hashlib.sha256(data).digest()
 
+B58_ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
+
+def b58encode(b: bytes) -> str:
+    n = int.from_bytes(b, 'big')
+    chars = []
+    while n > 0:
+        n, rem = divmod(n, 58)
+        chars.append(B58_ALPHABET[rem])
+    res = ''.join(reversed(chars))
+    pad = 0
+    for byte in b:
+        if byte == 0:
+            pad += 1
+        else:
+            break
+    return (B58_ALPHABET[0] * pad) + res
+
+def b58decode(s: str) -> bytes:
+    n = 0
+    for ch in s:
+        idx = B58_ALPHABET.find(ch)
+        if idx == -1:
+            raise ValueError(f"Invalid character in Base58 string: {ch}")
+        n = n * 58 + idx
+    b = []
+    while n > 0:
+        n, rem = divmod(n, 256)
+        b.append(rem)
+    res = bytes(reversed(b))
+    pad = 0
+    for ch in s:
+        if ch == B58_ALPHABET[0]:
+            pad += 1
+        else:
+            break
+    return (b'\x00' * pad) + res
+
 class StealthKeyPair:
     """
     Dual-Key Stealth Master Keypair:
@@ -125,22 +162,37 @@ class StealthKeyPair:
             self.spend_pub_point = _point_mul(self.spend_priv, _G)
             self.spend_pub_bytes = _pubkey_to_bytes(self.spend_pub_point, compressed=True)
 
-    def get_public_stealth_address(self) -> str:
+    def get_public_stealth_address(self, compressed: bool = True) -> str:
         """
         Public stealth address string: (Spend_Pub_33B || View_Pub_33B)
-        Prefix: 'btck1s...' + 66 bytes hex + 4 bytes checksum
+        If compressed=True (default): Base58 encoded with 'btck1s' prefix (~101 chars, fits ASIC 128B limit).
+        If compressed=False: Legacy hex encoded with 'btck1s' prefix (146 chars).
         """
         raw = self.spend_pub_bytes + self.view_pub_bytes
         checksum = hashlib.sha256(hashlib.sha256(raw).digest()).digest()[:4]
+        if compressed:
+            return "btck1s" + b58encode(raw + checksum)
         return "btck1s" + (raw + checksum).hex()
+
+    def get_legacy_hex_address(self) -> str:
+        return self.get_public_stealth_address(compressed=False)
 
     @staticmethod
     def parse_stealth_address(address_str: str) -> Tuple[Tuple[int, int], Tuple[int, int]]:
-        """Parse btck1s address to (Spend_Pub_Point, View_Pub_Point)"""
+        """Parse btck1s address (supporting both Base58 and legacy hex) to (Spend_Pub_Point, View_Pub_Point)"""
         if not address_str.startswith("btck1s"):
             raise ValueError("Invalid address prefix, expected btck1s")
-        hex_data = address_str[6:]
-        raw = bytes.fromhex(hex_data)
+        data_str = address_str[6:]
+        raw = None
+        if len(address_str) == 146:
+            try:
+                raw = bytes.fromhex(data_str)
+            except ValueError:
+                pass
+        if raw is None:
+            raw = b58decode(data_str)
+        if len(raw) != 70:
+            raise ValueError(f"Invalid stealth address payload length: {len(raw)} bytes (expected 70)")
         payload = raw[:-4]
         checksum = raw[-4:]
         expected_cs = hashlib.sha256(hashlib.sha256(payload).digest()).digest()[:4]

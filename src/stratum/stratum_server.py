@@ -24,6 +24,8 @@ from node.blockdag import DAGBlock
 from node.rpc_client import HTTPNodeRPCClient, RPCError
 from privacy.stealth_address import StealthKeyPair
 from privacy.wallet_engine import StealthTransaction, transaction_from_dict, transaction_to_dict
+from tokenomics.emission_schedule import SATK_PER_COIN
+from stratum.pplns import PPLNSEngine, AutoPayoutWorker
 
 import hashlib
 import sys
@@ -187,7 +189,12 @@ class BTCKStratumServer:
     ):
         self.host = host
         self.port = port
-        self.ports = ports or [3333, 3334, 3335, 3336]
+        if ports is not None:
+            self.ports = ports
+        elif port == 0:
+            self.ports = [0]
+        else:
+            self.ports = [3333, 3334, 3335, 3336]
         self.servers: list[asyncio.Server] = []
         self.network = network if isinstance(network, NetworkConfig) else load_network(network)
         self.node_rpc = node_rpc or HTTPNodeRPCClient(node_rpc_url, rpc_token or os.getenv("BTCK_RPC_TOKEN"))
@@ -214,6 +221,32 @@ class BTCKStratumServer:
         self.running = False
         self._refresh_task: Optional[asyncio.Task] = None
         self._vardiff_task: Optional[asyncio.Task] = None
+
+        # PPLNS Accounting & Settlement Engine
+        self.pool_mode = os.getenv("BTCK_POOL_MODE", "solo").strip().lower()
+        self.pool_treasury_address = os.getenv("BTCK_POOL_TREASURY_ADDRESS", self.pool_fee_address)
+        self.pplns_window_size = int(os.getenv("BTCK_PPLNS_WINDOW_SIZE", "10000"))
+        self.pplns_db_path = os.getenv("BTCK_PPLNS_DB_PATH", "data/pool_accounting.db")
+        self.pplns_payout_threshold_btck = float(os.getenv("BTCK_PPLNS_MIN_PAYOUT_BTCK", "5.0"))
+        self.pplns_engine = PPLNSEngine(
+            db_path=self.pplns_db_path,
+            window_size=self.pplns_window_size,
+        )
+        self.payout_worker: Optional[AutoPayoutWorker] = None
+        treasury_wallet_path = os.getenv("BTCK_POOL_TREASURY_WALLET_FILE")
+        if treasury_wallet_path and os.path.exists(treasury_wallet_path):
+            try:
+                from privacy.wallet_engine import StealthWallet
+                t_wallet = StealthWallet.load_from_json(treasury_wallet_path)
+                self.payout_worker = AutoPayoutWorker(
+                    engine=self.pplns_engine,
+                    treasury_wallet=t_wallet,
+                    node_rpc=self.node_rpc,
+                    default_threshold_satk=int(self.pplns_payout_threshold_btck * SATK_PER_COIN),
+                )
+                logger.info("🔑 Loaded Pool Treasury wallet: %s", t_wallet.address[:18] + "...")
+            except Exception as e:
+                logger.warning("Failed to load Pool Treasury wallet: %s", e)
 
     def get_pool_fee_rate(self) -> float:
         """
@@ -254,12 +287,18 @@ class BTCKStratumServer:
         client.job_count += 1
         fee_rate = self.get_pool_fee_rate()
         is_pool_fee_job = False
-        if self.pool_fee_address and fee_rate > 0.0:
-            step = int(round(1.0 / fee_rate))
-            if step > 0 and (client.job_count % step) == 0:
-                is_pool_fee_job = True
 
-        target_address = self.pool_fee_address if is_pool_fee_job else client.wallet_address
+        if self.pool_mode == "pplns":
+            # In PPLNS mode, all block rewards are routed to the central Pool Treasury
+            target_address = self.pool_treasury_address or self.pool_fee_address or client.wallet_address
+        else:
+            # SOLO mode: block rewards go directly to miner unless fee block
+            if self.pool_fee_address and fee_rate > 0.0:
+                step = int(round(1.0 / fee_rate))
+                if step > 0 and (client.job_count % step) == 0:
+                    is_pool_fee_job = True
+            target_address = self.pool_fee_address if is_pool_fee_job else client.wallet_address
+
         r_ephem, p_onetime = StealthKeyPair.generate_one_time_stealth_output(target_address)
         self._job_counter += 1
         parents = list(template.get("parents", []))
@@ -558,6 +597,8 @@ class BTCKStratumServer:
             # Share is valid! Immediately accept and credit miner.
             client.shares_accepted += 1
             client.vardiff_shares += 1
+            if self.pplns_engine:
+                self.pplns_engine.record_share(client.wallet_address, client.worker_name, client.share_diff)
             await client.send_json({"id": msg_id, "result": True, "error": None})
 
             network_target = compact_to_target(job.bits)
@@ -586,24 +627,47 @@ class BTCKStratumServer:
                     )
                     if result.get("accepted"):
                         client.blocks_found += 1
-                        if getattr(job, "is_pool_fee_job", False):
-                            logger.info(
-                                "💎 BLOCK ACCEPTED (Pool Fee %d%%)! Hash: %s, Score: %s, Reward: %s BTC-K -> Pool Treasury %s",
-                                int(self.get_pool_fee_rate() * 100),
-                                str(result.get("hash"))[:16],
-                                result.get("blue_score"),
-                                result.get("reward_btck"),
-                                self.pool_fee_address[:16] + "...",
+                        reward_btck = float(result.get("reward_btck", 5.0))
+                        reward_satk = int(reward_btck * SATK_PER_COIN)
+
+                        if self.pool_mode == "pplns":
+                            pplns_summary = self.pplns_engine.process_block(
+                                block_hash=str(result.get("hash")),
+                                height=int(result.get("blue_score", 0)),
+                                reward_satk=reward_satk,
+                                pool_fee_rate=self.get_pool_fee_rate(),
+                                finder_wallet=client.wallet_address,
+                                finder_worker=client.worker_name,
                             )
-                        else:
                             logger.info(
-                                "🏆 BLOCK ACCEPTED ON CHAIN! Hash: %s, Score: %s, Reward: %s BTC-K -> Miner %s (%s)",
+                                "💎 [PPLNS] BLOCK ACCEPTED ON CHAIN! Hash: %s, Score: %s, Reward: %.4f BTC-K | Dist: %.4f BTC-K to %d miners | Finder: %s (%s)",
                                 str(result.get("hash"))[:16],
                                 result.get("blue_score"),
-                                result.get("reward_btck"),
+                                reward_btck,
+                                pplns_summary.get("distributed_satk", 0) / SATK_PER_COIN,
+                                pplns_summary.get("miners_paid_count", 0),
                                 client.wallet_address[:16] + "...",
                                 client.worker_name,
                             )
+                        else:
+                            if getattr(job, "is_pool_fee_job", False):
+                                logger.info(
+                                    "💎 BLOCK ACCEPTED (Pool Fee %d%%)! Hash: %s, Score: %s, Reward: %s BTC-K -> Pool Treasury %s",
+                                    int(self.get_pool_fee_rate() * 100),
+                                    str(result.get("hash"))[:16],
+                                    result.get("blue_score"),
+                                    result.get("reward_btck"),
+                                    self.pool_fee_address[:16] + "...",
+                                )
+                            else:
+                                logger.info(
+                                    "🏆 BLOCK ACCEPTED ON CHAIN! Hash: %s, Score: %s, Reward: %s BTC-K -> Miner %s (%s)",
+                                    str(result.get("hash"))[:16],
+                                    result.get("blue_score"),
+                                    result.get("reward_btck"),
+                                    client.wallet_address[:16] + "...",
+                                    client.worker_name,
+                                )
                         for connected in list(self.clients.values()):
                             if connected.authorized:
                                 try:
@@ -699,11 +763,16 @@ class BTCKStratumServer:
                 prof.get("base_diff", 512.0),
                 prof.get("min_diff", 256.0),
             )
+        self.server = self.servers[0] if self.servers else None
         self._refresh_task = asyncio.create_task(self._refresh_loop())
         self._vardiff_task = asyncio.create_task(self._vardiff_monitor_loop())
+        if self.payout_worker:
+            self.payout_worker.start()
 
     async def stop(self) -> None:
         self.running = False
+        if self.payout_worker:
+            await self.payout_worker.stop()
         if self._refresh_task:
             self._refresh_task.cancel()
             try:
@@ -720,6 +789,7 @@ class BTCKStratumServer:
             srv.close()
             await srv.wait_closed()
         self.servers.clear()
+        self.server = None
 
 
 async def _main() -> None:

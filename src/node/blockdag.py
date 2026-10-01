@@ -550,7 +550,18 @@ class BlockDAG:
         return True
 
     def get_tips(self) -> List[str]:
-        return list(self.tips)
+        if len(self.tips) <= self.network.max_parents:
+            return list(self.tips)
+        # Prioritize selected_tip first, then sort remaining tips by blue_work descending
+        other_tips = [t for t in self.tips if t != self.selected_tip]
+        sorted_others = sorted(
+            other_tips,
+            key=lambda t: (self.blocks[t].blue_work, self.blocks[t].hash),
+            reverse=True
+        )
+        selected = [self.selected_tip] if self.selected_tip in self.tips else []
+        remaining_slots = self.network.max_parents - len(selected)
+        return selected + sorted_others[:remaining_slots]
 
     def state_root(self) -> str:
         """Deterministic commitment used to verify persisted replay results."""

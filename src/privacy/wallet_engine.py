@@ -232,14 +232,17 @@ class StealthWallet:
             raise ValueError("Wallet file does not contain a complete private key pair")
         name = data.get("name", "loaded")
         wallet = cls.from_keys(spend, view, name=name)
-        if data.get("address") and data["address"] != wallet.address:
-            raise ValueError("Wallet address does not match its private keys")
+        if data.get("address"):
+            expected_address = data["address"]
+            if expected_address != wallet.address and expected_address != wallet.keypair.get_legacy_hex_address():
+                raise ValueError("Wallet address does not match its private keys")
         return wallet
 
     def export_to_dict(self, include_private: bool = False) -> dict:
         d = {
             "name": self.name,
             "address": self.address,
+            "legacy_address": self.keypair.get_legacy_hex_address(),
             "spend_pub_hex": self.keypair.spend_pub_bytes.hex(),
             "view_pub_hex": self.keypair.view_pub_bytes.hex()
         }
