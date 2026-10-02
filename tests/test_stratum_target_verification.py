@@ -64,6 +64,28 @@ class TestStratumTargetVerification(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(self.writer.messages[-1]["result"])
         self.assertEqual(self.server.share_target, original)
 
+    async def test_asic_duplicate_share_and_cross_client_isolation(self):
+        job = await self._job()
+        self.client.is_kaspa = True
+        self.client.share_target = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF
+        nonce = 0x0003021990B7CDB8
+
+        # First submit from ASIC client should succeed
+        await self.server.process_message(self.client, {"id": 10, "method": "mining.submit", "params": ["worker", job.job_id, f"{nonce:016x}"]})
+        self.assertTrue(self.writer.messages[-1]["result"])
+        self.assertIsNone(self.writer.messages[-1]["error"])
+
+        # Second submit with exact same nonce from same ASIC client must be rejected as duplicate
+        await self.server.process_message(self.client, {"id": 11, "method": "mining.submit", "params": ["worker", job.job_id, f"{nonce:016x}"]})
+        self.assertFalse(self.writer.messages[-1]["result"])
+        self.assertEqual(self.writer.messages[-1]["error"][0], 22)
+
+        # Different nonce on same job from same ASIC must succeed (never falsely flagged as duplicate)
+        different_nonce = 0x00030385011CA4E0
+        await self.server.process_message(self.client, {"id": 12, "method": "mining.submit", "params": ["worker", job.job_id, f"{different_nonce:016x}"]})
+        self.assertTrue(self.writer.messages[-1]["result"])
+        self.assertIsNone(self.writer.messages[-1]["error"])
+
 
 if __name__ == "__main__":
     unittest.main()

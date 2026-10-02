@@ -167,6 +167,7 @@ class StratumClient:
         self.vardiff_window_start = time.monotonic()
         self.vardiff_shares = 0
         self.last_diff_change_at = time.monotonic()
+        self.recent_nonces: set[int] = set()
 
     async def send_json(self, data: dict) -> None:
         self.writer.write((json.dumps(data, separators=(",", ":")) + "\n").encode("utf-8"))
@@ -546,18 +547,33 @@ class BTCKStratumServer:
                 await client.send_json({"id": msg_id, "result": False, "error": [20, str(exc), None]})
                 return
             share_key = (job_id, nonce)
-            if share_key in self.submitted_shares:
+            is_duplicate = False
+            if client.is_kaspa:
+                if nonce in client.recent_nonces:
+                    is_duplicate = True
+            else:
+                if share_key in self.submitted_shares:
+                    is_duplicate = True
+
+            if is_duplicate:
                 client.shares_rejected += 1
                 logger.warning("❌ Duplicate share %s from %s", share_key, client.client_id)
                 await client.send_json({"id": msg_id, "result": False, "error": [22, "Duplicate share", None]})
                 return
+
             now = time.monotonic()
             if now - client.last_submit_at < 0.005:
                 client.shares_rejected += 1
                 await client.send_json({"id": msg_id, "result": False, "error": [25, "Share rate limit exceeded", None]})
                 return
             client.last_submit_at = now
-            self.submitted_shares.add(share_key)
+
+            if client.is_kaspa:
+                client.recent_nonces.add(nonce)
+                if len(client.recent_nonces) > 64:
+                    client.recent_nonces.pop()
+            else:
+                self.submitted_shares.add(share_key)
 
             candidate = job.build_block(nonce)
             hash_value = hash_to_target_int(bytes.fromhex(candidate.hash))
