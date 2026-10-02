@@ -68,13 +68,32 @@ def get_current_fee_rate() -> float:
         return 0.01
 
 
+import threading
+
+_CACHED_NODE_INFO: Dict[str, Any] = {}
+_LAST_CACHE_TIME = 0.0
+
+def _node_info_updater():
+    global _CACHED_NODE_INFO, _LAST_CACHE_TIME
+    while True:
+        try:
+            req = urllib.request.Request(NODE_INFO_URL, headers={"User-Agent": "BTCK-Explorer/1.0"})
+            with urllib.request.urlopen(req, timeout=15.0) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                if data and isinstance(data, dict):
+                    _CACHED_NODE_INFO = data
+                    _LAST_CACHE_TIME = time.time()
+        except Exception:
+            pass
+        time.sleep(5.0)
+
+# Start background updater thread
+_updater_thread = threading.Thread(target=_node_info_updater, daemon=True)
+_updater_thread.start()
+
+
 def fetch_node_info() -> Dict[str, Any]:
-    try:
-        req = urllib.request.Request(NODE_INFO_URL, headers={"User-Agent": "BTCK-Explorer/1.0"})
-        with urllib.request.urlopen(req, timeout=1.5) as resp:
-            return json.loads(resp.read().decode("utf-8"))
-    except Exception:
-        return {}
+    return _CACHED_NODE_INFO
 
 
 def query_recent_blocks(limit: int = 50) -> List[Dict[str, Any]]:

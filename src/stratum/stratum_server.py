@@ -227,12 +227,19 @@ class BTCKStratumServer:
         self.pool_mode = os.getenv("BTCK_POOL_MODE", "solo").strip().lower()
         self.pool_treasury_address = os.getenv("BTCK_POOL_TREASURY_ADDRESS", self.pool_fee_address)
         self.pplns_window_size = int(os.getenv("BTCK_PPLNS_WINDOW_SIZE", "10000"))
-        self.pplns_db_path = os.getenv("BTCK_PPLNS_DB_PATH", "data/pool_accounting.db")
+        default_db = "data/pool_accounting.db"
+        if not os.path.exists("data") and not os.access(".", os.W_OK):
+            default_db = "/tmp/pool_accounting.db"
+        self.pplns_db_path = os.getenv("BTCK_PPLNS_DB_PATH", default_db)
         self.pplns_payout_threshold_btck = float(os.getenv("BTCK_PPLNS_MIN_PAYOUT_BTCK", "5.0"))
-        self.pplns_engine = PPLNSEngine(
-            db_path=self.pplns_db_path,
-            window_size=self.pplns_window_size,
-        )
+        self.pplns_engine: Optional[PPLNSEngine] = None
+        try:
+            self.pplns_engine = PPLNSEngine(
+                db_path=self.pplns_db_path,
+                window_size=self.pplns_window_size,
+            )
+        except Exception as e:
+            logger.warning("PPLNS engine database initialization deferred: %s", e)
         self.payout_worker: Optional[AutoPayoutWorker] = None
         treasury_wallet_path = os.getenv("BTCK_POOL_TREASURY_WALLET_FILE")
         if treasury_wallet_path and os.path.exists(treasury_wallet_path):

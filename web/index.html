@@ -907,7 +907,7 @@
           <div class="jackpot-usd-sub" id="hero-jackpot-usd">≈ $445.27 USD</div>
           
           <div class="jackpot-boost-pill">
-            <span>✨ 10x ~ 20x Combo Multiplier Tier</span>
+            <span>✨ 12h 周期超级大奖池 (Grand Combo Jackpot Tier)</span>
           </div>
 
           <p style="font-size: 11px; color: var(--text-muted); margin-top: 10px; line-height: 1.4;">
@@ -1436,7 +1436,7 @@
 
         // Hero Jackpot
         const poolBal = data.pool_balance_btck || 0.0;
-        document.getElementById("hero-jackpot-number").innerText = poolBal.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+        document.getElementById("hero-jackpot-number").innerText = poolBal.toLocaleString(undefined, {minimumFractionDigits: 4, maximumFractionDigits: 4});
         document.getElementById("hero-jackpot-usd").innerText = `≈ $${(poolBal * 0.052).toFixed(2)} USD`;
 
         // Progress bar
@@ -1448,9 +1448,11 @@
         document.getElementById("jackpot-progress-fill").style.width = `${pct}%`;
         document.getElementById("hero-target-block").innerText = `#${nextDraw.toLocaleString()}`;
 
-        // Countdown timer
-        if (data.countdown_seconds !== undefined && Math.abs(remainingSeconds - data.countdown_seconds) > 5) {
-          startCountdownTicker(data.countdown_seconds);
+        // Countdown timer: smooth ticker without jittering on every poll
+        if (data.countdown_seconds !== undefined) {
+          if (remainingSeconds <= 0 || Math.abs(remainingSeconds - data.countdown_seconds) > 1800) {
+            startCountdownTicker(data.countdown_seconds);
+          }
         }
 
         // Tables
