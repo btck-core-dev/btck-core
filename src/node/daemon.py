@@ -81,7 +81,7 @@ class BTCKDaemon:
         )
 
     def accept_block(self, block: DAGBlock) -> bool:
-        commit_hook = self.chain_store.append_block if self.chain_store else None
+        commit_hook = self._persist_accepted_block if self.chain_store else None
         accepted = self.dag.add_block(block, commit_hook=commit_hook)
         if accepted:
             selected_hashes = set(self.dag.virtual_selected_parent_chain)
@@ -90,6 +90,13 @@ class BTCKDaemon:
                     self.mempool.pop(tx.txid, None)
             self._revalidate_mempool()
         return accepted
+
+    def _persist_accepted_block(self, block: DAGBlock) -> None:
+        """Persist every block and periodically commit the full consensus state."""
+        if not self.chain_store:
+            return
+        state_root = self.dag.state_root() if self.chain_store.should_checkpoint_next_block() else ""
+        self.chain_store.append_block(block, state_root)
 
     def _mempool_overlay(self):
         overlay = copy.deepcopy(self.dag.utxo_set.utxos)
@@ -197,6 +204,19 @@ class BTCKDaemon:
             elif method == "GET" and path == "/info":
                 info = self.get_node_info()
                 response_body = json.dumps(info, indent=2).encode('utf-8')
+                status_line = "HTTP/1.1 200 OK\r\n"
+            elif method == "GET" and path == "/dashboard":
+                response_body = json.dumps({
+                    "network": {
+                        "name": self.network.name,
+                        "chain_id": self.network.chain_id,
+                        "genesis_hash": self.dag.genesis_hash,
+                        "consensus_fingerprint": self.network.consensus_fingerprint,
+                    },
+                    "block_time_target_seconds": self.network.daa_target_interval_ms / 1000.0,
+                    "dag": self.dag.get_dashboard_info(),
+                    "generated_at": time.time(),
+                }, separators=(",", ":")).encode("utf-8")
                 status_line = "HTTP/1.1 200 OK\r\n"
             else:
                 response_body = b'{"status": "BTC-K node running"}'
@@ -318,16 +338,21 @@ class BTCKDaemon:
         elif method == "getBlockDagInfo":
             return {"jsonrpc": "2.0", "result": self.dag.get_dag_info(), "id": req_id}
 
+        elif method == "getDashboardInfo":
+            limit = int(params.get("recent_limit", 120)) if isinstance(params, dict) else 120
+            return {"jsonrpc": "2.0", "result": self.dag.get_dashboard_info(limit), "id": req_id}
+
         elif method == "getBlockTemplate":
-            tips = self.dag.get_tips()
+            tips = self.dag.get_mining_parents()
             selected = self.dag.blocks[self.dag.selected_tip]
+            target_bits = self.dag.expected_bits(tips)
             return {
                 "jsonrpc": "2.0",
                 "result": {
                     "parents": tips,
                     "version": self.network.block_version,
                     "chain_id": self.network.chain_id,
-                    "target_bits": self.network.pow_limit_bits,
+                    "target_bits": target_bits,
                     "blue_score": selected.blue_score + 1,
                     "timestamp": max(time.time(), max(self.dag.blocks[parent].timestamp for parent in tips) + 0.000001),
                     "transactions": [transaction_to_dict(tx) for tx in self.mempool.values()],

@@ -46,7 +46,7 @@ sudo bash deploy/install_seed_node.sh
 4. 配置并激活 **UFW 生产级防火墙**（开放 22 SSH、16110 RPC、16111 P2P、3333 Stratum）；
 5. 注册并启动两大开机自愈 Systemd 守护进程：
    - `btckd`：BlockDAG 验证引擎与 JSON-RPC 2.0 节点；
-   - `btck-stratum`：官方 Stratum 矿池网关（内置 7 天 0% 免抽水策略）。
+   - `btck-stratum`：官方 Stratum 矿池网关（内置 5% → 3% → 1% 分段递减策略）。
 
 ---
 
@@ -77,8 +77,9 @@ journalctl -u btck-stratum -f
 - **Password**：`x`
 
 ### 2. 官方抽水与国库金库监督
-- **前 7 天（创世引流）**：**0.00% 零抽水**，矿工 100% 独享出块与 PPLNS 收益。
-- **第 8 天起**：**1.00% 运维抽水**，自动沉淀至独立冷地址：
+- **第 1–7 天**：**5.00% 基建启动费率**。
+- **第 8–30 天**：**3.00% 增长期费率**。
+- **第 31 天起**：**1.00% 长期运维费率**，自动沉淀至独立冷地址：
   `btck1s0353a08a9263ba19edb82bca91a1d324374266155de26e49b29d79d4ff649d23ae02ae340cac030e7d04376e7094b3ce22d8ba83cac6a03bfe1d29dc3bf4850964424247f7af`
 - 您可在 Mac 桌面上双击运行 **`打开BTC-K抽水金库钱包.command`** 实时查看抽水累计。
 

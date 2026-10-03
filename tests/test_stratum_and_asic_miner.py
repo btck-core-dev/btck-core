@@ -15,11 +15,11 @@ from stratum.stratum_server import BTCKStratumServer
 
 class TestNodeBackedStratum(unittest.IsolatedAsyncioTestCase):
     async def test_handshake_and_node_authoritative_block_submission(self):
-        daemon = BTCKDaemon(host="127.0.0.1", network="devnet")
+        daemon = BTCKDaemon(host="127.0.0.1", network="simnet")
         server = BTCKStratumServer(
             host="127.0.0.1",
             port=0,
-            network="devnet",
+            network="simnet",
             node_rpc=InProcessNodeRPCClient(daemon),
         )
         await server.start()

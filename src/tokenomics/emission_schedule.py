@@ -8,7 +8,7 @@ Implements the definitive, mathematical consensus specification (Doc 29 & Canoni
 4. Deterministic uint64 integer SatK daily quota table (No floating-point consensus drift).
 5. Block #0 (Genesis) has strictly 0.00000000 BTC-K coinbase issuance.
 6. Post-4-Year Era (Block 126,144,001+): Subsidy strictly drops to 0 SatK; network transitions to fee-driven continuous BlockDAG.
-7. Tiered 4-Stage Combo Jackpot (Year 1: 20% / 12h, Year 2: 30% / 36h, Year 3: 40% / 108h, Year 4: 50% / 324h).
+7. Tiered 4-Stage Combo Jackpot (Year 1: 15% / 12h, Year 2: 25% / 36h, Year 3: 35% / 108h, Year 4: 45% / 324h) plus a 5% ecosystem reserve.
 8. Future Random Beacon (+100 blocks) + Kademlia XOR Geometric Distance Winner Selection.
 9. Solvency Invariant: Total Minted == Total Miner Payouts + Remaining Pool Balance (Zero inflation).
 """

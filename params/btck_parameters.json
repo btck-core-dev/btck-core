@@ -2,8 +2,8 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "meta": {
     "title": "BTC-K Protocol Canonical Parameters (SSOT - Single Source of Truth)",
-    "version": "2.3.0",
-    "last_updated": "2026-09-15T19:35:00+08:00",
+    "version": "3.0.0",
+    "last_updated": "2026-10-02T21:30:00+08:00",
     "license": "MIT",
     "audit_alignment": "Doc 29 - Canonical 4-Year Rational Decay & Exact Integer Quotas"
   },
@@ -227,17 +227,17 @@
     "target_block_rate_bps": 1.0,
     "anticone_k": 18,
     "pow_algorithm": "kHeavyHash (Kaspa byte-compatible)",
-    "network_identity_source": "params/networks/{devnet,testnet,mainnet}.json",
+    "network_identity_source": "params/networks/{simnet,devnet,testnet,mainnet}.json",
     "genesis_block": {
       "network": "devnet",
       "status": "NO REAL VALUE; canonical values are enforced by params/networks/devnet.json",
-      "hash": "2a6023b87c8edd27a85de9fc3eb3bc77dd576777cce097ca0901a8cedc964a0f",
+      "hash": "00afe7ba34ab52100a7e086f8bf16cee97dfaa80eaf7bc157a8d933d6ed6fa2a",
       "version": 2,
       "timestamp": 1788912000.0,
       "bits": 545259519,
-      "nonce": "0x2",
-      "headline": "BTC-K DEVNET v2 - NO REAL VALUE - 2026-09-28",
-      "headline_hash": "8b962b36bdf96f02b82dfa25eaf0c151ce4d2645f92ace8191a8a1a462734abd",
+      "nonce": "0x1",
+      "headline": "BTC-K DEVNET v3 ASIC-CANONICAL - NO REAL VALUE - 2026-10-02",
+      "headline_hash": "1148e8622d1a285a87b1d7697b34ae2518fba9ea323b9681a61d3e0b49c58cd4",
       "coinbase_outputs": [
         "02ac791bd3152f0347a07c84bd32355f8625e034c4c43b8783421a3bd6f7a40321",
         "025eb0c909e619a0f7baef61b20ceee8cd6b5d6bdd4dd8f97827be831016f957d0"
@@ -245,8 +245,10 @@
     },
     "daa": {
       "window_blocks": 264,
-      "method": "Past Median Time (PMT) sliding window",
+      "initial_bits": "0x1c01ffff",
+      "method": "Selected-chain endpoint median-time sliding window",
       "target_interval_sec": 1.0,
+      "median_time_blocks": 11,
       "damping_factor_clamp": [
         0.5,
         2.0
@@ -273,12 +275,17 @@
   "stratum_protocol": {
     "port": 3333,
     "variant": "Kaspa Stratum V1 (IceRiver & Antminer ASIC ready)",
-    "notify_format": "params: [job_id_str, header_hash_hex(64) + timestamp_hex(16) + clean_hex(2)] (82 characters total)",
-    "default_diff_ks0": 24,
+    "notify_format": "params: [job_id_str, pre_pow_hash_hex(64) + timestamp_ms_hex(16)] (80 characters total)",
+    "default_diff_ks0": 128,
+    "job_history_per_client": 128,
+    "job_ttl_seconds": 120,
+    "late_block_grace_seconds": 16,
+    "template_broadcast_hz": 1.0,
     "vardiff": {
-      "target_share_time_sec": 1.0,
-      "min_diff": 16,
-      "max_diff": 64
+      "target_share_time_sec": 8.0,
+      "min_diff": 128,
+      "max_diff": 128,
+      "network_target_cap": false
     }
   },
   "ecosystem_architecture": {

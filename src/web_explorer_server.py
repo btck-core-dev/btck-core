@@ -2,9 +2,9 @@
 """
 BTC-K Private Blockchain Explorer & Mining Pool Web Server
 -----------------------------------------------------------
-Serves the official BTC-K Web Dashboard & BlockDAG Explorer.
-- Strictly binds to 127.0.0.1 for maximum operational privacy.
-- Pulls live chain state from local full node RPC and SQLite DB.
+Serves the BTC-K DEVNET Web Dashboard & BlockDAG Explorer.
+- Binds to BTCK_EXPLORER_HOST (loopback by default; explicit in containers).
+- Pulls consensus state from btckd and measured pool state from Stratum APIs.
 - Serves Mining Pool, BlockDAG Visualizer, Web Wallet, and Treasury.
 """
 
@@ -12,7 +12,6 @@ import os
 import sys
 import json
 import time
-import sqlite3
 import urllib.request
 import urllib.parse
 from http.server import HTTPServer, BaseHTTPRequestHandler
@@ -29,49 +28,22 @@ from tokenomics.emission_schedule import (
     SATK_PER_COIN,
     COMBO_STAGES
 )
+from consensus.pow import compact_to_target
+from config.network import load_network
 from privacy.stealth_address import StealthKeyPair
 
 WEB_DIR = Path(os.getenv("BTCK_WEB_DIR", str(BASE_DIR / "web")))
-DB_PATH = Path(os.getenv("BTCK_DB_PATH", str(BASE_DIR / "data" / "devnet" / "chain.sqlite3")))
-NODE_INFO_URL = os.getenv("BTCK_NODE_INFO_URL", "http://127.0.0.1:16110/info")
-POOL_LAUNCH_TIME = float(os.getenv("BTCK_POOL_LAUNCH_TIME", "0.0"))
-if POOL_LAUNCH_TIME <= 0.0:
-    POOL_LAUNCH_TIME = time.time() - 3600.0 * 12 # Approximate devnet launch offset
-
-POOL_OPERATOR_ADDRESS = os.getenv(
-    "BTCK_POOL_FEE_ADDRESS",
-    "btck1s7veowgN4ntDGMDPwLs2Q2LtqDz61kYQszuv8XjXf6W8bwhSmXGZtRQUhZVg1bP7NcEGU7bQVnaz1muVwV3HP9zhAnqAYEHe"
-)
-
-# Known miner worker names / addresses
-KNOWN_MINERS = {
-    "ks01": {
-        "address": "btck1s7ZM1fHRH3jXjXazpfLdrF4eCW5gysbMW8Lx73L1CXX5phimDrY6RRKrSnbU1xc1KjnwUUdK4xQ7pqfCjoXhags1159M37pa",
-        "hashrate_str": "375.0 GH/s",
-        "hardware": "IceRiver KS0 (192.168.50.236)"
-    },
-    "ks02": {
-        "address": "btck1s7ZM1fHRH3jXjXazpfLdrF4eCW5gysbMW8Lx73L1CXX5phimDrY6RRKrSnbU1xc1KjnwUUdK4xQ7pqfCjoXhags1159M37pa",
-        "hashrate_str": "375.0 GH/s",
-        "hardware": "IceRiver KS0 (192.168.50.154)"
-    }
-}
-
-
-def get_current_fee_rate() -> float:
-    elapsed_days = max(0.0, (time.time() - POOL_LAUNCH_TIME) / 86400.0)
-    if elapsed_days < 7.0:
-        return 0.05
-    elif elapsed_days < 30.0:
-        return 0.03
-    else:
-        return 0.01
+NODE_INFO_URL = os.getenv("BTCK_NODE_INFO_URL", "http://127.0.0.1:16110/dashboard")
+STRATUM_STATUS_URL = os.getenv("BTCK_STRATUM_STATUS_URL", "http://127.0.0.1:3337/status")
+NETWORK = load_network()
 
 
 import threading
 
 _CACHED_NODE_INFO: Dict[str, Any] = {}
 _LAST_CACHE_TIME = 0.0
+_CACHED_POOL_STATUS: Dict[str, Any] = {}
+_LAST_POOL_CACHE_TIME = 0.0
 
 def _node_info_updater():
     global _CACHED_NODE_INFO, _LAST_CACHE_TIME
@@ -87,191 +59,275 @@ def _node_info_updater():
             pass
         time.sleep(5.0)
 
+
+def _pool_status_updater():
+    global _CACHED_POOL_STATUS, _LAST_POOL_CACHE_TIME
+    while True:
+        try:
+            req = urllib.request.Request(STRATUM_STATUS_URL, headers={"User-Agent": "BTCK-Explorer/1.0"})
+            with urllib.request.urlopen(req, timeout=3.0) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                if data and isinstance(data, dict):
+                    _CACHED_POOL_STATUS = data
+                    _LAST_POOL_CACHE_TIME = time.time()
+        except Exception:
+            pass
+        time.sleep(2.0)
+
 # Start background updater thread
 _updater_thread = threading.Thread(target=_node_info_updater, daemon=True)
 _updater_thread.start()
+_pool_updater_thread = threading.Thread(target=_pool_status_updater, daemon=True)
+_pool_updater_thread.start()
 
 
 def fetch_node_info() -> Dict[str, Any]:
     return _CACHED_NODE_INFO
 
 
-def query_recent_blocks(limit: int = 50) -> List[Dict[str, Any]]:
-    # Fallback to VPS docker volume or local path if needed
-    candidates = [
-        DB_PATH,
-        Path("/app/data/devnet/chain.sqlite3"),
-        Path("/var/lib/docker/volumes/btck-devnet_btck-data/_data/devnet/chain.sqlite3"),
-        Path("/tmp/chain_devnet.sqlite3")
-    ]
-    db_file = None
-    for c in candidates:
-        if c.exists() and os.access(c, os.R_OK):
-            db_file = c
-            break
-
-    if not db_file:
-        return []
-
-    blocks = []
-    try:
-        conn = sqlite3.connect(f"file:{db_file}?mode=ro", uri=True)
-        cursor = conn.cursor()
-        rows = cursor.execute(
-            "SELECT sequence, block_hash, payload_json, accepted_at FROM accepted_blocks ORDER BY sequence DESC LIMIT ?",
-            (limit,)
-        ).fetchall()
-        for seq, b_hash, payload_str, accepted_at in reversed(rows):
-            b_data = json.loads(payload_str)
-            reward_satk = b_data.get("coinbase_amount_satk", 503852613)
-            reward_btck = reward_satk / SATK_PER_COIN
-            is_combo = b_data.get("is_combo", False)
-            
-            # Formatted local time string
-            t_struct = time.localtime(accepted_at or time.time())
-            time_str = time.strftime("%H:%M:%S", t_struct)
-            full_ts = time.strftime("%Y-%m-%d %H:%M:%S", t_struct)
-
-            # Determine worker attribution
-            worker = "ks01" if seq % 2 == 1 else "ks02"
-            blocks.append({
-                "height": seq,
-                "hash": b_hash[:16] + "...",
-                "full_hash": b_hash,
-                "reward": round(reward_btck, 4),
-                "combo": is_combo,
-                "worker": worker,
-                "time": time_str,
-                "full_ts": full_ts,
-                "timestamp": accepted_at
-            })
-        conn.close()
-    except Exception as exc:
-        print(f"Error querying blocks from {db_file}: {exc}")
-    return blocks
+def _format_hashrate(rate: float, approximate: bool = True) -> str:
+    prefix = "~" if approximate else ""
+    if rate >= 1e12:
+        return f"{prefix}{rate / 1e12:.2f} TH/s"
+    if rate >= 1e9:
+        return f"{prefix}{rate / 1e9:.2f} GH/s"
+    if rate >= 1e6:
+        return f"{prefix}{rate / 1e6:.2f} MH/s"
+    if rate >= 1e3:
+        return f"{prefix}{rate / 1e3:.2f} kH/s"
+    return f"{prefix}{rate:.0f} H/s"
 
 
-def build_stats_payload() -> Dict[str, Any]:
-    node_info = fetch_node_info()
-    dag_info = node_info.get("dag", {})
-    
-    total_blocks = dag_info.get("total_blocks", 0)
-    recent_blocks = query_recent_blocks(limit=100)
-    if not total_blocks and recent_blocks:
-        total_blocks = recent_blocks[-1]["height"]
+def _observed_block_frequency(blocks: List[Dict[str, Any]]) -> float | None:
+    """Return blue-ledger throughput from a timestamp window.
 
-    cur_h = max(1, total_blocks)
+    Virtual blue order is consensus order, not chronological order.  Adjacent
+    subtraction therefore discards negative and zero intervals and severely
+    overstates cadence on a parallel DAG.  Sort timestamps, trim endpoint
+    outliers, then divide the elapsed wall time by every block interval,
+    including simultaneous blocks.
+    """
+    timestamps = sorted(
+        float(block.get("timestamp", 0.0))
+        for block in blocks
+        if block.get("timestamp")
+    )
+    if len(timestamps) < 5:
+        return None
+    trim = len(timestamps) // 10
+    sample = timestamps[trim:len(timestamps) - trim] if trim else timestamps
+    elapsed = sample[-1] - sample[0]
+    if elapsed <= 0.0 or len(sample) < 2:
+        return None
+    return elapsed / (len(sample) - 1)
+
+
+def build_production_stats_payload() -> Dict[str, Any]:
+    """Aggregate only node-authoritative and Stratum-measured production data."""
+    node_snapshot = _CACHED_NODE_INFO
+    pool_snapshot = _CACHED_POOL_STATUS
+    dag = node_snapshot.get("dag", {})
+    now = time.time()
+
+    ledger_height = int(dag.get("ledger_height", 0) or 0)
+    cur_h = max(1, ledger_height)
     budget_sats = get_block_budget_sats(cur_h)
     stage_id, combo_ratio, draw_interval = get_combo_spec_for_height(cur_h)
+    eco_deposit_sats = int(budget_sats * 0.05)
     pool_deposit_sats = int(budget_sats * combo_ratio)
-    miner_base_sats = budget_sats - pool_deposit_sats - int(budget_sats * 0.05)
+    miner_base_sats = budget_sats - pool_deposit_sats - eco_deposit_sats
 
-    current_emission = round(budget_sats / SATK_PER_COIN, 4)
-    miner_base = round(miner_base_sats / SATK_PER_COIN, 4)
-    pool_deposit = round(pool_deposit_sats / SATK_PER_COIN, 4)
-    issued_supply_btck = dag_info.get("issued_supply_btck", round(total_blocks * 5.0385, 4))
-    pool_balance_btck = dag_info.get("pool_balance_btck", round(issued_supply_btck * 0.15, 4))
-    eco_reserve_btck = round(dag_info.get("eco_fund_utxo_sats", 0) / SATK_PER_COIN, 4)
+    combo_state = dag.get("combo", {})
+    next_draw_block = int(combo_state.get("next_draw_height", 0) or 0)
+    if next_draw_block <= 0:
+        next_draw_block = ((cur_h - 1) // draw_interval + 1) * draw_interval
+    blocks_to_draw = max(0, next_draw_block - ledger_height)
+    target_interval = float(node_snapshot.get("block_time_target_seconds", 1.0) or 1.0)
 
-    next_draw_block = ((cur_h // draw_interval) + 1) * draw_interval
-    blocks_to_draw = max(0, next_draw_block - cur_h)
-    draw_interval_hours = draw_interval // 3600
+    raw_blocks = dag.get("recent_blocks", []) or []
+    observed_freq = _observed_block_frequency(raw_blocks)
+    next_bits = int(dag.get("next_bits", dag.get("selected_bits", 0)) or 0)
+    network_diff = 0.0
+    network_hashrate_hps = 0.0
+    if next_bits:
+        network_target = compact_to_target(next_bits)
+        network_diff = ((1 << 224) - 1) / network_target
+        if observed_freq:
+            network_hashrate_hps = network_diff * (2**32) / observed_freq
 
-    day_idx = (cur_h - 1) // 86400
-    blocks_in_day = (cur_h - 1) % 86400 + 1
-    next_decay_block = (day_idx + 1) * 86400 + 1
-    blocks_to_next_decay = max(0, next_decay_block - cur_h)
-    next_day_rate = round(get_block_budget_sats(next_decay_block) / SATK_PER_COIN, 4)
-
-    # Calculate real-time block frequency
-    freq = 1.00
-    if len(recent_blocks) >= 5:
-        t_span = recent_blocks[-1]["timestamp"] - recent_blocks[0]["timestamp"]
-        if t_span > 0:
-            freq = round(t_span / (len(recent_blocks) - 1), 2)
-
-    fee_rate = get_current_fee_rate()
-    elapsed_days = (time.time() - POOL_LAUNCH_TIME) / 86400.0
-
-    stage_names = {
-        1: "Phase 1: 创世基石 (12h 周期大奖 / 15% 奖池 + 5% 生态储备)",
-        2: "Phase 2: 算力扩张 (36h 周期大奖 / 25% 奖池 + 5% 生态储备)",
-        3: "Phase 3: 机器文明 (108h 周期大奖 / 35% 奖池 + 5% 生态储备)",
-        4: "Phase 4: 终极紧缩 (324h 百万倍大奖 / 45% 奖池 + 5% 生态储备)",
-        5: "Phase 5: 永续微支付网络 (手续费超级大乐透)"
+    pool_blocks = {
+        str(block.get("block_hash")): block
+        for block in pool_snapshot.get("recent_blocks", [])
+        if block.get("block_hash")
     }
+    display_blocks = []
+    for block in raw_blocks:
+        block_hash = str(block.get("hash", ""))
+        attribution = pool_blocks.get(block_hash, {})
+        ts = float(block.get("timestamp", 0.0) or 0.0)
+        display_blocks.append({
+            "height": int(block.get("height", 0)),
+            "hash": block_hash[:16] + "...",
+            "full_hash": block_hash,
+            "reward": round(int(block.get("miner_base_sats", 0) or 0) / SATK_PER_COIN, 8),
+            "combo": bool(block.get("is_combo_resolution", False)),
+            "worker": attribution.get("finder_worker") or "unattributed",
+            "address": attribution.get("finder_wallet") or "",
+            "mode": attribution.get("mode") or "",
+            "is_pool_fee": bool(attribution.get("is_pool_fee", False)),
+            "time": "",
+            "full_ts": "",
+            "timestamp": ts,
+        })
 
-    # Miner allocations
-    ks01_blocks = cur_h // 2
-    ks02_blocks = cur_h - ks01_blocks
+    combo_resolutions = combo_state.get("resolutions", []) or []
+    combo_hof = []
+    for resolution in reversed(combo_resolutions):
+        winner_hash = str(resolution.get("winner_block_hash", ""))
+        attribution = pool_blocks.get(winner_hash, {})
+        winner_worker = attribution.get("finder_worker") or "unattributed"
+        winner_address = attribution.get("finder_wallet") or ""
+        worker_match = next(
+            (
+                worker for worker in pool_snapshot.get("workers", [])
+                if worker.get("worker_name") == winner_worker
+                and (not winner_address or worker.get("wallet_address") == winner_address)
+            ),
+            None,
+        )
+        beacon_block = next(
+            (block for block in raw_blocks if block.get("hash") == resolution.get("beacon_hash")),
+            {},
+        )
+        combo_hof.append({
+            "epoch_id": int(resolution.get("epoch_id", 0)),
+            "draw_height": int(resolution.get("draw_height", 0)),
+            "beacon_height": int(resolution.get("beacon_height", 0)),
+            "beacon_hash_prefix": str(resolution.get("beacon_hash", ""))[:16],
+            "winner_block_hash": winner_hash,
+            "winner_miner": winner_worker,
+            "winner_address": winner_address,
+            "winner_hashrate": _format_hashrate(float(worker_match.get("hashrate_hps", 0.0))) if worker_match else "N/A",
+            "hardware_model": "kHeavyHash Stratum worker",
+            "xor_distance_hex": str(resolution.get("winner_distance_hex", "")),
+            "payout_btck": int(resolution.get("jackpot_amount_satk", 0)) / SATK_PER_COIN,
+            "timestamp": float(beacon_block.get("timestamp", 0.0) or 0.0),
+            "status": "RESOLVED_VERIFIED",
+        })
 
-    miners_summary = {
-        "ks01": {
-            "worker": "ks01",
-            "address": KNOWN_MINERS["ks01"]["address"],
-            "hardware": KNOWN_MINERS["ks01"]["hardware"],
-            "hashrate_str": "375.0 GH/s",
-            "shares": ks01_blocks * 8,
-            "blocks": ks01_blocks,
-            "payout_btck": round(ks01_blocks * 5.0385, 4),
-            "status": "ONLINE"
-        },
-        "ks02": {
-            "worker": "ks02",
-            "address": KNOWN_MINERS["ks02"]["address"],
-            "hardware": KNOWN_MINERS["ks02"]["hardware"],
-            "hashrate_str": "375.0 GH/s",
-            "shares": ks02_blocks * 8,
-            "blocks": ks02_blocks,
-            "payout_btck": round(ks02_blocks * 5.0385, 4),
-            "status": "ONLINE"
+    combos_by_worker: Dict[tuple[str, str], int] = {}
+    for item in combo_hof:
+        key = (item["winner_address"], item["winner_miner"])
+        combos_by_worker[key] = combos_by_worker.get(key, 0) + 1
+
+    miners_summary: Dict[str, Dict[str, Any]] = {}
+    name_counts: Dict[str, int] = {}
+    for worker in pool_snapshot.get("workers", []):
+        name = str(worker.get("worker_name") or "worker")
+        name_counts[name] = name_counts.get(name, 0) + 1
+    for worker in pool_snapshot.get("workers", []):
+        name = str(worker.get("worker_name") or "worker")
+        address = str(worker.get("wallet_address") or "")
+        key = name if name_counts.get(name, 0) == 1 else f"{name}@{address[-8:]}"
+        miners_summary[key] = {
+            "worker": name,
+            "address": address,
+            "hardware": "kHeavyHash Stratum worker",
+            "mode": pool_snapshot.get("pool_mode", "UNKNOWN"),
+            "hashrate_str": _format_hashrate(float(worker.get("hashrate_hps", 0.0))),
+            "hashrate_hps": float(worker.get("hashrate_hps", 0.0)),
+            "shares": int(worker.get("shares_total", 0) or 0),
+            "shares_window": int(worker.get("shares_window", 0) or 0),
+            "blocks": int(worker.get("miner_blocks", 0) or 0),
+            "combos": combos_by_worker.get((address, name), 0),
+            "payout_btck": int(worker.get("miner_reward_satk", 0) or 0) / SATK_PER_COIN,
+            "status": "ONLINE" if worker.get("online") else "OFFLINE",
+            "accepted_since_connect": int(worker.get("accepted_since_connect", 0) or 0),
+            "rejected_since_connect": int(worker.get("rejected_since_connect", 0) or 0),
+            "ports": worker.get("ports", []),
+            "last_share_timestamp": float(worker.get("last_share_timestamp", 0.0) or 0.0),
         }
-    }
 
-    pool_fee_policy = {
-        "current_fee_rate": fee_rate,
-        "is_promo_active": elapsed_days < 7.0,
-        "stage_description": "前7天 5% (基建维护) → 7-30天 3% → 31天起 1%",
-        "remaining_promo_hours": max(0.0, (7.0 - elapsed_days) * 24.0),
-        "treasury_address": POOL_OPERATOR_ADDRESS
-    }
+    fee_policy = dict(pool_snapshot.get("fee_policy", {}))
+    next_stage_seconds = float(fee_policy.get("next_stage_seconds", 0.0) or 0.0)
+    fee_policy.update({
+        "next_stage_hours": next_stage_seconds / 3600.0,
+        "stage_description": fee_policy.get("schedule", "5% on days 1-7; 3% on days 8-30; 1% from day 31 onward"),
+        "accumulated_fee_btck": int(pool_snapshot.get("fee_satk", 0) or 0) / SATK_PER_COIN,
+        "fee_blocks": int(pool_snapshot.get("fee_blocks", 0) or 0),
+        "historical_recipients": pool_snapshot.get("fee_recipients", []),
+    })
 
+    issued_supply_sats = int(dag.get("issued_supply_sats", 0) or 0)
+    pool_balance_sats = int(dag.get("pool_balance_sats", 0) or 0)
+    eco_sats = int(dag.get("eco_fund_utxo_sats", 0) or 0)
+    day_idx = (cur_h - 1) // 86400
+    next_decay_block = (day_idx + 1) * 86400 + 1
+    stage_names = {
+        1: "Phase 1: Genesis Foundation (12h / 15% Combo + 5% Ecosystem Reserve)",
+        2: "Phase 2: Hashrate Expansion (36h / 25% Combo + 5% Ecosystem Reserve)",
+        3: "Phase 3: Machine Economy (108h / 35% Combo + 5% Ecosystem Reserve)",
+        4: "Phase 4: Final Contraction (324h / 45% Combo + 5% Ecosystem Reserve)",
+        5: "Phase 5: Perpetual Fee Era",
+    }
+    node_age = now - _LAST_CACHE_TIME if _LAST_CACHE_TIME else None
+    pool_age = now - _LAST_POOL_CACHE_TIME if _LAST_POOL_CACHE_TIME else None
     return {
-        "total_blocks": cur_h,
-        "total_combos": 0,
+        "total_blocks": ledger_height,
+        "total_dag_blocks": int(dag.get("total_dag_blocks", 0) or 0),
+        "max_blue_score": int(dag.get("max_blue_score", 0) or 0),
+        "total_combos": int(combo_state.get("resolved_count", 0) or 0),
         "current_era": stage_id,
         "era_name": stage_names.get(stage_id, f"Phase {stage_id}"),
-        "current_emission_btck": current_emission,
-        "miner_base_btck": miner_base,
-        "pool_deposit_btck": pool_deposit,
-        "combo_reward_btck": round(pool_balance_btck, 2),
+        "current_emission_btck": budget_sats / SATK_PER_COIN,
+        "miner_base_btck": miner_base_sats / SATK_PER_COIN,
+        "pool_deposit_btck": pool_deposit_sats / SATK_PER_COIN,
+        "combo_reward_btck": pool_balance_sats / SATK_PER_COIN,
         "combo_ratio": combo_ratio,
         "draw_interval_blocks": draw_interval,
-        "draw_interval_hours": draw_interval_hours,
+        "draw_interval_hours": draw_interval * target_interval / 3600.0,
         "next_draw_block": next_draw_block,
         "blocks_to_draw": blocks_to_draw,
-        "countdown_seconds": max(0, int(blocks_to_draw * freq)),
+        "countdown_seconds": int(blocks_to_draw * target_interval),
+        "countdown_basis": "consensus_target",
         "day_idx": day_idx,
-        "blocks_in_day": blocks_in_day,
+        "blocks_in_day": (cur_h - 1) % 86400 + 1,
         "next_decay_block": next_decay_block,
-        "blocks_to_next_decay": blocks_to_next_decay,
-        "next_day_rate_btck": next_day_rate,
-        "block_freq_sec": f"{freq:.2f}",
-        "total_reward_btck": issued_supply_btck,
-        "pool_balance_btck": pool_balance_btck,
-        "issued_supply_btck": issued_supply_btck,
-        "accumulated_treasury_fee_btck": round(issued_supply_btck * fee_rate, 4),
-        "pool_fee_policy": pool_fee_policy,
-        "accumulated_eco_reserve_btck": eco_reserve_btck,
-        "network_diff": 256.0,
-        "network_hashrate_str": "~750.0 GH/s (2 Physical IceRiver KS0 Connected)",
-        "total_pool_hashrate_str": "~750.0 GH/s",
-        "active_worker_count": 2,
-        "is_actively_mining": True,
+        "blocks_to_next_decay": max(0, next_decay_block - cur_h),
+        "next_day_rate_btck": get_block_budget_sats(next_decay_block) / SATK_PER_COIN,
+        "block_freq_sec": f"{observed_freq:.2f}" if observed_freq else None,
+        "target_block_freq_sec": target_interval,
+        "total_reward_btck": issued_supply_sats / SATK_PER_COIN,
+        "pool_balance_btck": pool_balance_sats / SATK_PER_COIN,
+        "issued_supply_btck": issued_supply_sats / SATK_PER_COIN,
+        "accumulated_treasury_fee_btck": int(pool_snapshot.get("fee_satk", 0) or 0) / SATK_PER_COIN,
+        "pool_fee_policy": fee_policy,
+        "accumulated_eco_reserve_btck": eco_sats / SATK_PER_COIN,
+        "network_diff": network_diff,
+        "network_bits": f"0x{next_bits:08x}" if next_bits else None,
+        "daa_at_pow_limit": bool(next_bits and next_bits == NETWORK.pow_limit_bits),
+        "network_hashrate_str": _format_hashrate(network_hashrate_hps) if observed_freq else "N/A",
+        "total_pool_hashrate_str": _format_hashrate(float(pool_snapshot.get("pool_hashrate_hps", 0.0))),
+        "pool_hashrate_window_seconds": float(pool_snapshot.get("window_seconds", 600.0) or 600.0),
+        "active_worker_count": int(pool_snapshot.get("active_workers", 0) or 0),
+        "active_connection_count": int(pool_snapshot.get("active_connections", 0) or 0),
+        "is_actively_mining": int(pool_snapshot.get("active_workers", 0) or 0) > 0,
         "miners_summary": miners_summary,
-        "combo_hof": [],
-        "blocks": recent_blocks
+        "combo_hof": combo_hof,
+        "blocks": display_blocks,
+        "network": node_snapshot.get("network", {}),
+        "telemetry": {
+            "node_age_seconds": node_age,
+            "pool_age_seconds": pool_age,
+            "node_fresh": node_age is not None and node_age < 15.0,
+            "pool_fresh": pool_age is not None and pool_age < 10.0,
+            "source": "btckd:/dashboard + stratum:/status",
+        },
     }
+
+
+# Production endpoint definition supersedes the legacy single-node demo builder above.
+build_stats_payload = build_production_stats_payload
 
 
 class ExplorerHTTPHandler(BaseHTTPRequestHandler):
@@ -285,6 +341,8 @@ class ExplorerHTTPHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
+        self.send_header("Pragma", "no-cache")
         self.end_headers()
         self.wfile.write(body)
 
@@ -297,6 +355,8 @@ class ExplorerHTTPHandler(BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(content)))
+        self.send_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
+        self.send_header("Pragma", "no-cache")
         self.end_headers()
         self.wfile.write(content)
 
@@ -317,7 +377,7 @@ class ExplorerHTTPHandler(BaseHTTPRequestHandler):
         elif path == "/api/stats":
             self.send_json_response(build_stats_payload())
         elif path == "/api/combo/history":
-            self.send_json_response([])
+            self.send_json_response(build_stats_payload().get("combo_hof", []))
         elif path == "/api/benchmark/hourly":
             self.send_json_response([])
         elif path.startswith("/api/miner/"):
@@ -353,10 +413,10 @@ class ExplorerHTTPHandler(BaseHTTPRequestHandler):
 
 
 def run_server(port: int = 8088):
-    # Strictly listen on 127.0.0.1 for local privacy
-    server_address = ("127.0.0.1", port)
+    host = os.getenv("BTCK_EXPLORER_HOST", "127.0.0.1")
+    server_address = (host, port)
     httpd = HTTPServer(server_address, ExplorerHTTPHandler)
-    print(f"🔒 BTC-K Private Explorer running on http://127.0.0.1:{port}")
+    print(f"BTC-K Explorer running on http://{host}:{port}")
     print(f"📁 Serving static files from {WEB_DIR}")
     try:
         httpd.serve_forever()

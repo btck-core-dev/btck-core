@@ -45,11 +45,11 @@ class TestStratumPPLNSE2E(unittest.IsolatedAsyncioTestCase):
         os.environ["BTCK_PPLNS_DB_PATH"] = self.db_path
         os.environ["BTCK_PPLNS_MIN_PAYOUT_BTCK"] = "1.0"
 
-        self.daemon = BTCKDaemon(host="127.0.0.1", network="devnet")
+        self.daemon = BTCKDaemon(host="127.0.0.1", network="simnet")
         self.server = BTCKStratumServer(
             host="127.0.0.1",
             port=0,
-            network="devnet",
+            network="simnet",
             share_target=compact_to_target(0x207fffff),
             node_rpc=InProcessNodeRPCClient(self.daemon),
         )

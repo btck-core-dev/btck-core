@@ -57,13 +57,13 @@ class TestP2PDaemonInterconnect(unittest.IsolatedAsyncioTestCase):
         host = "127.0.0.1"
         # Node 1: Seed / Bootstrap node
         rpc1_port, p2p1_port = 16210, 16211
-        daemon1 = BTCKDaemon(host=host, port=rpc1_port, p2p_port=p2p1_port)
+        daemon1 = BTCKDaemon(host=host, port=rpc1_port, p2p_port=p2p1_port, network="simnet")
         await daemon1.start()
         print(f"✓ Node 1 started (RPC: {rpc1_port}, P2P: {p2p1_port})")
 
         # Node 2: Connects to Node 1 via seed_peers
         rpc2_port, p2p2_port = 16220, 16221
-        daemon2 = BTCKDaemon(host=host, port=rpc2_port, p2p_port=p2p2_port, seed_peers=[f"{host}:{p2p1_port}"])
+        daemon2 = BTCKDaemon(host=host, port=rpc2_port, p2p_port=p2p2_port, seed_peers=[f"{host}:{p2p1_port}"], network="simnet")
         await daemon2.start()
         print(f"✓ Node 2 started (RPC: {rpc2_port}, P2P: {p2p2_port}, Seed: {host}:{p2p1_port})")
 
@@ -150,7 +150,7 @@ class TestP2PDaemonInterconnect(unittest.IsolatedAsyncioTestCase):
 
             # 5. Late Joiner / IBD Test: Node 3 joins after blocks exist
             rpc3_port, p2p3_port = 16230, 16231
-            daemon3 = BTCKDaemon(host=host, port=rpc3_port, p2p_port=p2p3_port, seed_peers=[f"{host}:{p2p1_port}"])
+            daemon3 = BTCKDaemon(host=host, port=rpc3_port, p2p_port=p2p3_port, seed_peers=[f"{host}:{p2p1_port}"], network="simnet")
             await daemon3.start()
             print(f"✓ Node 3 (Late Joiner) started (RPC: {rpc3_port}, P2P: {p2p3_port})")
 

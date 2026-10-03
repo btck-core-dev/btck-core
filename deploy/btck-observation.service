@@ -1,0 +1,15 @@
+[Unit]
+Description=Capture BTC-K v3 mining observation snapshot
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+User=ubuntu
+Group=ubuntu
+Environment=BTCK_PROJECT_DIR=/home/ubuntu/btck-devnet
+Environment=BTCK_OBSERVATION_DIR=/home/ubuntu/btck-observation
+ExecStart=/home/ubuntu/btck-devnet/deploy/capture_v3_observation.sh
+
+[Install]
+WantedBy=multi-user.target

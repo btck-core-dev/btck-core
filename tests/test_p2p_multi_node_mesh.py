@@ -33,10 +33,10 @@ class TestP2PMultiNodeMesh(unittest.IsolatedAsyncioTestCase):
         print("================================================================")
 
         # 1. Initialize 4 independent nodes sharing identical Genesis
-        dag1 = BlockDAG()
-        dag2 = BlockDAG()
-        dag3 = BlockDAG()
-        dag4 = BlockDAG()
+        dag1 = BlockDAG(network="simnet")
+        dag2 = BlockDAG(network="simnet")
+        dag3 = BlockDAG(network="simnet")
+        dag4 = BlockDAG(network="simnet")
 
         self.assertEqual(dag1.genesis_hash, dag2.genesis_hash)
         self.assertEqual(dag1.genesis_hash, dag3.genesis_hash)

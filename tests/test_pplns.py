@@ -121,6 +121,47 @@ class TestPPLNSEngine(unittest.TestCase):
         pending_after = self.engine.get_pending_payouts(default_threshold_satk=int(5.0 * SATK_PER_COIN))
         self.assertEqual(len(pending_after), 0)
 
+    def test_database_reopen_preserves_balances_and_launch_time(self):
+        wallet = "btck1s_restart_safe"
+        launch_time = self.engine.get_or_create_launch_time(1_700_000_000.0)
+        self.engine.record_share(wallet, "worker", 128.0, timestamp=1_700_000_001.0)
+        self.engine.process_block(
+            block_hash="restart-safe-block",
+            height=200,
+            reward_satk=5 * SATK_PER_COIN,
+            pool_fee_rate=0.05,
+            finder_wallet=wallet,
+        )
+        before = self.engine.get_miner(wallet)
+
+        reopened = PPLNSEngine(db_path=self.db_path, window_size=100, finder_bonus_rate=0.01)
+        after = reopened.get_miner(wallet)
+        self.assertEqual(reopened.get_or_create_launch_time(), launch_time)
+        self.assertEqual(after.unpaid_satk, before.unpaid_satk)
+        self.assertEqual(after.total_shares_count, 1)
+
+    def test_duplicate_block_settlement_is_idempotent(self):
+        wallet = "btck1s_idempotent"
+        self.engine.record_share(wallet, "worker", 128.0)
+        first = self.engine.process_block(
+            block_hash="same-block",
+            height=201,
+            reward_satk=5 * SATK_PER_COIN,
+            pool_fee_rate=0.05,
+            finder_wallet=wallet,
+        )
+        balance = self.engine.get_miner(wallet).unpaid_satk
+        second = self.engine.process_block(
+            block_hash="same-block",
+            height=201,
+            reward_satk=5 * SATK_PER_COIN,
+            pool_fee_rate=0.05,
+            finder_wallet=wallet,
+        )
+        self.assertNotIn("error", first)
+        self.assertEqual(second["error"], "already_settled")
+        self.assertEqual(self.engine.get_miner(wallet).unpaid_satk, balance)
+
 
 class MockNodeRPC:
     def __init__(self, utxos):
@@ -195,4 +236,3 @@ class TestAutoPayoutWorker(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

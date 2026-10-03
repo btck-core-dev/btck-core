@@ -16,6 +16,13 @@
     "max_parents": 8,
     "ghostdag_k": 18,
     "max_merge_set_size": 1024,
+    "daa": {
+      "window_blocks": 264,
+      "initial_bits": "0x1d00ffff",
+      "target_interval_ms": 1000,
+      "median_time_blocks": 11,
+      "max_adjustment_factor": 2
+    },
     "eco_fund_output": [
       "020000000000000000000000000000000000000000000000000000000000000000",
       "030000000000000000000000000000000000000000000000000000000000000000"

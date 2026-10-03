@@ -815,10 +815,12 @@
 
   <!-- Top Announcement Bar -->
   <div class="top-promo-bar">
-    <span class="badge">🔥 Genesis Incentive</span>
-    <span><strong>0.00% Pool Fee</strong> active for Day 1–7. 100% coinbase block subsidies credited directly to miners.</span>
+    <span class="badge">🔥 Time-Decay Fee Schedule</span>
+    <span id="pool-fee-announcement"><strong>Pool fee policy loading…</strong></span>
     <span style="color: var(--text-muted);">|</span>
-    <span id="promo-hours-left">159.5 Hours Remaining</span>
+    <span id="promo-hours-left">Loading fee stage…</span>
+    <span style="color: var(--text-muted);">|</span>
+    <span id="telemetry-state" style="color:#f59e0b;">Live data connecting…</span>
   </div>
 
   <!-- Header Nav -->
@@ -835,8 +837,8 @@
       <!-- Quick Stratum Copy -->
       <div class="header-stratum">
         <span class="stratum-tag"><span class="dot"></span> STRATUM</span>
-        <span id="header-stratum-url">pool.btck.network:3333</span>
-        <button class="copy-btn" onclick="copyText(stratum+tcp://pool.btck.network:3333)">Copy</button>
+        <span id="header-stratum-url">185.130.45.240:3333</span>
+        <button class="copy-btn" onclick="copyText('stratum+tcp://185.130.45.240:3333')">Copy</button>
       </div>
 
       <!-- Links -->
@@ -854,7 +856,7 @@
   <main class="container">
 
     <!-- ==================================================================== -->
-    <!-- HERO: 12-HOUR EULER COMBO JACKPOT (LuckyPool & K1Pool Spotlight) -->
+    <!-- HERO: consensus-authoritative Combo jackpot -->
     <!-- ==================================================================== -->
     <section class="hero-jackpot-card" id="section-jackpot">
       <div class="jackpot-grid">
@@ -863,7 +865,7 @@
         <div class="jackpot-timer-col">
           <div class="jackpot-header-badge">
             <span>🎰</span>
-            <span id="hero-epoch-label">12h Euler Combo Jackpot • Epoch 1</span>
+            <span id="hero-epoch-label">Loading consensus epoch…</span>
           </div>
           
           <h2 class="jackpot-title">Next Grand Prize Draw In:</h2>
@@ -886,13 +888,13 @@
           <div class="jackpot-progress-wrap">
             <div class="jackpot-progress-info">
               <span>Epoch Progress</span>
-              <span id="jackpot-block-ratio">Block #49,998 / #86,400 (57.8%)</span>
+              <span id="jackpot-block-ratio">Loading ledger height…</span>
             </div>
             <div class="jackpot-progress-bar">
-              <div class="jackpot-progress-fill" id="jackpot-progress-fill" style="width: 57.8%;"></div>
+              <div class="jackpot-progress-fill" id="jackpot-progress-fill" style="width: 0;"></div>
             </div>
             <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">
-              Target Draw Block: <strong id="hero-target-block" style="color: #fff;">#86,400</strong> (Every 43,200 blocks)
+              Target Draw Block: <strong id="hero-target-block" style="color: #fff;">—</strong> (Phase 1: every 43,200 blue-order blocks)
             </div>
           </div>
         </div>
@@ -901,17 +903,17 @@
         <div class="jackpot-amount-col">
           <div class="jackpot-pool-tag">Accumulated Prize Pool</div>
           <div class="jackpot-big-number">
-            <span id="hero-jackpot-number">8,562.98</span>
+            <span id="hero-jackpot-number">—</span>
             <span class="symbol">BTCK</span>
           </div>
-          <div class="jackpot-usd-sub" id="hero-jackpot-usd">≈ $445.27 USD</div>
+          <div class="jackpot-usd-sub" id="hero-jackpot-usd">Consensus jackpot UTXO balance</div>
           
           <div class="jackpot-boost-pill">
-            <span>✨ 12h 周期超级大奖池 (Grand Combo Jackpot Tier)</span>
+            <span>✨ 12-Hour Grand Combo Jackpot</span>
           </div>
 
           <p style="font-size: 11px; color: var(--text-muted); margin-top: 10px; line-height: 1.4;">
-            15% of every GhostDAG block subsidy feeds this jackpot (with 5% dedicated to L1 AI Compute Eco Reserve). The miner with the closest hash to future beacon takes 100% of the jackpot reserve!
+            In Phase 1, 15% of every canonical blue-order subsidy funds the jackpot and 5% funds the ecosystem reserve. Winner selection uses the committed future beacon and consensus vesting schedule.
           </p>
         </div>
 
@@ -931,15 +933,7 @@
               </tr>
             </thead>
             <tbody id="jackpot-winners-tbody">
-              <!-- Dynamically populated from /api/stats combo_hof -->
-              <tr>
-                <td style="color: #06b6d4;">#43,200</td>
-                <td>
-                  <div class="winner-highlight">ks001</div>
-                  <div class="winner-addr" onclick="copyText('btck1s022fd5c7684238a4ee4505c01cef3353279d5330a5901ae135ebbe47a0e47c71a403c6248a22724350e3bfabd6a6280bf50ada1977f0e4f240783d3a03caae334b2d3f0cff62')">btck1s022f...ff62</div>
-                </td>
-                <td style="text-align: right;" class="winner-highlight">5,820.45 BTCK</td>
-              </tr>
+              <tr><td colspan="3" style="text-align:center;color:var(--text-muted);padding:14px;">Loading consensus draw history…</td></tr>
             </tbody>
           </table>
         </div>
@@ -958,44 +952,44 @@
     <div class="stats-grid">
       <!-- 1. Pool Hashrate -->
       <div class="stat-card">
-        <div class="stat-card-label">Pool Hashrate</div>
-        <div class="stat-card-value" style="color: var(--emerald-primary);" id="stat-pool-hashrate">~1.20 TH/s</div>
-        <div class="stat-card-sub"><span style="color: var(--emerald-primary);">●</span> Kaspa ASIC kHeavyHash</div>
+        <div class="stat-card-label">Accepted-Share Hashrate</div>
+        <div class="stat-card-value" style="color: var(--emerald-primary);" id="stat-pool-hashrate">Collecting…</div>
+        <div class="stat-card-sub"><span style="color: var(--emerald-primary);">●</span> 10-minute effective estimate; not device telemetry</div>
       </div>
 
       <!-- 2. Network Difficulty -->
       <div class="stat-card">
         <div class="stat-card-label">Network Difficulty</div>
-        <div class="stat-card-value" style="color: var(--cyan-primary);" id="stat-network-diff">474.79</div>
-        <div class="stat-card-sub">Fast DAA (5-block window)</div>
+        <div class="stat-card-value" style="color: var(--cyan-primary);" id="stat-network-diff">—</div>
+        <div class="stat-card-sub" id="stat-network-diff-note">Consensus DAA (264-block window)</div>
       </div>
 
       <!-- 3. BlockDAG Height -->
       <div class="stat-card">
-        <div class="stat-card-label">BlockDAG Height</div>
-        <div class="stat-card-value" id="stat-block-height">#49,998</div>
+        <div class="stat-card-label">Consensus Ledger Height</div>
+        <div class="stat-card-value" id="stat-block-height">—</div>
         <div class="stat-card-sub">GhostDAG Parallel Ledger</div>
       </div>
 
       <!-- 4. Target Cadence -->
       <div class="stat-card">
         <div class="stat-card-label">Block Cadence</div>
-        <div class="stat-card-value" id="stat-block-freq">1.00s / blk</div>
-        <div class="stat-card-sub">Target: 1.000 BPS Exact</div>
+        <div class="stat-card-value" id="stat-block-freq">Collecting…</div>
+        <div class="stat-card-sub" id="stat-block-freq-note">Observed blue-order cadence; target: 1.000 BPS</div>
       </div>
 
       <!-- 5. Active Workers -->
       <div class="stat-card">
         <div class="stat-card-label">Active Miners</div>
-        <div class="stat-card-value" style="color: #fff;" id="stat-active-miners">5 Connected</div>
+        <div class="stat-card-value" style="color: #fff;" id="stat-active-miners">—</div>
         <div class="stat-card-sub">SOLO & PPLNS Supported</div>
       </div>
 
       <!-- 6. Pool Fee -->
       <div class="stat-card">
         <div class="stat-card-label">Pool Fee Rate</div>
-        <div class="stat-card-value" style="color: var(--gold-light);" id="stat-pool-fee">0.00% (Promo)</div>
-        <div class="stat-card-sub" id="stat-fee-note">159.5h free mining left</div>
+        <div class="stat-card-value" style="color: var(--gold-light);" id="stat-pool-fee">—</div>
+        <div class="stat-card-sub" id="stat-fee-note">Loading accounting ledger…</div>
       </div>
     </div>
 
@@ -1193,6 +1187,14 @@
     let activeWorkerFilter = "ALL";
     let countdownInterval = null;
     let remainingSeconds = 0;
+    let lastStatsAt = 0;
+
+    function setTelemetryState(ok, message) {
+      const el = document.getElementById("telemetry-state");
+      if (!el) return;
+      el.innerText = message;
+      el.style.color = ok ? "#10b981" : "#ef4444";
+    }
 
     function copyText(txt) {
       navigator.clipboard.writeText(txt).then(() => {
@@ -1316,15 +1318,15 @@
         const shares = v.shares || 0;
         const blocks = v.blocks || 0;
         const payout = (v.payout_btck || 0).toFixed(2);
-        const isOnline = shares > 0 || blocks > 0 || k === "ks001";
+        const isOnline = v.status === "ONLINE";
         const addrTrunc = v.address ? `${v.address.slice(0, 10)}...${v.address.slice(-6)}` : "Default";
-        const hr = v.hashrate_str || (shares > 0 ? "~380 GH/s" : "0 GH/s");
+        const hr = v.hashrate_str || "N/A";
 
         rows.push(`
           <tr>
             <td>
-              <span class="status-dot-active"></span>
-              <span style="color: #fff; font-weight: 600;">Online</span>
+              <span class="status-dot-active" style="${isOnline ? "" : "background:#64748b;box-shadow:none;"}"></span>
+              <span style="color: #fff; font-weight: 600;">${isOnline ? "Online" : "Offline"}</span>
             </td>
             <td>
               <strong style="color: #fff;">${k}</strong>
@@ -1359,7 +1361,9 @@
         const h = b.height;
         const worker = b.worker || "miner";
         const reward = (b.reward || 5.04).toFixed(2);
-        const timeStr = b.time || "Just now";
+        const timeStr = b.timestamp
+          ? new Date(b.timestamp * 1000).toLocaleTimeString([], {hour12: false})
+          : "—";
 
         rows.push(`
           <tr>
@@ -1382,24 +1386,25 @@
       const hof = currentStats.combo_hof || [];
 
       if (!hof.length) {
-        tbody.innerHTML = `<tr><td colspan="3" style="text-align: center; color: var(--text-muted); padding: 14px;">Epoch 1 Active • Awaiting first draw at block #86,400</td></tr>`;
+        const nextDraw = currentStats.next_draw_block || 43200;
+        tbody.innerHTML = `<tr><td colspan="3" style="text-align: center; color: var(--text-muted); padding: 14px;">Epoch active • Awaiting draw at ledger height #${nextDraw.toLocaleString()}</td></tr>`;
         return;
       }
 
       let rows = [];
       for (const item of hof.slice(0, 4)) {
         const h = item.draw_height || item.height || 43200;
-        const payout = (item.payout_btck || 5820.45).toFixed(2);
-        const worker = item.winner_miner || "ks001";
-        const addr = item.winner_address || "btck1s022fd5c7684238a4ee4505c01cef3353279d5330a5901ae135ebbe47a0e47c71a403c6248a22724350e3bfabd6a6280bf50ada1977f0e4f240783d3a03caae334b2d3f0cff62";
-        const addrTrunc = `${addr.slice(0, 8)}...${addr.slice(-6)}`;
+        const payout = Number(item.payout_btck || 0).toFixed(2);
+        const worker = item.winner_miner || "unattributed";
+        const addr = item.winner_address || "";
+        const addrTrunc = addr ? `${addr.slice(0, 8)}...${addr.slice(-6)}` : "address unavailable";
 
         rows.push(`
           <tr>
             <td style="color: var(--cyan-primary); font-weight: 700;">#${h.toLocaleString()}</td>
             <td>
               <div class="winner-highlight">${worker}</div>
-              <div class="winner-addr" onclick="copyText('${addr}')">${addrTrunc}</div>
+              <div class="winner-addr" ${addr ? `onclick="copyText('${addr}')"` : ""}>${addrTrunc}</div>
             </td>
             <td style="text-align: right;" class="winner-highlight">${payout} BTCK</td>
           </tr>
@@ -1414,21 +1419,57 @@
         if (!res.ok) return;
         const data = await res.json();
         currentStats = data;
+        lastStatsAt = Date.now();
+        const fresh = data.telemetry && data.telemetry.node_fresh && data.telemetry.pool_fresh;
+        setTelemetryState(Boolean(fresh), fresh ? "● LIVE — consensus + pool" : "STALE — upstream telemetry delayed");
 
         // Global stats
         const curHeight = data.total_blocks || 0;
         document.getElementById("stat-block-height").innerText = `#${curHeight.toLocaleString()}`;
         if (document.getElementById("stat-pool-hashrate")) {
-          document.getElementById("stat-pool-hashrate").innerText = data.total_pool_hashrate_str || "~1.90 TH/s";
+          document.getElementById("stat-pool-hashrate").innerText = data.total_pool_hashrate_str || "Collecting…";
         }
-        document.getElementById("stat-network-diff").innerText = (data.network_diff || 279.4).toFixed(2);
-        document.getElementById("stat-block-freq").innerText = `${data.block_freq_sec || "1.00"}s / blk`;
+        const networkDiff = Number(data.network_diff || 0);
+        document.getElementById("stat-network-diff").innerText = networkDiff > 0
+          ? networkDiff.toExponential(4)
+          : "N/A";
+        const diffNote = document.getElementById("stat-network-diff-note");
+        if (diffNote) {
+          const bits = data.network_bits || "unknown bits";
+          diffNote.innerText = data.daa_at_pow_limit
+            ? `DAA minimum difficulty reached (${bits})`
+            : `Consensus DAA target (${bits}; 264-block window)`;
+          diffNote.style.color = data.daa_at_pow_limit ? "#f59e0b" : "";
+        }
+        document.getElementById("stat-block-freq").innerText = data.block_freq_sec
+          ? `${data.block_freq_sec}s / blue blk`
+          : "collecting…";
+        const cadence = Number(data.block_freq_sec || 0);
+        const cadenceNote = document.getElementById("stat-block-freq-note");
+        if (cadenceNote) {
+          const offTarget = cadence > 1.25;
+          cadenceNote.innerText = offTarget
+            ? `Below target: ${(1 / cadence).toFixed(3)} observed BPS vs 1.000 BPS`
+            : "Observed blue-order cadence; target: 1.000 BPS";
+          cadenceNote.style.color = offTarget ? "#ef4444" : "";
+        }
         
         // Fee policy
         const feePol = data.pool_fee_policy || {};
-        const promoHours = feePol.remaining_promo_hours || 159.5;
-        document.getElementById("promo-hours-left").innerText = `${promoHours.toFixed(1)} Hours Remaining`;
-        document.getElementById("stat-fee-note").innerText = `${promoHours.toFixed(1)}h free mining left`;
+        const nextStageHours = Number(feePol.next_stage_hours || 0);
+        const feeStage = feePol.stage || "unknown";
+        document.getElementById("promo-hours-left").innerText = nextStageHours > 0
+          ? `${feeStage} stage • ${nextStageHours.toFixed(1)}h to next rate`
+          : `${feeStage} stage • final 1% rate`;
+        const feeRate = Number(feePol.current_fee_rate || 0);
+        const feeTotal = Number(data.accumulated_treasury_fee_btck || 0);
+        document.getElementById("stat-pool-fee").innerText = `${(feeRate * 100).toFixed(2)}%`;
+        const feeBlocks = Number(feePol.fee_blocks || 0);
+        document.getElementById("stat-fee-note").innerText = `Time decay: 5% (days 1–7) → 3% (days 8–30) → 1% (day 31+)`;
+        const feeAnnouncement = document.getElementById("pool-fee-announcement");
+        if (feeAnnouncement) {
+          feeAnnouncement.innerHTML = `<strong>${(feeRate * 100).toFixed(2)}% Pool Fee</strong> in the ${feeStage} stage; ${feeTotal.toFixed(4)} BTCK credited across ${feeBlocks.toLocaleString()} fee blocks.`;
+        }
 
         // Active miners count
         const onlineCount = data.active_worker_count !== undefined ? data.active_worker_count : 0;
@@ -1437,7 +1478,7 @@
         // Hero Jackpot
         const poolBal = data.pool_balance_btck || 0.0;
         document.getElementById("hero-jackpot-number").innerText = poolBal.toLocaleString(undefined, {minimumFractionDigits: 4, maximumFractionDigits: 4});
-        document.getElementById("hero-jackpot-usd").innerText = `≈ $${(poolBal * 0.052).toFixed(2)} USD`;
+        document.getElementById("hero-jackpot-usd").innerText = `On-chain consensus reserve • ${data.total_combos || 0} resolved draw(s)`;
 
         // Progress bar
         const nextDraw = data.next_draw_block || 86400;
@@ -1447,6 +1488,7 @@
         document.getElementById("jackpot-block-ratio").innerText = `Block #${curHeight.toLocaleString()} / #${nextDraw.toLocaleString()} (${pct.toFixed(1)}%)`;
         document.getElementById("jackpot-progress-fill").style.width = `${pct}%`;
         document.getElementById("hero-target-block").innerText = `#${nextDraw.toLocaleString()}`;
+        document.getElementById("hero-epoch-label").innerText = `${data.draw_interval_hours || 12}h Combo Jackpot • Epoch ${(data.total_combos || 0) + 1}`;
 
         // Countdown timer: smooth ticker without jittering on every poll
         if (data.countdown_seconds !== undefined) {
@@ -1462,12 +1504,18 @@
 
       } catch (err) {
         console.error("fetchStats error:", err);
+        setTelemetryState(false, "OFFLINE — displayed values are not live");
       }
     }
 
     // Init
     fetchStats();
     setInterval(fetchStats, 2000);
+    setInterval(() => {
+      if (!lastStatsAt || Date.now() - lastStatsAt > 10000) {
+        setTelemetryState(false, "OFFLINE — displayed values are not live");
+      }
+    }, 1000);
   </script>
 </body>
 </html>

@@ -18,7 +18,7 @@ from typing import Any, Mapping, Optional
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_MANIFEST_DIR = PROJECT_ROOT / "params" / "networks"
-SUPPORTED_NETWORKS = frozenset({"devnet", "testnet", "mainnet"})
+SUPPORTED_NETWORKS = frozenset({"simnet", "devnet", "testnet", "mainnet"})
 _HEX_8 = re.compile(r"^[0-9a-fA-F]{8}$")
 _HEX_64 = re.compile(r"^[0-9a-fA-F]{64}$")
 _HEX_66 = re.compile(r"^[0-9a-fA-F]{66}$")
@@ -60,6 +60,11 @@ class NetworkConfig:
     max_parents: int
     ghostdag_k: int
     max_merge_set_size: int
+    daa_window_blocks: int
+    daa_initial_bits: int
+    daa_target_interval_ms: int
+    daa_median_time_blocks: int
+    daa_max_adjustment_factor: int
     eco_fund_output: tuple[bytes, bytes]
     genesis: GenesisConfig
     features: Mapping[str, bool]
@@ -121,12 +126,29 @@ def _parse_manifest(path: Path, requested_name: str) -> NetworkConfig:
     max_parents = int(consensus.get("max_parents", 0))
     ghostdag_k = int(consensus.get("ghostdag_k", -1))
     max_merge_set_size = int(consensus.get("max_merge_set_size", 0))
+    daa = consensus.get("daa", {})
+    _require(isinstance(daa, dict), "consensus.daa must be an object")
+    daa_window_blocks = int(daa.get("window_blocks", 0))
+    daa_initial_bits = int(str(daa.get("initial_bits", "0")), 0)
+    daa_target_interval_ms = int(daa.get("target_interval_ms", 0))
+    daa_median_time_blocks = int(daa.get("median_time_blocks", 0))
+    daa_max_adjustment_factor = int(daa.get("max_adjustment_factor", 0))
     _require(block_version >= 2, "block_version must use the post-audit v2 header or later")
     _require(0 < pow_limit_bits <= 0xFFFFFFFF, "pow_limit_bits must be a uint32 compact target")
     _require(0 < max_future_seconds <= 7200, "max_future_seconds is outside the safe range")
     _require(0 < max_parents <= 64, "max_parents is outside the safe range")
     _require(0 <= ghostdag_k <= 64, "ghostdag_k is outside the safe range")
     _require(0 < max_merge_set_size <= 4096, "max_merge_set_size is outside the safe range")
+    _require(16 <= daa_window_blocks <= 4096, "DAA window_blocks is outside the safe range")
+    _require(0 < daa_initial_bits <= 0xFFFFFFFF, "DAA initial_bits must be a uint32 compact target")
+    _require(100 <= daa_target_interval_ms <= 600_000, "DAA target interval is outside the safe range")
+    _require(3 <= daa_median_time_blocks <= 101 and daa_median_time_blocks % 2 == 1, "DAA median window must be odd")
+    _require(2 <= daa_max_adjustment_factor <= 16, "DAA adjustment factor is outside the safe range")
+    from consensus.pow import validate_compact_target
+    try:
+        validate_compact_target(daa_initial_bits, pow_limit_bits)
+    except ValueError as exc:
+        raise NetworkConfigurationError(f"Invalid DAA initial target: {exc}") from exc
     eco_output = consensus.get("eco_fund_output", [])
     _require(
         isinstance(eco_output, list)
@@ -185,6 +207,11 @@ def _parse_manifest(path: Path, requested_name: str) -> NetworkConfig:
         max_parents=max_parents,
         ghostdag_k=ghostdag_k,
         max_merge_set_size=max_merge_set_size,
+        daa_window_blocks=daa_window_blocks,
+        daa_initial_bits=daa_initial_bits,
+        daa_target_interval_ms=daa_target_interval_ms,
+        daa_median_time_blocks=daa_median_time_blocks,
+        daa_max_adjustment_factor=daa_max_adjustment_factor,
         eco_fund_output=(bytes.fromhex(eco_output[0]), bytes.fromhex(eco_output[1])),
         genesis=genesis,
         features=dict(features),

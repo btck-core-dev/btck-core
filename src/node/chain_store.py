@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 import time
 from pathlib import Path
@@ -60,8 +61,11 @@ class ChainStore:
     def __init__(self, path: Path, network: NetworkConfig):
         self.path = Path(path)
         self.network = network
+        self.checkpoint_interval = max(100, int(os.getenv("BTCK_STATE_ROOT_CHECKPOINT_INTERVAL", "1000")))
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._initialize()
+        with self._connect() as connection:
+            self._record_count = int(connection.execute("SELECT COUNT(*) FROM accepted_blocks").fetchone()[0])
 
     def _connect(self) -> sqlite3.Connection:
         connection = sqlite3.connect(self.path, timeout=30.0)
@@ -99,7 +103,10 @@ class ChainStore:
             else:
                 connection.executemany("INSERT INTO meta(key, value) VALUES(?, ?)", expected.items())
 
-    def append_block(self, block: DAGBlock, state_root: str) -> None:
+    def should_checkpoint_next_block(self) -> bool:
+        return (self._record_count + 1) % self.checkpoint_interval == 0
+
+    def append_block(self, block: DAGBlock, state_root: str = "") -> None:
         payload_json = json.dumps(serialize_block(block), sort_keys=True, separators=(",", ":"))
         with self._connect() as connection:
             try:
@@ -114,6 +121,8 @@ class ChainStore:
                 ).fetchone()
                 if row != (payload_json, state_root):
                     raise ChainStoreError("Conflicting persisted record for existing block hash") from exc
+            else:
+                self._record_count += 1
 
     def records(self) -> Iterator[tuple[DAGBlock, str]]:
         with self._connect() as connection:
@@ -128,14 +137,26 @@ class ChainStore:
             yield deserialize_block(payload, self.network), state_root
 
     def replay_into(self, dag) -> int:
+        records = list(self.records())
+        # Databases created before sparse checkpoints contain a root on every
+        # row. Verify only the final row of that dense prefix, then every
+        # explicit sparse checkpoint that follows. This preserves corruption
+        # detection without quadratic restart time.
+        first_empty = next((i for i, (_, root) in enumerate(records) if not root), len(records))
+        verify_indexes = set()
+        if first_empty:
+            verify_indexes.add(first_empty - 1)
+        verify_indexes.update(
+            i for i, (_, root) in enumerate(records[first_empty:], start=first_empty) if root
+        )
+
         count = 0
-        for block, expected_root in self.records():
-            if not dag.add_block(block):
+        for index, (block, expected_root) in enumerate(records):
+            if not dag.replay_block(block):
                 raise ChainStoreError(f"Duplicate block during replay: {block.hash}")
-            actual_root = dag.state_root()
-            if actual_root != expected_root:
+            if index in verify_indexes and dag.state_root() != expected_root:
                 raise ChainStoreError(
-                    f"State root mismatch after replaying {block.hash}: {actual_root} != {expected_root}"
+                    f"State root mismatch after replaying checkpoint block {block.hash}"
                 )
             count += 1
         return count

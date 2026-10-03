@@ -18,7 +18,7 @@ MINER_OUTPUT = (bytes.fromhex("02" + "11" * 32), bytes.fromhex("03" + "22" * 32)
 
 class TestIssuanceUTXOConservation(unittest.TestCase):
     def test_every_new_sat_exists_in_an_explicit_utxo(self):
-        dag = BlockDAG()
+        dag = BlockDAG(network="simnet")
         genesis_time = dag.blocks[dag.genesis_hash].timestamp
         block = mine_block(
             dag,

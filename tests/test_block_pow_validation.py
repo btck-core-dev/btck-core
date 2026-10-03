@@ -48,7 +48,7 @@ class TestProofOfWorkValidation(unittest.TestCase):
             compact_to_target(0x20800001)
 
     def test_invalid_pow_is_rejected_before_any_state_change(self):
-        dag = BlockDAG()
+        dag = BlockDAG(network="simnet")
         block = find_invalid_pow_block(dag)
         before = (
             len(dag.blocks),
@@ -71,7 +71,7 @@ class TestProofOfWorkValidation(unittest.TestCase):
         self.assertEqual(after, before)
 
     def test_derived_blue_score_does_not_change_mined_hash(self):
-        dag = BlockDAG()
+        dag = BlockDAG(network="simnet")
         block = mine_block(
             dag,
             parents=[dag.genesis_hash],
@@ -86,7 +86,7 @@ class TestProofOfWorkValidation(unittest.TestCase):
         self.assertGreater(block.blue_score, 0)
 
     def test_wrong_bits_and_chain_id_are_rejected(self):
-        dag = BlockDAG()
+        dag = BlockDAG(network="simnet")
         valid = mine_block(
             dag,
             parents=[dag.genesis_hash],
@@ -112,7 +112,7 @@ class TestProofOfWorkValidation(unittest.TestCase):
             dag.add_block(wrong_chain)
 
     def test_payload_tampering_is_rejected(self):
-        dag = BlockDAG()
+        dag = BlockDAG(network="simnet")
         block = mine_block(
             dag,
             parents=[dag.genesis_hash],

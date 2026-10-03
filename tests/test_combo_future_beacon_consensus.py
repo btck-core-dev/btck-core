@@ -33,7 +33,7 @@ from tests.pow_helpers import mine_block
 class TestComboFutureBeaconConsensus(unittest.TestCase):
 
     def setUp(self):
-        self.dag = BlockDAG()
+        self.dag = BlockDAG(network="simnet")
         self.miner_P_hex = "02" + "22" * 32
         self.miner_R_hex = "02" + "11" * 32
 

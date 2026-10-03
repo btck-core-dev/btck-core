@@ -23,8 +23,8 @@ def mine_child(dag, parents, timestamp, nonce=0):
 
 class TestGhostDAGConsensus(unittest.TestCase):
     def test_equal_work_tips_converge_independent_of_arrival_order(self):
-        dag_a = BlockDAG()
-        dag_b = BlockDAG()
+        dag_a = BlockDAG(network="simnet")
+        dag_b = BlockDAG(network="simnet")
         timestamp = dag_a.blocks[dag_a.genesis_hash].timestamp + 1
         left = mine_child(dag_a, [dag_a.genesis_hash], timestamp, 0)
         right = mine_child(dag_a, [dag_a.genesis_hash], timestamp, left.nonce + 1)
@@ -43,7 +43,7 @@ class TestGhostDAGConsensus(unittest.TestCase):
         self.assertEqual(dag_a.state_root(), dag_b.state_root())
 
     def test_diamond_merge_is_blue_within_k_cluster(self):
-        dag = BlockDAG()
+        dag = BlockDAG(network="simnet")
         base_time = dag.blocks[dag.genesis_hash].timestamp
         left = mine_child(dag, [dag.genesis_hash], base_time + 1, 0)
         right = mine_child(dag, [dag.genesis_hash], base_time + 1, left.nonce + 1)
@@ -62,7 +62,7 @@ class TestGhostDAGConsensus(unittest.TestCase):
         self.assertEqual(merge.blue_anticone_sizes[other.hash], 1)
 
     def test_k_zero_marks_parallel_merge_block_red(self):
-        network = replace(load_network("devnet"), ghostdag_k=0)
+        network = replace(load_network("simnet"), ghostdag_k=0)
         dag = BlockDAG(network=network)
         base_time = dag.blocks[dag.genesis_hash].timestamp
         left = mine_child(dag, [dag.genesis_hash], base_time + 1, 0)
@@ -80,7 +80,7 @@ class TestGhostDAGConsensus(unittest.TestCase):
         self.assertEqual(dag.blocks[red_hash].minted_sats, 0)
 
     def test_merge_set_contains_transitive_non_selected_past(self):
-        dag = BlockDAG()
+        dag = BlockDAG(network="simnet")
         base_time = dag.blocks[dag.genesis_hash].timestamp
         left_1 = mine_child(dag, [dag.genesis_hash], base_time + 1, 0)
         dag.add_block(left_1)

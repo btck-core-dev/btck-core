@@ -88,7 +88,7 @@ class TestUTXOAtomicity(unittest.TestCase):
         self.assertFalse(utxos.has_utxo(tx_b.txid, 0))
 
     def test_dag_merge_records_transaction_acceptance_data(self):
-        dag = BlockDAG()
+        dag = BlockDAG(network="simnet")
         outpoint, entry, tx_a, tx_b = make_two_conflicting_transactions()
         dag.utxo_set.utxos[outpoint] = entry
         dag.issued_supply_sats += entry.amount_satk
@@ -131,7 +131,7 @@ class TestUTXOAtomicity(unittest.TestCase):
         self.assertIn(side.hash, dag.virtual_blue_order)
 
     def test_side_branch_does_not_touch_selected_utxo_view(self):
-        dag = BlockDAG()
+        dag = BlockDAG(network="simnet")
         genesis_time = dag.blocks[dag.genesis_hash].timestamp
         branch_a = mine_block(
             dag,
@@ -160,7 +160,7 @@ class TestUTXOAtomicity(unittest.TestCase):
         self.assertEqual(dag.utxo_set._block_created_undo, before_undo)
 
     def test_failed_reorg_restores_every_consensus_view(self):
-        dag = BlockDAG()
+        dag = BlockDAG(network="simnet")
         genesis_time = dag.blocks[dag.genesis_hash].timestamp
         invalid_tx = StealthTransaction(
             version=1,

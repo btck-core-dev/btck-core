@@ -24,7 +24,7 @@ class TestChainPersistence(unittest.TestCase):
         with tempfile.TemporaryDirectory() as root:
             first = BTCKDaemon(
                 host="127.0.0.1",
-                network="devnet",
+                network="simnet",
                 data_root=root,
                 persistent=True,
             )
@@ -46,7 +46,7 @@ class TestChainPersistence(unittest.TestCase):
             # crash/restart from only the durable SQLite journal.
             restarted = BTCKDaemon(
                 host="127.0.0.1",
-                network="devnet",
+                network="simnet",
                 data_root=root,
                 persistent=True,
             )
@@ -58,7 +58,7 @@ class TestChainPersistence(unittest.TestCase):
     def test_database_identity_cannot_be_reused_by_another_network(self):
         with tempfile.TemporaryDirectory() as root:
             database = os.path.join(root, "shared.sqlite3")
-            ChainStore(database, load_network("devnet"))
+            ChainStore(database, load_network("simnet"))
             with self.assertRaisesRegex(ChainStoreError, "identity mismatch"):
                 ChainStore(database, load_network("testnet"))
 
@@ -66,7 +66,7 @@ class TestChainPersistence(unittest.TestCase):
         with tempfile.TemporaryDirectory() as root:
             first = BTCKDaemon(
                 host="127.0.0.1",
-                network="devnet",
+                network="simnet",
                 data_root=root,
                 persistent=True,
             )
@@ -88,7 +88,7 @@ class TestChainPersistence(unittest.TestCase):
             with self.assertRaisesRegex(ChainStoreError, "State root mismatch"):
                 BTCKDaemon(
                     host="127.0.0.1",
-                    network="devnet",
+                    network="simnet",
                     data_root=root,
                     persistent=True,
                 )

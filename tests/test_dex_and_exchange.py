@@ -50,7 +50,7 @@ class TestDexAndExchange(unittest.TestCase):
         self.assertIn("spot_price_usdt", info)
 
     def test_exchange_bridge(self):
-        dag = BlockDAG()
+        dag = BlockDAG(network="simnet")
         bridge = ExchangeRPCAdapter(dag)
 
         # 1. getblockchaininfo

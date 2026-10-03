@@ -3,14 +3,20 @@ import os
 import sys
 import time
 import unittest
+from unittest.mock import patch
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
 
 from consensus.kheavyhash import hash_to_target_int
+from consensus.pow import compact_to_target
 from node.daemon import BTCKDaemon
 from node.rpc_client import InProcessNodeRPCClient
 from privacy.stealth_address import StealthKeyPair
-from stratum.stratum_server import BTCKStratumServer, StratumClient
+from stratum.stratum_server import (
+    BTCKStratumServer,
+    CLIENT_JOB_HISTORY_LIMIT,
+    StratumClient,
+)
 
 
 class MockWriter:
@@ -26,19 +32,33 @@ class MockWriter:
 
 class TestStratumTargetVerification(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
-        self.daemon = BTCKDaemon(host="127.0.0.1", network="devnet")
+        self.daemon = BTCKDaemon(host="127.0.0.1", network="simnet")
         self.writer = MockWriter()
         self.client = StratumClient(None, self.writer, "client-1")
         self.client.authorized = True
         self.client.worker_name = "worker"
         self.client.wallet_address = StealthKeyPair().get_public_stealth_address()
         self.server = BTCKStratumServer(
-            network="devnet", node_rpc=InProcessNodeRPCClient(self.daemon)
+            network="simnet", node_rpc=InProcessNodeRPCClient(self.daemon)
         )
         self.server.clients[self.client.client_id] = self.client
 
     async def _job(self):
         return await self.server.create_new_block_job(self.client)
+
+    def test_client_job_history_covers_late_block_window(self):
+        self.assertEqual(self.client.job_ids.maxlen, CLIENT_JOB_HISTORY_LIMIT)
+        self.assertGreaterEqual(
+            CLIENT_JOB_HISTORY_LIMIT,
+            int(self.server.late_block_grace_seconds * 2),
+        )
+
+    def _response(self, message_id):
+        return next(
+            message
+            for message in reversed(self.writer.messages)
+            if message.get("id") == message_id and "result" in message
+        )
 
     async def test_unknown_and_expired_jobs_are_rejected(self):
         await self.server.process_message(self.client, {"id": 1, "method": "mining.submit", "params": ["worker", "missing", "1"]})
@@ -68,23 +88,146 @@ class TestStratumTargetVerification(unittest.IsolatedAsyncioTestCase):
         job = await self._job()
         self.client.is_kaspa = True
         self.client.share_target = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF
+        job.share_target = self.client.share_target
         nonce = 0x0003021990B7CDB8
 
         # First submit from ASIC client should succeed
         await self.server.process_message(self.client, {"id": 10, "method": "mining.submit", "params": ["worker", job.job_id, f"{nonce:016x}"]})
-        self.assertTrue(self.writer.messages[-1]["result"])
-        self.assertIsNone(self.writer.messages[-1]["error"])
+        self.assertTrue(self._response(10)["result"])
+        self.assertIsNone(self._response(10)["error"])
 
         # Second submit with exact same nonce from same ASIC client must be rejected as duplicate
         await self.server.process_message(self.client, {"id": 11, "method": "mining.submit", "params": ["worker", job.job_id, f"{nonce:016x}"]})
-        self.assertFalse(self.writer.messages[-1]["result"])
-        self.assertEqual(self.writer.messages[-1]["error"][0], 22)
+        self.assertFalse(self._response(11)["result"])
+        self.assertEqual(self._response(11)["error"][0], 22)
 
         # Different nonce on same job from same ASIC must succeed (never falsely flagged as duplicate)
+        # A block submission may trigger VarDiff, so restore the deliberately permissive
+        # target used by this duplicate-detection test.
+        self.client.share_target = (1 << 256) - 1
         different_nonce = 0x00030385011CA4E0
         await self.server.process_message(self.client, {"id": 12, "method": "mining.submit", "params": ["worker", job.job_id, f"{different_nonce:016x}"]})
-        self.assertTrue(self.writer.messages[-1]["result"])
-        self.assertIsNone(self.writer.messages[-1]["error"])
+        self.assertTrue(self._response(12)["result"])
+        self.assertIsNone(self._response(12)["error"])
+
+        # The same nonce from another ASIC belongs to a different job/worker and
+        # must not collide with the first client's bounded duplicate cache.
+        second_writer = MockWriter()
+        second = StratumClient(None, second_writer, "client-2")
+        second.authorized = True
+        second.is_kaspa = True
+        second.worker_name = "worker-2"
+        second.wallet_address = StealthKeyPair().get_public_stealth_address()
+        second.share_target = (1 << 256) - 1
+        self.server.clients[second.client_id] = second
+        second_job = await self.server.create_new_block_job(second)
+        await self.server.process_message(
+            second,
+            {"id": 13, "method": "mining.submit", "params": ["worker-2", second_job.job_id, f"{nonce:016x}"]},
+        )
+        second_response = next(message for message in second_writer.messages if message.get("id") == 13)
+        self.assertTrue(second_response["result"])
+        self.assertIsNone(second_response["error"])
+
+    async def test_same_nonce_on_different_jobs_is_not_a_duplicate(self):
+        self.client.is_kaspa = True
+        self.client.share_target = (1 << 256) - 1
+        first = await self._job()
+        second = await self._job()
+        nonce = 0x0003000000000042
+
+        await self.server.process_message(
+            self.client,
+            {"id": 20, "method": "mining.submit", "params": ["worker", first.job_id, f"{nonce:016x}"]},
+        )
+        self.client.share_target = (1 << 256) - 1
+        await self.server.process_message(
+            self.client,
+            {"id": 21, "method": "mining.submit", "params": ["worker", second.job_id, f"{nonce:016x}"]},
+        )
+
+        self.assertTrue(self._response(20)["result"])
+        self.assertTrue(self._response(21)["result"])
+
+    async def test_job_pow_is_identical_to_node_block_pow(self):
+        job = await self._job()
+        nonce = 0x0003000012345678
+        self.assertEqual(job.calculate_pow(nonce).hex(), job.build_block(nonce).hash)
+
+    async def test_easy_network_target_does_not_reduce_share_difficulty(self):
+        self.client.is_kaspa = True
+        self.client.share_diff = 64.0
+        self.client.min_diff = 16.0
+        self.client.max_diff = 65536.0
+        await self.server._issue_job(self.client)
+        self.assertEqual(self.client.share_diff, 64.0)
+        self.assertEqual(self.client.min_diff, 16.0)
+        self.assertEqual(self.client.max_diff, 65536.0)
+
+    async def test_vardiff_change_does_not_reject_work_from_previous_job(self):
+        self.client.is_kaspa = True
+        self.client.share_target = (1 << 256) - 1
+        self.client.share_diff = 64.0
+        job = await self._job()
+        self.client.share_target = 1
+        self.client.share_diff = 512.0
+        await self.server.process_message(
+            self.client,
+            {"id": 30, "method": "mining.submit", "params": ["worker", job.job_id, "1"]},
+        )
+        self.assertTrue(self._response(30)["result"])
+
+    async def test_recent_late_block_candidate_is_submitted_to_dag(self):
+        self.client.is_kaspa = True
+        self.client.share_target = (1 << 256) - 1
+        self.client.share_diff = 64.0
+        job = await self._job()
+        self.server.active_template_key = ("advanced-template",)
+        network_target = compact_to_target(job.bits)
+        nonce = next(
+            candidate
+            for candidate in range(256)
+            if hash_to_target_int(job.calculate_pow(candidate)) <= network_target
+        )
+        before = len(self.daemon.dag.blocks)
+        await self.server.process_message(
+            self.client,
+            {"id": 31, "method": "mining.submit", "params": ["worker", job.job_id, f"{nonce:x}"]},
+        )
+        self.assertTrue(self._response(31)["result"])
+        self.assertEqual(len(self.daemon.dag.blocks), before + 1)
+        self.assertEqual(self.client.blocks_found, 1)
+
+    async def test_old_block_candidate_outside_grace_is_only_credited(self):
+        self.client.is_kaspa = True
+        self.client.share_target = (1 << 256) - 1
+        self.client.share_diff = 64.0
+        job = await self._job()
+        job.created_at -= self.server.late_block_grace_seconds + 1.0
+        self.server.active_template_key = ("advanced-template",)
+        network_target = compact_to_target(job.bits)
+        nonce = next(
+            candidate
+            for candidate in range(256)
+            if hash_to_target_int(job.calculate_pow(candidate)) <= network_target
+        )
+        before = len(self.daemon.dag.blocks)
+        await self.server.process_message(
+            self.client,
+            {"id": 32, "method": "mining.submit", "params": ["worker", job.job_id, f"{nonce:x}"]},
+        )
+        self.assertTrue(self._response(32)["result"])
+        self.assertEqual(len(self.daemon.dag.blocks), before)
+
+    async def test_pool_fee_uses_time_decay_schedule(self):
+        launch = 1_700_000_000.0
+        self.server.pool_launch_time = launch
+        with patch("stratum.stratum_server.time.time", return_value=launch + 6 * 86400):
+            self.assertEqual(self.server.get_pool_fee_rate(), 0.05)
+        with patch("stratum.stratum_server.time.time", return_value=launch + 7 * 86400):
+            self.assertEqual(self.server.get_pool_fee_rate(), 0.03)
+        with patch("stratum.stratum_server.time.time", return_value=launch + 30 * 86400):
+            self.assertEqual(self.server.get_pool_fee_rate(), 0.01)
 
 
 if __name__ == "__main__":

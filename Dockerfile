@@ -13,13 +13,14 @@ COPY --chown=10001:10001 params/ /app/params/
 RUN pip install --no-cache-dir -e /app/sdk
 
 RUN groupadd --gid 10001 btck && useradd --uid 10001 --gid 10001 --no-create-home btck \
-    && mkdir -p /app/data && chown -R 10001:10001 /app/data /app
+    && mkdir -p /app/data /app/pool-data && chown -R 10001:10001 /app/data /app/pool-data /app
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1
+    PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/app/src
 
 USER 10001:10001
 
-EXPOSE 16110 16112 3333
+EXPOSE 16110 16112 3333 3334 3335 3336 8088
 
 CMD ["python3", "/app/src/node/daemon.py"]

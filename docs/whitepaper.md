@@ -1,4 +1,12 @@
 # BTCK: A Sovereign, Privacy-Preserving BlockDAG for the Autonomous AI Agent Economy
+
+> **Legacy draft notice (2026-10-03):** This document preserves the early
+> `1/41 / 10x` design for historical review and is not the current consensus
+> specification. The authoritative tokenomics document is
+> [`tokenomics_v2_canonical.md`](tokenomics_v2_canonical.md): Phase 1 freezes
+> the Combo pool every 43,200 consensus blue-order blocks and resolves it with
+> a +100-block future beacon; issuance is split 80% miner base, 15% Combo pool
+> and 5% ecosystem reserve. Commercial pool fees are separate from L1 issuance.
 ### —— Powered by kHeavyHash ASIC Proof-of-Work, Dual-Key Stealth Addresses, and RFC 7231 HTTP 402 Pay-per-Token Settlement
 
 **Ticker:** BTCK  

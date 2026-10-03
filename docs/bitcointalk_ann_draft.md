@@ -69,8 +69,9 @@ Point mining equipment to the official stratum endpoint:
 * **Vardiff Support**: Enabled (targets 15-20 share submissions per minute).
 
 ### 3. Stratum Fee Policy & On-Chain Auditability
-* **Initial 168 Hours (Genesis Promotion)**: **0.0% pool fee**. 100% of generated coinbase payouts are credited directly to mining addresses.
-* **Day 8 Onward**: Standard 1.0% operational pool fee.
+* **Days 1-7**: **5.0%** infrastructure bootstrap pool fee.
+* **Days 8-30**: **3.0%** growth-stage pool fee.
+* **Day 31 Onward**: **1.0%** steady-state operational pool fee.
 * **Treasury Transparency**: All retained fee revenue is credited to the public on-chain treasury address:
   ```
   btck1s0353a08a9263ba19edb82bca91a1d324374266155de26e49b29d79d4ff649d23ae02ae340cac030e7d04376e7094b3ce22d8ba83cac6a03bfe1d29dc3bf4850964424247f7af
@@ -100,7 +101,7 @@ During the first 75.508 hours of network genesis, controlled hashrate was deploy
 - **Strategic Purpose**: Accrues 1,502,695.04 BTCK (7.1557% of supply) dedicated to bootstrapping Uniswap V3 liquidity (wBTCK/USDT), exchange listing collateral, and seed infrastructure.
 
 ### 4. 20% Combo Reserve & Periodic Payout Tier
-Block rewards are split into an 80% immediate miner baseline payout and a 20% jackpot accumulation reserve. Every 43,200 blocks (~12 hours), the consensus engine evaluates a future random beacon (+100 blocks) and applies Kademlia XOR geometric distance metrics to select a single winning block hash. The winner receives the entire accumulated reserve pool.
+Phase-1 block rewards are split into an 80% immediate miner baseline payout, a 15% Combo jackpot reserve, and a 5% ecosystem reserve. Every 43,200 blocks (~12 hours), the consensus engine evaluates a future random beacon (+100 blocks) and applies Kademlia XOR geometric distance metrics to select a single winning block hash. The winner receives the eligible accumulated Combo pool according to the consensus vesting schedule.
 
 ---
 

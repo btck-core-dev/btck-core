@@ -21,8 +21,8 @@ class TestP2PGossip(unittest.IsolatedAsyncioTestCase):
 
     async def test_p2p_handshake_and_block_sync(self):
         # 1. Initialize Node A and Node B with identical Genesis Block
-        dag_a = BlockDAG()
-        dag_b = BlockDAG()
+        dag_a = BlockDAG(network="simnet")
+        dag_b = BlockDAG(network="simnet")
         self.assertEqual(dag_a.genesis_hash, dag_b.genesis_hash)
 
         # Start Node A P2P on 16125

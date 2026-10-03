@@ -20,7 +20,7 @@ BTC-K 采用与 Kaspa 完全相同的硬件哈希计算机制（cSHAKE256 + 64×
 +------------------------------------+
 |   Third-Party Mining Pool Server   |  <-- LuckyPool / 2miners Stratum Gateway
 +------------------+-----------------+
-                   | (HTTP JSON-RPC: 8092 / 8093)
+                   | (HTTP JSON-RPC: 16110; private/control-plane only)
                    v
 +------------------------------------+
 |     BTC-K Full Node / Daemon       |  <-- Core Consensus & BlockDAG Node
@@ -33,21 +33,22 @@ BTC-K 采用与 Kaspa 完全相同的硬件哈希计算机制（cSHAKE256 + 64×
 
 ### 1. 难度与算力换算公式 (Diff-to-Hash Math)
 BTC-K 遵循行业标准的 **Kaspa Stratum 难度规范**：
-$$\text{Hashrate (H/s)} = \text{Difficulty} \times \frac{2^{32}}{\text{Target Block Time (1.0s)}} = \text{Difficulty} \times 4,294,967,296$$
+$$\text{Hashrate (H/s)} = \text{Difficulty} \times \frac{2^{32}}{\text{Observed Share Interval (seconds)}}$$
 
 * **1.0 难度 (Diff 1.0)** $\approx 4.295 \times 10^9$ 哈希 ($4.295\text{ GH}$ 工作量)
-* **全网目标难度 (Network Difficulty)**：在当前全网 ~1.15 TH/s 算力下，基准难度在 **260 ~ 320** 之间动态自适应调节。
+* Share 难度只控制矿池采样频率和记账权重；网络难度由共识 DAA 独立计算，两者不得互相钳制。
 
 ### 2. 推荐矿机初始份额难度 (Recommended Vardiff Settings)
 矿池运营商应为不同型号的 ASIC 分配最合理的初始难度（Initial Share Difficulty），避免因难度过低产生洪泛拒绝，或因难度过高导致掉线：
 
 | 矿机型号 | 物理额定算力 | 建议矿池 Vardiff 范围 | 预期 Share 发射频率 |
 | :--- | :--- | :--- | :--- |
-| **IceRiver KS0 / KS0 Pro** | 100G ~ 200G | **10.0 ~ 20.0** | ~2.5 ~ 4.5 份 / 秒 |
-| **IceRiver KS0 Ultra** | **400 GH/s** | **20.0 ~ 30.0** | ~3.0 ~ 4.5 份 / 秒 |
-| **IceRiver KS1 / KS2** | 1 TH/s ~ 2 TH/s | **50.0 ~ 100.0** | ~2.0 ~ 4.0 份 / 秒 |
-| **IceRiver KS3 / Antminer KS3** | 6 TH/s ~ 8 TH/s | **200.0 ~ 400.0** | ~2.0 ~ 4.0 份 / 秒 |
-| **IceRiver KS5 / Antminer KS5** | 15 TH/s ~ 20 TH/s| **500.0 ~ 1000.0**| ~2.0 ~ 4.0 份 / 秒 |
+| **3333 — KS0 / <1 TH/s** | 100G ~ 800G | **128（真机最低阈值）** | 约 0.18 ~ 1.45 份 / 秒 |
+| **3334 — KS1 / KS2** | 1 TH/s ~ 3 TH/s | **2048 ~ 131072；初始 4096** | 2 TH/s 时初始约 0.11 份 / 秒 |
+| **3335 — KS3 / KS3L** | 6 TH/s ~ 10 TH/s | **8192 ~ 262144；初始 16384** | 8 TH/s 时初始约 0.11 份 / 秒 |
+| **3336 — KS5 / KS7 / 矿场** | 20 TH/s ~ 100+ TH/s | **32768 ~ 1048576；初始 65536** | 30 TH/s 时初始约 0.11 份 / 秒 |
+
+3333 的 128 是 IceRiver 真机观测到的固件筛选下限。其他端口仍启用 VarDiff，目标为约 8 秒一个 Share；正式接入新型号前必须用实际提交分布校准，不能只按铭牌算力推断。
 
 ### 3. Stratum 消息方法交互时序
 
@@ -60,7 +61,9 @@ $$\text{Hashrate (H/s)} = \text{Difficulty} \times \frac{2^{32}}{\text{Target Bl
 3. **`mining.set_difficulty`**：
    * 矿池向矿机推送当前分配的 Share 难度（例如 `[20.0]`）。
 4. **`mining.notify`**：
-   * 矿池广播最新任务：Job ID、PrevBlockHash、Coinb1、Coinb2、MerkleBranch、Version、NBits、Time、CleanJobs。
+   * Kaspa ASIC 格式为 `params: [job_id, payload]`；
+   * `payload` 严格为 80 个十六进制字符：32 字节 Pre-PoW Hash 加 8 字节小端时间戳；
+   * 官方池把并发 DAG 更新合并为固定 1 Hz Job 广播。
 5. **`mining.submit`**：
    * 矿机提交 Nonce，矿池判定：
      * 若哈希满足 `client.difficulty` $\rightarrow$ 计入矿工有效的矿池 Share；
@@ -70,9 +73,9 @@ $$\text{Hashrate (H/s)} = \text{Difficulty} \times \frac{2^{32}}{\text{Target Bl
 
 ## 三、 全节点核心 JSON-RPC 接口说明 (Core Daemon RPC API)
 
-全节点 Daemon 默认在 `http://127.0.0.1:8092` (主网节点 RPC) 或 `8093` (AI-RPC 网关) 提供标准 JSON-RPC 2.0 服务。
+全节点 Daemon 当前在 `http://127.0.0.1:16110/rpc` 提供 JSON-RPC 2.0。该端口属于控制平面，生产环境不得直接暴露公网；第三方矿池应通过本机、私网或带 Bearer Token 的受限网络访问。
 
-### 1. `getblocktemplate` —— 获取最新候选出块模板
+### 1. `getBlockTemplate` —— 获取最新候选出块模板
 矿池后台守护进程通过此接口每秒轮询或长连接拉取最新候选块头数据：
 
 * **请求参数 (Request)**：
@@ -80,10 +83,8 @@ $$\text{Hashrate (H/s)} = \text{Difficulty} \times \frac{2^{32}}{\text{Target Bl
   {
     "jsonrpc": "2.0",
     "id": 1,
-    "method": "getblocktemplate",
-    "params": [{
-      "capabilities": ["coinbasetxn", "workid", "coinbase_value"]
-    }]
+    "method": "getBlockTemplate",
+    "params": {}
   }
   ```
 * **响应结果 (Response)**：
@@ -108,8 +109,8 @@ $$\text{Hashrate (H/s)} = \text{Difficulty} \times \frac{2^{32}}{\text{Target Bl
   }
   ```
 
-### 2. `submitblock` —— 提交由矿工解决的有效区块
-当矿池判定矿工提交的 Share 满足网络全目标（`hash_int <= network_target`）时调用：
+### 2. `submitBlock` —— 提交由矿工解决的有效区块
+当矿池判定矿工提交的 Share 满足网络目标（`hash_int <= network_target`）时，使用 `getBlockTemplate` 返回的结构化字段加 Nonce 调用。候选提交前必须断言矿池 PoW 与节点规范 PoW 完全一致。
 
 * **请求参数 (Request)**：
   ```json
@@ -198,9 +199,11 @@ $$\text{Hashrate (H/s)} = \text{Difficulty} \times \frac{2^{32}}{\text{Target Bl
 1. **费率模式推荐**：
    * **PPLNS 模式（推荐主流散户）**：建议费率 **0.9% ~ 1.2%**，最小起付额 10.0 BTCK；
    * **SOLO 模式（适合中大户/矿场）**：建议费率 **1.5% ~ 1.8%**，爆块即得全额 80% 基础奖励（5.04 BTC-K），起付额即爆块金额；
-2. **大奖池 (20% Combo Reserve) 的矿池集成规范**：
-   * BTC-K 每块产出中：80% 为基础即时奖励，20% 累积入链上大奖池（每 43,200 块触发一次）；
-   * **矿池处理方式**：当矿池内的矿工幸运命中 10x 连击大奖时，矿池直接将这笔数万枚 BTCK 的巨奖全额或按比例（减去抽水）发放给该爆块矿工，作为矿池的极佳营销招牌！
+2. **L1 Combo 与生态储备的矿池集成规范**：
+   * Phase 1 每个共识蓝序区块的发行预算分为：80% 矿工基础收益、15% Combo 奖池、5% 生态基金；
+   * 每 43,200 个共识蓝序区块冻结一次 Combo 奖池，等待 +100 块未来信标，以 XOR 几何距离选出中奖区块；
+   * Combo 支出由节点共识直接生成流式锁仓 UTXO。矿池只能展示并按真实中奖区块归属记账，不得用本地随机数、固定倍数或估算余额替代；
+   * 商业矿池费与上述 L1 分配相互独立。官方池执行第 1–7 天 5%、第 8–30 天 3%、第 31 天起 1% 的分段递减费率，并以实际进入矿池冷金库的区块收益累计展示。
 
 ---
 

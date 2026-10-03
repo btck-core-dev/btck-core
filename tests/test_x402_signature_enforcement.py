@@ -92,7 +92,7 @@ class TestX402SignatureEnforcement(unittest.TestCase):
         self.assertEqual(self.gateway.ledger.get_balance(self.payer_addr), amt)
 
     def test_exchange_withdrawal_insufficient_balance(self):
-        dag = BlockDAG()
+        dag = BlockDAG(network="simnet")
         adapter = ExchangeRPCAdapter(dag)
         # Attempt to withdraw 10.0 BTCK with 0 balance
         dest = StealthKeyPair().get_public_stealth_address()

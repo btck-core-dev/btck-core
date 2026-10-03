@@ -24,7 +24,7 @@ class TestBlockDAGVirtualChainIssuance(unittest.TestCase):
         self.cb3 = (bytes.fromhex("02" + "55"*32), bytes.fromhex("02" + "66"*32))
 
     def test_parallel_blocks_no_duplicate_minting(self):
-        dag = BlockDAG()
+        dag = BlockDAG(network="simnet")
         g_hash = dag.genesis_hash
 
         # Block 1A: parent is Genesis
@@ -57,7 +57,7 @@ class TestBlockDAGVirtualChainIssuance(unittest.TestCase):
 
     def test_arrival_order_convergence(self):
         # Scenario 1: 1A then 1B, then Block 2 merges [1A, 1B]
-        dag1 = BlockDAG()
+        dag1 = BlockDAG(network="simnet")
         g = dag1.genesis_hash
         b1a = mine_block(dag1, parents=[g], timestamp=1788912001.0, nonce=101, coinbase_output=self.cb1)
         b1b = mine_block(dag1, parents=[g], timestamp=1788912001.0, nonce=102, coinbase_output=self.cb2)
@@ -67,7 +67,7 @@ class TestBlockDAGVirtualChainIssuance(unittest.TestCase):
         dag1.add_block(b2_1)
 
         # Scenario 2: 1B then 1A, then Block 2 merges [1A, 1B]
-        dag2 = BlockDAG()
+        dag2 = BlockDAG(network="simnet")
         b1a_clone = mine_block(dag2, parents=[g], timestamp=1788912001.0, nonce=101, coinbase_output=self.cb1)
         b1b_clone = mine_block(dag2, parents=[g], timestamp=1788912001.0, nonce=102, coinbase_output=self.cb2)
         dag2.add_block(b1b_clone)
@@ -85,7 +85,7 @@ class TestBlockDAGVirtualChainIssuance(unittest.TestCase):
         self.assertEqual(dag1.virtual_blue_order, dag2.virtual_blue_order)
 
     def test_coinbase_maturity_lock(self):
-        dag = BlockDAG()
+        dag = BlockDAG(network="simnet")
         g = dag.genesis_hash
 
         # Block 1 mined

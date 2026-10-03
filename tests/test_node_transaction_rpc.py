@@ -15,7 +15,7 @@ from privacy.wallet_engine import StealthWallet, transaction_from_dict, transact
 
 class TestNodeTransactionRPC(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
-        self.daemon = BTCKDaemon(host="127.0.0.1", network="devnet")
+        self.daemon = BTCKDaemon(host="127.0.0.1", network="simnet")
         self.rpc = InProcessNodeRPCClient(self.daemon)
         self.sender = StealthWallet.generate("sender")
         r_ephem, p_onetime = StealthKeyPair.generate_one_time_stealth_output(self.sender.address)

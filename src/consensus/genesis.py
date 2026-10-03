@@ -15,14 +15,14 @@ import os
 import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from consensus.kheavyhash import kheavyhash
+from consensus.kheavyhash import calculate_pow_value, generate_matrix
 from config.network import NetworkConfig, load_network
 
 GENESIS_VERSION = 2
 GENESIS_TIMESTAMP = 1788912000.0  # 2026-09-10 00:00:00 UTC
-GENESIS_HEADLINE = b"BTC-K DEVNET v2 - NO REAL VALUE - 2026-09-28"
+GENESIS_HEADLINE = b"BTC-K DEVNET v3 ASIC-CANONICAL - NO REAL VALUE - 2026-10-02"
 GENESIS_BITS = 0x207FFFFF
-GENESIS_NONCE = 2
+GENESIS_NONCE = 1
 
 def serialize_block_header(
     version: int,
@@ -57,6 +57,64 @@ def serialize_block_header(
         payload_hash = payload_hash.ljust(32, b'\x00')[:32]
     return v_bytes + chain_bytes + p_count + p_bytes + ts_bytes + bits_bytes + nonce_bytes + cb_bytes + payload_hash
 
+
+def build_pre_pow_hash(
+    version: int,
+    chain_id: str,
+    parents: List[str],
+    timestamp: float,
+    bits: int,
+    coinbase_output: Tuple[bytes, bytes],
+    payload_hash: bytes = b"",
+) -> bytes:
+    """Return the exact 32-byte work seed sent to Kaspa-family ASICs.
+
+    BTC-K commits the complete block template with a zero nonce, then lets the
+    kHeavyHash hardware vary only the 64-bit nonce.  Timestamp is supplied to
+    the ASIC separately in milliseconds, matching ``calculate_pow_value``.
+    Keeping this function in consensus code prevents Stratum and the node from
+    silently constructing different proof-of-work messages.
+    """
+    header = serialize_block_header(
+        version=version,
+        chain_id=chain_id,
+        parents=parents,
+        timestamp=timestamp,
+        bits=bits,
+        nonce=0,
+        coinbase_output=coinbase_output,
+        payload_hash=payload_hash,
+    )
+    return hashlib.sha256(header).digest()
+
+
+def calculate_block_pow(
+    version: int,
+    chain_id: str,
+    parents: List[str],
+    timestamp: float,
+    bits: int,
+    nonce: int,
+    coinbase_output: Tuple[bytes, bytes],
+    payload_hash: bytes = b"",
+    *,
+    pre_pow_hash: Optional[bytes] = None,
+    matrix=None,
+) -> bytes:
+    """Calculate the canonical BTC-K/ASIC proof-of-work value."""
+    seed = pre_pow_hash or build_pre_pow_hash(
+        version,
+        chain_id,
+        parents,
+        timestamp,
+        bits,
+        coinbase_output,
+        payload_hash,
+    )
+    if matrix is None:
+        matrix = generate_matrix(seed)
+    return calculate_pow_value(seed, int(timestamp * 1000), nonce, matrix)
+
 def generate_genesis_block(network: Optional[NetworkConfig] = None) -> dict:
     """Build and verify the immutable genesis for the selected network."""
     network = network or load_network()
@@ -66,7 +124,7 @@ def generate_genesis_block(network: Optional[NetworkConfig] = None) -> dict:
     coinbase_output = spec.coinbase_output
     cb_r, cb_p = coinbase_output
 
-    header_bytes = serialize_block_header(
+    genesis_hash = calculate_block_pow(
         version=spec.version,
         chain_id=network.chain_id,
         parents=[],
@@ -74,9 +132,8 @@ def generate_genesis_block(network: Optional[NetworkConfig] = None) -> dict:
         bits=spec.bits,
         nonce=spec.nonce,
         coinbase_output=coinbase_output,
-        payload_hash=headline_hash
-    )
-    genesis_hash = kheavyhash(header_bytes).hex()
+        payload_hash=headline_hash,
+    ).hex()
     if genesis_hash != spec.expected_hash:
         raise ValueError(
             f"{network.name} genesis hash mismatch: computed {genesis_hash}, "
@@ -101,7 +158,7 @@ def generate_genesis_block(network: Optional[NetworkConfig] = None) -> dict:
     }
 
 # Immutable Genesis Block Hash Constant (Frozen SSOT)
-GENESIS_HASH = "2a6023b87c8edd27a85de9fc3eb3bc77dd576777cce097ca0901a8cedc964a0f"
+GENESIS_HASH = "00afe7ba34ab52100a7e086f8bf16cee97dfaa80eaf7bc157a8d933d6ed6fa2a"
 
 if __name__ == "__main__":
     g = generate_genesis_block()

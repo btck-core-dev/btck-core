@@ -13,6 +13,7 @@ import hashlib
 import copy
 import json
 import time
+from collections import OrderedDict
 from dataclasses import asdict
 from typing import List, Dict, Set, Optional, Tuple
 import sys
@@ -20,8 +21,7 @@ import os
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from consensus.kheavyhash import kheavyhash
-from consensus.genesis import serialize_block_header, generate_genesis_block
+from consensus.genesis import calculate_block_pow, generate_genesis_block
 from tokenomics.emission_schedule import (
     get_base_block_reward_sats,
     is_combo_block,
@@ -29,13 +29,15 @@ from tokenomics.emission_schedule import (
     COMBO_MULTIPLIER,
     compute_block_issuance,
     BlockIssuanceResult,
-    TOTAL_HARD_CAP_SATK
+    TOTAL_HARD_CAP_SATK,
+    get_combo_spec_for_height,
 )
 from node.utxo_set import UTXOSet
 from privacy.wallet_engine import StealthTransaction
 from consensus.combo_state_machine import ComboStateMachine
 from config.network import NetworkConfig, load_network
 from consensus.pow import block_work, hash_meets_target
+from consensus.daa import next_difficulty_bits
 
 
 def transaction_commitment(transactions: List[StealthTransaction]) -> bytes:
@@ -97,7 +99,7 @@ class DAGBlock:
         self.hash = self.compute_hash()
 
     def compute_hash(self) -> str:
-        header_payload = serialize_block_header(
+        return calculate_block_pow(
             version=self.version,
             chain_id=self.chain_id,
             parents=self.parents,
@@ -105,9 +107,8 @@ class DAGBlock:
             bits=self.bits,
             nonce=self.nonce,
             coinbase_output=self.coinbase_output,
-            payload_hash=self.payload_hash
-        )
-        return kheavyhash(header_payload).hex()
+            payload_hash=self.payload_hash,
+        ).hex()
 
 class BlockDAG:
     """
@@ -129,6 +130,15 @@ class BlockDAG:
         self.virtual_blue_order: List[str] = []
         self.utxo_set = UTXOSet()
         self.combo_machine = ComboStateMachine()
+        # DAG ancestry is immutable once a block is admitted.  GHOSTDAG merge
+        # classification asks the same reachability questions many times, so a
+        # bounded cache removes repeated full-past traversals without changing
+        # any consensus decision.
+        self._ancestor_cache: OrderedDict[Tuple[str, str], bool] = OrderedDict()
+        self._ancestor_cache_limit = max(
+            10_000,
+            int(os.getenv("BTCK_ANCESTOR_CACHE_SIZE", "262144")),
+        )
         
         self._init_genesis()
 
@@ -188,6 +198,31 @@ class BlockDAG:
         chain.reverse()
         return chain
 
+    def get_mining_parents(self) -> List[str]:
+        """Return a deterministic, consensus-bounded parent set for templates."""
+        selected = self.selected_tip
+        if selected is None:
+            return []
+        candidates = sorted(
+            (tip for tip in self.tips if tip != selected),
+            key=lambda tip: (self.blocks[tip].blue_work, tip),
+            reverse=True,
+        )
+        return [selected, *candidates[: self.network.max_parents - 1]]
+
+    def expected_bits(self, parents: List[str]) -> int:
+        if not parents:
+            raise ValueError("At least one parent is required for DAA")
+        for parent in parents:
+            if parent not in self.blocks:
+                raise ValueError(f"Parent block {parent} not found in DAG")
+        selected_parent = max(
+            parents,
+            key=lambda parent: (self.blocks[parent].blue_work, parent),
+        )
+        chain = [self.blocks[block_hash] for block_hash in self.get_selected_parent_chain(selected_parent)]
+        return next_difficulty_bits(chain, self.network)
+
     def get_virtual_blue_order(self, tip_hash: str) -> List[str]:
         """Return the deterministic blue-block order for ledger processing."""
         selected_chain = self.get_selected_parent_chain(tip_hash)
@@ -208,19 +243,33 @@ class BlockDAG:
 
     def _is_dag_ancestor(self, ancestor_hash: str, descendant_hash: str) -> bool:
         """Return whether ancestor_hash is in descendant_hash's inclusive DAG past."""
+        cache_key = (ancestor_hash, descendant_hash)
+        cached = self._ancestor_cache.get(cache_key)
+        if cached is not None:
+            self._ancestor_cache.move_to_end(cache_key)
+            return cached
         if ancestor_hash == descendant_hash:
+            self._cache_ancestor_result(cache_key, True)
             return True
         pending = list(self.blocks[descendant_hash].parents)
         visited: Set[str] = set()
         while pending:
             current = pending.pop()
             if current == ancestor_hash:
+                self._cache_ancestor_result(cache_key, True)
                 return True
             if current in visited:
                 continue
             visited.add(current)
             pending.extend(self.blocks[current].parents)
+        self._cache_ancestor_result(cache_key, False)
         return False
+
+    def _cache_ancestor_result(self, key: Tuple[str, str], result: bool) -> None:
+        self._ancestor_cache[key] = result
+        self._ancestor_cache.move_to_end(key)
+        while len(self._ancestor_cache) > self._ancestor_cache_limit:
+            self._ancestor_cache.popitem(last=False)
 
     def _calculate_merge_set(self, selected_parent_hash: str, parents: List[str]) -> List[str]:
         """Calculate past(parents) minus past(selected parent), then order deterministically."""
@@ -311,8 +360,14 @@ class BlockDAG:
             raise ValueError("Block exceeds the network parent limit")
         if len(set(block.parents)) != len(block.parents):
             raise ValueError("Block contains duplicate parents")
-        if block.bits != self.network.pow_limit_bits:
-            raise ValueError("Block target bits do not match the current fixed network target")
+        for parent_hash in block.parents:
+            if parent_hash not in self.blocks:
+                raise ValueError(f"Parent block {parent_hash} not found in DAG")
+        expected_bits = self.expected_bits(block.parents)
+        if block.bits != expected_bits:
+            raise ValueError(
+                f"Block target bits do not match DAA: {block.bits:#x} != {expected_bits:#x}"
+            )
         if len(block.coinbase_output) != 2 or any(
             len(point) != 33 or point[0] not in (2, 3) for point in block.coinbase_output
         ):
@@ -324,10 +379,6 @@ class BlockDAG:
         if block.compute_hash() != block.hash:
             raise ValueError("Block header was mutated after hashing")
 
-        # Validate parents exist
-        for parent_hash in block.parents:
-            if parent_hash not in self.blocks:
-                raise ValueError(f"Parent block {parent_hash} not found in DAG")
         newest_parent_time = max(self.blocks[parent].timestamp for parent in block.parents)
         if block.timestamp <= newest_parent_time:
             raise ValueError("Block timestamp must be greater than every parent timestamp")
@@ -342,61 +393,195 @@ class BlockDAG:
             return False
         self._validate_block(block)
 
-        snapshot = copy.deepcopy((
-            self.blocks,
-            self.tips,
+        # Most ASIC submissions on a live DAG are parallel/side blocks.  They
+        # cannot mutate the selected ledger, UTXO set, issuance, or Combo state,
+        # so copying the entire accumulated DAG before admitting every one of
+        # them makes block admission O(chain length).  Populate the candidate's
+        # deterministic GHOSTDAG metadata first and use a small rollback scope
+        # when it cannot become the selected tip.  Selected-tip changes retain
+        # the full transactional snapshot below.
+        self._populate_ghostdag_metadata(block)
+        selected_block = self.blocks[self.selected_tip]
+        is_new_selected_tip = (block.blue_work, block.hash) > (
+            selected_block.blue_work,
+            selected_block.hash,
+        )
+        if not is_new_selected_tip:
+            old_tips = set(self.tips)
+            self.blocks[block.hash] = block
+            block.is_combo = False
+            block.minted_sats = 0
+            block.reward_sats = 0
+            block.miner_base_sats = 0
+            block.pool_deposit_sats = 0
+            block.eco_deposit_sats = 0
+            block.combo_payout_sats = 0
+            block.fees_sats = 0
+            for parent in block.parents:
+                self.tips.discard(parent)
+            self.tips.add(block.hash)
+            try:
+                if commit_hook is not None:
+                    commit_hook(block)
+            except Exception:
+                self.blocks.pop(block.hash, None)
+                self.tips = old_tips
+                raise
+            return True
+
+        if block.selected_parent == self.selected_tip:
+            # A normal selected-tip extension cannot rewrite historical
+            # GHOSTDAG topology.  It may account a bounded set of merge blues,
+            # so snapshot only their mutable issuance fields plus the ledger
+            # views that the extension changes.  This keeps the common live
+            # admission path independent of total chain length while retaining
+            # atomic rollback if UTXO validation or durable persistence fails.
+            accounting_fields = (
+                "is_combo",
+                "minted_sats",
+                "reward_sats",
+                "miner_base_sats",
+                "pool_deposit_sats",
+                "eco_deposit_sats",
+                "combo_payout_sats",
+                "fees_sats",
+            )
+            affected_hashes = [
+                blue_hash
+                for blue_hash in block.merge_set_blues[1:]
+                if blue_hash in self.blocks
+            ]
+            affected_accounting = {
+                blue_hash: tuple(
+                    getattr(self.blocks[blue_hash], field)
+                    for field in accounting_fields
+                )
+                for blue_hash in affected_hashes
+            }
+            applied_hashes = [*affected_hashes, block.hash]
+            snapshot = (
+                set(self.tips),
+                self.selected_tip,
+                self.issued_supply_sats,
+                self.pool_balance_sats,
+                list(self.virtual_selected_parent_chain),
+                list(self.virtual_blue_order),
+                copy.deepcopy(self.combo_machine),
+            )
+            try:
+                accepted = self._commit_validated_block(block)
+                if accepted and commit_hook is not None:
+                    commit_hook(block)
+                return accepted
+            except Exception:
+                # UTXOSet already records exact per-block created/spent undo.
+                # Roll back only applications performed by this extension,
+                # newest first; do not copy the lifetime undo journal.
+                for applied_hash in reversed(applied_hashes):
+                    if (
+                        applied_hash in self.utxo_set._block_created_undo
+                        or applied_hash in self.utxo_set._block_spent_undo
+                    ):
+                        self.utxo_set.revert_block(applied_hash)
+                self.blocks.pop(block.hash, None)
+                (
+                    self.tips,
+                    self.selected_tip,
+                    self.issued_supply_sats,
+                    self.pool_balance_sats,
+                    self.virtual_selected_parent_chain,
+                    self.virtual_blue_order,
+                    self.combo_machine,
+                ) = snapshot
+                for blue_hash, values in affected_accounting.items():
+                    blue = self.blocks[blue_hash]
+                    for field, value in zip(accounting_fields, values):
+                        setattr(blue, field, value)
+                raise
+
+        # A selected-tip reorganization can touch historical issuance fields,
+        # but it never rewrites stored header/GHOSTDAG topology.  Preserve the
+        # small mutable surface explicitly and shallow-copy UTXO maps (entries
+        # and undo records are replaced, not mutated).  Deep-copying every DAG
+        # block here made stale-parent ASIC submissions block RPC for seconds.
+        accounting_fields = (
+            "is_combo",
+            "minted_sats",
+            "reward_sats",
+            "miner_base_sats",
+            "pool_deposit_sats",
+            "eco_deposit_sats",
+            "combo_payout_sats",
+            "fees_sats",
+        )
+        accounting_snapshot = {
+            block_hash: tuple(getattr(stored, field) for field in accounting_fields)
+            for block_hash, stored in self.blocks.items()
+        }
+        utxo_snapshot = (
+            dict(self.utxo_set.utxos),
+            dict(self.utxo_set._block_spent_undo),
+            dict(self.utxo_set._block_created_undo),
+            dict(self.utxo_set._block_fees),
+            dict(self.utxo_set._block_accepted_txids),
+        )
+        snapshot = (
+            set(self.tips),
             self.selected_tip,
             self.issued_supply_sats,
             self.pool_balance_sats,
-            self.virtual_selected_parent_chain,
-            self.virtual_blue_order,
-            self.utxo_set,
-            self.combo_machine,
-        ))
+            list(self.virtual_selected_parent_chain),
+            list(self.virtual_blue_order),
+            copy.deepcopy(self.combo_machine),
+        )
         try:
             accepted = self._commit_validated_block(block)
             if accepted and commit_hook is not None:
-                commit_hook(block, self.state_root())
+                commit_hook(block)
             return accepted
         except Exception:
+            self.blocks.pop(block.hash, None)
             (
-                self.blocks,
                 self.tips,
                 self.selected_tip,
                 self.issued_supply_sats,
                 self.pool_balance_sats,
                 self.virtual_selected_parent_chain,
                 self.virtual_blue_order,
-                self.utxo_set,
                 self.combo_machine,
             ) = snapshot
+            (
+                self.utxo_set.utxos,
+                self.utxo_set._block_spent_undo,
+                self.utxo_set._block_created_undo,
+                self.utxo_set._block_fees,
+                self.utxo_set._block_accepted_txids,
+            ) = utxo_snapshot
+            for block_hash, values in accounting_snapshot.items():
+                stored = self.blocks[block_hash]
+                for field, value in zip(accounting_fields, values):
+                    setattr(stored, field, value)
             raise
+
+    def replay_block(self, block: DAGBlock) -> bool:
+        """Validate and apply one persisted block without an O(n) rollback copy.
+
+        This is only for startup replay into a newly constructed DAG.  A replay
+        failure aborts node initialization, so copying the entire accumulated
+        chain before every record provides no recovery benefit and makes startup
+        quadratic.  Live block admission must continue to use ``add_block``.
+        """
+        if block.hash in self.blocks:
+            return False
+        self._validate_block(block)
+        return self._commit_validated_block(block)
 
     def _commit_validated_block(self, block: DAGBlock) -> bool:
         """Mutating half of add_block; caller provides rollback protection."""
 
-        # 1. Select Selected Parent using the GHOSTDAG work/hash ordering.
-        selected_parent_hash = max(
-            block.parents,
-            key=lambda p: (self.blocks[p].blue_work, self.blocks[p].hash)
-        )
-        selected_parent = self.blocks[selected_parent_hash]
-        block.selected_parent = selected_parent_hash
+        self._populate_ghostdag_metadata(block)
 
-        # 2. Compute the complete merge set and classify it into the K-cluster.
-        block.merge_set = self._calculate_merge_set(selected_parent_hash, block.parents)
-        (
-            block.merge_set_blues,
-            block.merge_set_reds,
-            block.blue_anticone_sizes,
-        ) = self._classify_merge_set(selected_parent_hash, block.merge_set)
-
-        # 3. Blue score/work include the selected parent and all accepted merge blues.
-        block.blue_score = selected_parent.blue_score + len(block.merge_set_blues)
-        block.blue_work = selected_parent.blue_work + sum(
-            block_work(self.blocks[blue].bits, self.network.pow_limit_bits)
-            for blue in block.merge_set_blues
-        )
+        selected_parent = self.blocks[block.selected_parent]
 
         # Insert block into blocks map
         self.blocks[block.hash] = block
@@ -549,6 +734,36 @@ class BlockDAG:
         self.tips.add(block.hash)
         return True
 
+    def _populate_ghostdag_metadata(self, block: DAGBlock) -> None:
+        """Populate deterministic GHOSTDAG fields without mutating DAG state."""
+
+        # 1. Select Selected Parent using the GHOSTDAG work/hash ordering.
+        selected_parent_hash = max(
+            block.parents,
+            key=lambda p: (self.blocks[p].blue_work, self.blocks[p].hash)
+        )
+        selected_parent = self.blocks[selected_parent_hash]
+        block.selected_parent = selected_parent_hash
+
+        # 2. Compute the complete merge set and classify it into the K-cluster.
+        block.merge_set = self._calculate_merge_set(selected_parent_hash, block.parents)
+        (
+            block.merge_set_blues,
+            block.merge_set_reds,
+            block.blue_anticone_sizes,
+        ) = self._classify_merge_set(selected_parent_hash, block.merge_set)
+
+        # 3. Blue score/work include the selected parent and all accepted merge blues.
+        block.blue_score = selected_parent.blue_score + len(block.merge_set_blues)
+        block.blue_work = (
+            selected_parent.blue_work
+            + block_work(block.bits, self.network.pow_limit_bits)
+            + sum(
+                block_work(self.blocks[blue].bits, self.network.pow_limit_bits)
+                for blue in block.merge_set_blues[1:]
+            )
+        )
+
     def get_tips(self) -> List[str]:
         if len(self.tips) <= self.network.max_parents:
             return list(self.tips)
@@ -612,6 +827,7 @@ class BlockDAG:
 
     def get_dag_info(self) -> dict:
         selected = self.blocks[self.selected_tip]
+        next_bits = self.expected_bits(self.get_mining_parents())
         return {
             "network": self.network.name,
             "chain_id": self.network.chain_id,
@@ -623,6 +839,8 @@ class BlockDAG:
             "total_blocks": len(self.blocks),
             "tips_count": len(self.tips),
             "tips": list(self.tips),
+            "selected_bits": selected.bits,
+            "next_bits": next_bits,
             "issued_supply_sats": self.issued_supply_sats,
             "issued_supply_btck": self.issued_supply_sats / SATS_PER_COIN,
             "pool_balance_sats": self.pool_balance_sats,
@@ -630,4 +848,79 @@ class BlockDAG:
             "utxo_total_sats": self.utxo_set.total_value_sats(),
             "eco_fund_utxo_sats": self.utxo_set.value_by_kind_sats("eco"),
             "state_root": self.state_root(),
+        }
+
+    def get_dashboard_info(self, recent_limit: int = 120) -> dict:
+        """Return a lightweight, consensus-authoritative explorer snapshot.
+
+        Unlike :meth:`get_dag_info`, this intentionally avoids rebuilding the
+        full state root.  The explorer must never read the live SQLite/WAL
+        files directly; all chain, issuance and Combo values come from this
+        in-memory consensus view.
+        """
+        selected = self.blocks[self.selected_tip]
+        order = self.virtual_blue_order
+        ledger_height = max(0, len(order) - 1)
+        limit = max(1, min(int(recent_limit), 50_000))
+        first_index = max(0, len(order) - limit)
+        recent_blocks = []
+        for issuance_height, block_hash in enumerate(order[first_index:], start=first_index):
+            block = self.blocks[block_hash]
+            recent_blocks.append({
+                "height": issuance_height,
+                "hash": block_hash,
+                "timestamp": block.timestamp,
+                "blue_score": block.blue_score,
+                "bits": block.bits,
+                "miner_base_sats": block.miner_base_sats,
+                "pool_deposit_sats": block.pool_deposit_sats,
+                "eco_deposit_sats": block.eco_deposit_sats,
+                "combo_payout_sats": block.combo_payout_sats,
+                "fees_sats": block.fees_sats,
+                "is_combo_resolution": bool(block.combo_payout_sats),
+            })
+
+        resolutions = []
+        for epoch_id, epoch in sorted(self.combo_machine.epochs.items()):
+            if not epoch.resolution:
+                continue
+            resolution = epoch.resolution
+            resolutions.append({
+                "epoch_id": epoch_id,
+                "stage_id": resolution.stage_id,
+                "draw_height": resolution.draw_height,
+                "beacon_height": resolution.beacon_height,
+                "beacon_hash": resolution.beacon_hash,
+                "winner_block_hash": resolution.winner_block_hash,
+                "winner_distance_hex": f"{resolution.winner_distance:064x}",
+                "jackpot_amount_satk": resolution.jackpot_amount_satk,
+                "tranches": resolution.tranches,
+            })
+
+        active_epoch = self.combo_machine.epochs[self.combo_machine.active_epoch_id]
+        _, _, draw_interval = get_combo_spec_for_height(max(1, active_epoch.start_height))
+        next_draw_height = active_epoch.start_height + draw_interval - 1
+        next_bits = self.expected_bits(self.get_mining_parents())
+        return {
+            "ledger_height": ledger_height,
+            "max_blue_score": selected.blue_score,
+            "total_dag_blocks": len(self.blocks),
+            "selected_tip": self.selected_tip,
+            "tips_count": len(self.tips),
+            "selected_bits": selected.bits,
+            "next_bits": next_bits,
+            "issued_supply_sats": self.issued_supply_sats,
+            "pool_balance_sats": self.pool_balance_sats,
+            "jackpot_pool_utxo_sats": self.utxo_set.value_by_kind_sats("jackpot_pool"),
+            "eco_fund_utxo_sats": self.utxo_set.value_by_kind_sats("eco"),
+            "utxo_total_sats": self.utxo_set.total_value_sats(),
+            "combo": {
+                "active_epoch_id": self.combo_machine.active_epoch_id,
+                "active_epoch_start_height": active_epoch.start_height,
+                "next_draw_height": next_draw_height,
+                "pending_epoch_ids": sorted(self.combo_machine.pending_draws),
+                "resolved_count": len(resolutions),
+                "resolutions": resolutions[-20:],
+            },
+            "recent_blocks": recent_blocks,
         }

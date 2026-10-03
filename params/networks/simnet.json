@@ -1,0 +1,47 @@
+{
+  "manifest_version": 1,
+  "network": "simnet",
+  "chain_id": "btck-simnet-v3",
+  "p2p_magic": "42545333",
+  "data_subdir": "simnet",
+  "release": {"approved": true, "approval_id": "automated-tests-only"},
+  "consensus": {
+    "block_version": 2,
+    "pow_limit_bits": "0x207fffff",
+    "max_future_seconds": 7200,
+    "max_parents": 8,
+    "ghostdag_k": 18,
+    "max_merge_set_size": 1024,
+    "daa": {
+      "window_blocks": 32,
+      "initial_bits": "0x207fffff",
+      "target_interval_ms": 1000,
+      "median_time_blocks": 5,
+      "max_adjustment_factor": 2
+    },
+    "eco_fund_output": [
+      "031bb56983f2832306f2469712e7ec5399c3256a1033c833d65171b9d5fdb727e5",
+      "02fc2baaf911545b226d719e6906561dde6d5df7c47b714912808586780c588a45"
+    ]
+  },
+  "genesis": {
+    "version": 2,
+    "timestamp": 1788912000.0,
+    "bits": 545259519,
+    "nonce": "0x1",
+    "headline": "BTC-K SIMNET v3 - AUTOMATED TESTS ONLY - 2026-10-02",
+    "coinbase_output": [
+      "02ac791bd3152f0347a07c84bd32355f8625e034c4c43b8783421a3bd6f7a40321",
+      "025eb0c909e619a0f7baef61b20ceee8cd6b5d6bdd4dd8f97827be831016f957d0"
+    ],
+    "expected_hash": "6f00bca9f0c9513fd0d088a253a4e0ed1ae6c61e60a37d3bde6798d79c149f38"
+  },
+  "features": {
+    "stratum": true,
+    "ai_payments": false,
+    "web_wallet_send": false,
+    "dex": false,
+    "bridge": false,
+    "exchange_adapter": false
+  }
+}

@@ -125,8 +125,41 @@ class PPLNSEngine:
                 );
 
                 CREATE INDEX IF NOT EXISTS idx_payouts_wallet ON payouts(wallet_address);
+
+                CREATE TABLE IF NOT EXISTS pool_meta (
+                    key TEXT PRIMARY KEY,
+                    value TEXT NOT NULL
+                );
                 """
             )
+            block_columns = {row[1] for row in conn.execute("PRAGMA table_info(blocks)")}
+            for column, declaration in (
+                ("mode", "TEXT NOT NULL DEFAULT 'PPLNS'"),
+                ("is_pool_fee", "INTEGER NOT NULL DEFAULT 0"),
+                ("payout_address", "TEXT NOT NULL DEFAULT ''"),
+            ):
+                if column not in block_columns:
+                    conn.execute(f"ALTER TABLE blocks ADD COLUMN {column} {declaration}")
+
+    def get_or_create_launch_time(self, requested: float = 0.0) -> float:
+        """Return a restart-stable pool launch timestamp."""
+        with self._get_connection() as conn:
+            row = conn.execute("SELECT value FROM pool_meta WHERE key = 'launch_time'").fetchone()
+            if requested > 0.0:
+                launch_time = float(requested)
+                conn.execute(
+                    "INSERT OR REPLACE INTO pool_meta(key, value) VALUES('launch_time', ?)",
+                    (repr(launch_time),),
+                )
+                return launch_time
+            if row:
+                return float(row["value"])
+            launch_time = time.time()
+            conn.execute(
+                "INSERT INTO pool_meta(key, value) VALUES('launch_time', ?)",
+                (repr(launch_time),),
+            )
+            return launch_time
 
     def record_share(
         self,
@@ -307,6 +340,193 @@ class PPLNSEngine:
             len(miner_credits),
         )
         return summary
+
+    def record_solo_block(
+        self,
+        block_hash: str,
+        height: int,
+        reward_satk: int,
+        finder_wallet: str,
+        finder_worker: str,
+        payout_address: str,
+        is_pool_fee: bool,
+        timestamp: Optional[float] = None,
+    ) -> None:
+        """Persist an accepted SOLO block for transparent pool telemetry.
+
+        This is an operational attribution ledger only.  Consensus issuance
+        remains exclusively owned by the node.
+        """
+        reward = max(0, int(reward_satk))
+        fee_satk = reward if is_pool_fee else 0
+        distributed_satk = 0 if is_pool_fee else reward
+        with self._get_connection() as conn:
+            conn.execute(
+                """
+                INSERT OR IGNORE INTO blocks (
+                    block_hash, height, reward_satk, pool_fee_satk,
+                    finder_bonus_satk, distributed_satk, finder_wallet,
+                    finder_worker, timestamp, shares_in_window, window_weight,
+                    mode, is_pool_fee, payout_address
+                ) VALUES (?, ?, ?, ?, 0, ?, ?, ?, ?, 0, 0.0, 'SOLO', ?, ?)
+                """,
+                (
+                    block_hash,
+                    int(height),
+                    reward,
+                    fee_satk,
+                    distributed_satk,
+                    finder_wallet,
+                    finder_worker,
+                    time.time() if timestamp is None else float(timestamp),
+                    1 if is_pool_fee else 0,
+                    payout_address,
+                ),
+            )
+
+    def reconcile_solo_block_rewards(self, canonical_blocks: List[dict]) -> int:
+        """Reconcile initially-red DAG submissions after they enter blue order."""
+        updated = 0
+        with self._get_connection() as conn:
+            for block in canonical_blocks:
+                block_hash = str(block.get("hash", ""))
+                if not block_hash:
+                    continue
+                reward_satk = int(block.get("miner_base_sats", 0)) + int(block.get("fees_sats", 0))
+                row = conn.execute(
+                    "SELECT is_pool_fee FROM blocks WHERE block_hash = ? AND mode = 'SOLO'",
+                    (block_hash,),
+                ).fetchone()
+                if not row:
+                    continue
+                is_pool_fee = bool(row["is_pool_fee"])
+                conn.execute(
+                    """
+                    UPDATE blocks
+                    SET reward_satk = ?,
+                        pool_fee_satk = ?,
+                        distributed_satk = ?
+                    WHERE block_hash = ?
+                    """,
+                    (
+                        reward_satk,
+                        reward_satk if is_pool_fee else 0,
+                        0 if is_pool_fee else reward_satk,
+                        block_hash,
+                    ),
+                )
+                updated += 1
+        return updated
+
+    def get_dashboard_stats(self, active_window_seconds: float = 600.0) -> dict:
+        """Return persistent, measured Stratum statistics for the dashboard."""
+        window = max(60.0, float(active_window_seconds))
+        now = time.time()
+        cutoff = now - window
+        with self._get_connection() as conn:
+            share_rows = conn.execute(
+                """
+                SELECT wallet_address, worker_name,
+                       COUNT(*) AS shares_total,
+                       SUM(difficulty) AS difficulty_total,
+                       MAX(timestamp) AS last_share_timestamp
+                FROM shares
+                GROUP BY wallet_address, worker_name
+                ORDER BY last_share_timestamp DESC
+                """
+            ).fetchall()
+            window_rows = conn.execute(
+                """
+                SELECT wallet_address, worker_name,
+                       COUNT(*) AS shares_window,
+                       SUM(difficulty) AS difficulty_window,
+                       MAX(timestamp) AS last_share_timestamp
+                FROM shares
+                WHERE timestamp >= ?
+                GROUP BY wallet_address, worker_name
+                """,
+                (cutoff,),
+            ).fetchall()
+            block_rows = conn.execute(
+                """
+                SELECT finder_wallet, finder_worker,
+                       COUNT(*) AS accepted_blocks,
+                       SUM(CASE WHEN is_pool_fee = 0 THEN 1 ELSE 0 END) AS miner_blocks,
+                       SUM(CASE WHEN is_pool_fee = 1 THEN 1 ELSE 0 END) AS fee_blocks,
+                       SUM(CASE WHEN is_pool_fee = 0 THEN distributed_satk ELSE 0 END) AS miner_reward_satk
+                FROM blocks
+                GROUP BY finder_wallet, finder_worker
+                """
+            ).fetchall()
+            totals = conn.execute(
+                """
+                SELECT COUNT(*) AS accepted_blocks,
+                       COALESCE(SUM(is_pool_fee), 0) AS fee_blocks,
+                       COALESCE(SUM(pool_fee_satk), 0) AS fee_satk,
+                       COALESCE(SUM(distributed_satk), 0) AS distributed_satk
+                FROM blocks
+                """
+            ).fetchone()
+            fee_recipients = [dict(row) for row in conn.execute(
+                """
+                SELECT payout_address,
+                       COUNT(*) AS fee_blocks,
+                       COALESCE(SUM(pool_fee_satk), 0) AS fee_satk,
+                       MIN(timestamp) AS first_timestamp,
+                       MAX(timestamp) AS last_timestamp
+                FROM blocks
+                WHERE is_pool_fee = 1
+                GROUP BY payout_address
+                ORDER BY fee_satk DESC
+                """
+            ).fetchall()]
+            recent_blocks = [dict(row) for row in conn.execute(
+                """
+                SELECT block_hash, height, reward_satk, pool_fee_satk,
+                       distributed_satk, finder_wallet, finder_worker,
+                       timestamp, mode, is_pool_fee, payout_address
+                FROM blocks ORDER BY timestamp DESC LIMIT 250
+                """
+            ).fetchall()]
+
+        window_map = {
+            (row["wallet_address"], row["worker_name"]): row
+            for row in window_rows
+        }
+        block_map = {
+            (row["finder_wallet"], row["finder_worker"]): row
+            for row in block_rows
+        }
+        workers = []
+        for row in share_rows:
+            key = (row["wallet_address"], row["worker_name"])
+            window_row = window_map.get(key)
+            blocks = block_map.get(key)
+            window_diff = float(window_row["difficulty_window"] or 0.0) if window_row else 0.0
+            workers.append({
+                "wallet_address": row["wallet_address"],
+                "worker_name": row["worker_name"],
+                "shares_total": int(row["shares_total"] or 0),
+                "shares_window": int(window_row["shares_window"] or 0) if window_row else 0,
+                "hashrate_hps": window_diff * (2**32) / window,
+                "last_share_timestamp": float(row["last_share_timestamp"] or 0.0),
+                "accepted_blocks": int(blocks["accepted_blocks"] or 0) if blocks else 0,
+                "miner_blocks": int(blocks["miner_blocks"] or 0) if blocks else 0,
+                "fee_blocks": int(blocks["fee_blocks"] or 0) if blocks else 0,
+                "miner_reward_satk": int(blocks["miner_reward_satk"] or 0) if blocks else 0,
+            })
+
+        return {
+            "window_seconds": window,
+            "workers": workers,
+            "accepted_blocks": int(totals["accepted_blocks"] or 0),
+            "fee_blocks": int(totals["fee_blocks"] or 0),
+            "fee_satk": int(totals["fee_satk"] or 0),
+            "distributed_satk": int(totals["distributed_satk"] or 0),
+            "fee_recipients": fee_recipients,
+            "pool_hashrate_hps": sum(worker["hashrate_hps"] for worker in workers),
+            "recent_blocks": recent_blocks,
+        }
 
     def get_miner(self, wallet_address: str) -> Optional[MinerBalance]:
         """Fetch miner accounting state."""

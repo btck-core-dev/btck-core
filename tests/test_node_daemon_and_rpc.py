@@ -51,7 +51,7 @@ class TestNodeDaemonAndRPC(unittest.IsolatedAsyncioTestCase):
     async def test_daemon_rpc_workflow(self):
         test_host = "127.0.0.1"
         test_port = 16180
-        daemon = BTCKDaemon(host=test_host, port=test_port, p2p_port=16181, rpc_token=TEST_RPC_TOKEN)
+        daemon = BTCKDaemon(host=test_host, port=test_port, p2p_port=16181, rpc_token=TEST_RPC_TOKEN, network="simnet")
         await daemon.start()
         await asyncio.sleep(0.2)
         
