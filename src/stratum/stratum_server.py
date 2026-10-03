@@ -201,6 +201,7 @@ class BTCKStratumServer:
         share_target: Optional[int] = None,
         job_ttl_seconds: int = 120,
         late_block_grace_seconds: float = 16.0,
+        template_refresh_seconds: float = 4.0,
         max_clients: int = 256,
     ):
         self.host = host
@@ -227,6 +228,10 @@ class BTCKStratumServer:
         self.late_block_grace_seconds = max(
             0.0,
             float(os.getenv("BTCK_STRATUM_LATE_BLOCK_GRACE", late_block_grace_seconds)),
+        )
+        self.template_refresh_seconds = max(
+            1.0,
+            float(os.getenv("BTCK_STRATUM_TEMPLATE_REFRESH_SECONDS", template_refresh_seconds)),
         )
         self.max_clients = max_clients
         self.clients: Dict[str, StratumClient] = {}
@@ -769,7 +774,7 @@ class BTCKStratumServer:
                                     client.wallet_address[:16] + "...",
                                     client.worker_name,
                                 )
-                        # The 1 Hz refresh loop publishes the newest DAG view.
+                        # The bounded refresh loop publishes the newest DAG view.
                         # Broadcasting here as well creates a positive feedback
                         # loop: parallel candidates generate duplicate jobs,
                         # which IceRiver firmware queues and later returns as
@@ -966,19 +971,21 @@ class BTCKStratumServer:
                 pass
 
     async def _refresh_loop(self) -> None:
-        refresh_count = 0
+        next_reconcile_at = time.monotonic() + 10.0
         while self.running:
-            await asyncio.sleep(1)
+            await asyncio.sleep(self.template_refresh_seconds)
             try:
-                # Kaspa ASIC firmware is designed around an approximately 1 Hz
-                # job stream.  Force one coalesced snapshot per tick so miners
-                # receive fresh work even when several DAG candidates arrive
-                # between refreshes.
+                # Keep one template active long enough for deep-pipeline ASICs
+                # to work it.  Candidate blocks arriving during the interval are
+                # coalesced into the next DAG-parent snapshot.  With eight parent
+                # slots, a four-second batch can merge the expected KS0 sibling
+                # volume without creating an ever-growing stale-job queue.
                 await self._broadcast_template(force=True)
-                refresh_count += 1
-                if self.pplns_engine and refresh_count % 10 == 0:
+                now = time.monotonic()
+                if self.pplns_engine and now >= next_reconcile_at:
                     dashboard = await self.node_rpc.call("getDashboardInfo", {"recent_limit": 500})
                     self.pplns_engine.reconcile_solo_block_rewards(dashboard.get("recent_blocks", []))
+                    next_reconcile_at = now + 10.0
             except Exception as exc:
                 logger.warning("Template refresh failed: %s", exc)
 

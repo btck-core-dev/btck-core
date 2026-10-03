@@ -30,6 +30,7 @@ services:
       BTCK_STRATUM_STATUS_HOST: "0.0.0.0"
       BTCK_STRATUM_STATUS_PORT: "3337"
       BTCK_STRATUM_LATE_BLOCK_GRACE: "16"
+      BTCK_STRATUM_TEMPLATE_REFRESH_SECONDS: "4"
       BTCK_NODE_RPC_URL: "http://btck-node:16110/rpc"
       BTCK_PPLNS_DB_PATH: "/app/pool-data/pool_accounting.db"
       BTCK_POOL_LAUNCH_TIME: "${BTCK_POOL_LAUNCH_TIME:-0}"

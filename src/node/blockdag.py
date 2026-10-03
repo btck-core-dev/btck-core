@@ -199,14 +199,24 @@ class BlockDAG:
         return chain
 
     def get_mining_parents(self) -> List[str]:
-        """Return a deterministic, consensus-bounded parent set for templates."""
+        """Return a deterministic, consensus-bounded parent set for templates.
+
+        The selected tip must remain the first parent.  The remaining slots are
+        deliberately used for the lowest-work, oldest tips.  ASICs can return
+        valid work for an earlier template several seconds late; without this
+        cleanup policy those side tips lose every descending-work tie-break and
+        accumulate forever.
+        """
         selected = self.selected_tip
         if selected is None:
             return []
         candidates = sorted(
             (tip for tip in self.tips if tip != selected),
-            key=lambda tip: (self.blocks[tip].blue_work, tip),
-            reverse=True,
+            key=lambda tip: (
+                self.blocks[tip].blue_work,
+                self.blocks[tip].timestamp,
+                tip,
+            ),
         )
         return [selected, *candidates[: self.network.max_parents - 1]]
 
@@ -767,12 +777,17 @@ class BlockDAG:
     def get_tips(self) -> List[str]:
         if len(self.tips) <= self.network.max_parents:
             return list(self.tips)
-        # Prioritize selected_tip first, then sort remaining tips by blue_work descending
+        # Keep generic block construction aligned with the mining-template tip
+        # cleanup policy.  The selected tip anchors consensus; remaining parent
+        # capacity drains stranded low-work/old tips deterministically.
         other_tips = [t for t in self.tips if t != self.selected_tip]
         sorted_others = sorted(
             other_tips,
-            key=lambda t: (self.blocks[t].blue_work, self.blocks[t].hash),
-            reverse=True
+            key=lambda t: (
+                self.blocks[t].blue_work,
+                self.blocks[t].timestamp,
+                self.blocks[t].hash,
+            ),
         )
         selected = [self.selected_tip] if self.selected_tip in self.tips else []
         remaining_slots = self.network.max_parents - len(selected)

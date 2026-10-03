@@ -96,6 +96,32 @@ class TestGhostDAGConsensus(unittest.TestCase):
         else:
             self.assertEqual(set(merge.merge_set), {left_1.hash, left_2.hash})
 
+    def test_mining_parents_prioritize_old_low_work_tips(self):
+        network = replace(load_network("simnet"), max_parents=3)
+        dag = BlockDAG(network=network)
+        base_time = dag.blocks[dag.genesis_hash].timestamp
+
+        parent = dag.genesis_hash
+        for offset in range(1, 5):
+            block = mine_child(dag, [parent], base_time + offset, offset)
+            dag.add_block(block)
+            parent = block.hash
+
+        side_tips = []
+        nonce = 100
+        for offset in (1.25, 2.25, 3.25, 3.75):
+            block = mine_child(dag, [dag.genesis_hash], base_time + offset, nonce)
+            nonce = block.nonce + 1
+            dag.add_block(block)
+            side_tips.append(block)
+
+        expected_cleanup = [block.hash for block in side_tips[:2]]
+        self.assertEqual(
+            dag.get_mining_parents(),
+            [dag.selected_tip, *expected_cleanup],
+        )
+        self.assertEqual(dag.get_tips(), [dag.selected_tip, *expected_cleanup])
+
 
 if __name__ == "__main__":
     unittest.main()

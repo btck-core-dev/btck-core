@@ -63,7 +63,7 @@ $$\text{Hashrate (H/s)} = \text{Difficulty} \times \frac{2^{32}}{\text{Observed 
 4. **`mining.notify`**：
    * Kaspa ASIC 格式为 `params: [job_id, payload]`；
    * `payload` 严格为 80 个十六进制字符：32 字节 Pre-PoW Hash 加 8 字节小端时间戳；
-   * 官方池把并发 DAG 更新合并为固定 1 Hz Job 广播。
+   * 官方池把并发 DAG 更新合并为固定 4 秒 Job 批次（0.25 Hz），为深流水线 ASIC 保留稳定工作窗口；节点下一批模板会优先清理低工作量、较旧的 DAG tips。
 5. **`mining.submit`**：
    * 矿机提交 Nonce，矿池判定：
      * 若哈希满足 `client.difficulty` $\rightarrow$ 计入矿工有效的矿池 Share；
