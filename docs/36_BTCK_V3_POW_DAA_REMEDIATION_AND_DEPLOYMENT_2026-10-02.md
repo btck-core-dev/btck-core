@@ -1,5 +1,8 @@
 # BTC-K v3 PoW / DAA 修复与部署记录（2026-10-02）
 
+24 小时真机验收的固定起点、结束时间和 2026-10-03 当日变更，见
+[`37_BTCK_RC3_24H_ACCEPTANCE_BASELINE_2026-10-03.md`](37_BTCK_RC3_24H_ACCEPTANCE_BASELINE_2026-10-03.md)。
+
 ## 修复范围
 
 - 将 Stratum 与 BlockDAG 统一到同一个 ASIC 兼容 kHeavyHash 计算入口；候选块提交前再次断言矿池 PoW 与节点 PoW 完全一致。
