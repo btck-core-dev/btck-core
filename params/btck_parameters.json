@@ -282,6 +282,8 @@
     "late_block_grace_seconds": 16,
     "template_refresh_seconds": 4.0,
     "template_broadcast_hz": 0.25,
+    "max_dag_submissions_per_congested_template": 1,
+    "max_dag_submissions_per_clear_template": 8,
     "vardiff": {
       "target_share_time_sec": 8.0,
       "min_diff": 128,

@@ -3,6 +3,7 @@ import os
 import sys
 import time
 import unittest
+from dataclasses import replace
 from unittest.mock import patch
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
@@ -177,7 +178,7 @@ class TestStratumTargetVerification(unittest.IsolatedAsyncioTestCase):
         )
         self.assertTrue(self._response(30)["result"])
 
-    async def test_recent_late_block_candidate_is_submitted_to_dag(self):
+    async def test_recent_late_block_candidate_is_credited_without_dag_submission(self):
         self.client.is_kaspa = True
         self.client.share_target = (1 << 256) - 1
         self.client.share_diff = 64.0
@@ -195,8 +196,71 @@ class TestStratumTargetVerification(unittest.IsolatedAsyncioTestCase):
             {"id": 31, "method": "mining.submit", "params": ["worker", job.job_id, f"{nonce:x}"]},
         )
         self.assertTrue(self._response(31)["result"])
+        self.assertEqual(len(self.daemon.dag.blocks), before)
+        self.assertEqual(self.client.blocks_found, 0)
+
+    async def test_congested_template_only_submits_one_candidate(self):
+        self.client.is_kaspa = True
+        self.client.share_target = (1 << 256) - 1
+        self.client.share_diff = 64.0
+        self.server.network = replace(self.server.network, max_parents=1)
+        first = await self._job()
+        second = await self._job()
+        self.assertEqual(first.template_key, second.template_key)
+
+        target = compact_to_target(first.bits)
+        first_nonce = next(
+            nonce for nonce in range(256)
+            if hash_to_target_int(first.calculate_pow(nonce)) <= target
+        )
+        second_nonce = next(
+            nonce for nonce in range(256)
+            if hash_to_target_int(second.calculate_pow(nonce)) <= target
+        )
+        before = len(self.daemon.dag.blocks)
+        await self.server.process_message(
+            self.client,
+            {"id": 33, "method": "mining.submit", "params": ["worker", first.job_id, f"{first_nonce:x}"]},
+        )
+        await self.server.process_message(
+            self.client,
+            {"id": 34, "method": "mining.submit", "params": ["worker", second.job_id, f"{second_nonce:x}"]},
+        )
+
+        self.assertTrue(self._response(33)["result"])
+        self.assertTrue(self._response(34)["result"])
         self.assertEqual(len(self.daemon.dag.blocks), before + 1)
+        self.assertEqual(self.client.shares_accepted, 2)
         self.assertEqual(self.client.blocks_found, 1)
+
+    async def test_clear_template_submits_bounded_sibling_batch(self):
+        self.client.is_kaspa = True
+        self.client.share_target = (1 << 256) - 1
+        self.client.share_diff = 64.0
+        first = await self._job()
+        second = await self._job()
+        target = compact_to_target(first.bits)
+        first_nonce = next(
+            nonce for nonce in range(256)
+            if hash_to_target_int(first.calculate_pow(nonce)) <= target
+        )
+        second_nonce = next(
+            nonce for nonce in range(256)
+            if hash_to_target_int(second.calculate_pow(nonce)) <= target
+        )
+        before = len(self.daemon.dag.blocks)
+        await self.server.process_message(
+            self.client,
+            {"id": 35, "method": "mining.submit", "params": ["worker", first.job_id, f"{first_nonce:x}"]},
+        )
+        await self.server.process_message(
+            self.client,
+            {"id": 36, "method": "mining.submit", "params": ["worker", second.job_id, f"{second_nonce:x}"]},
+        )
+        self.assertTrue(self._response(35)["result"])
+        self.assertTrue(self._response(36)["result"])
+        self.assertEqual(len(self.daemon.dag.blocks), before + 2)
+        self.assertEqual(self.client.blocks_found, 2)
 
     async def test_old_block_candidate_outside_grace_is_only_credited(self):
         self.client.is_kaspa = True

@@ -237,6 +237,7 @@ class BTCKStratumServer:
         self.clients: Dict[str, StratumClient] = {}
         self.current_jobs: Dict[str, MiningJob] = {}
         self.submitted_shares: set[tuple[str, int]] = set()
+        self.template_submission_counts: OrderedDict[tuple, int] = OrderedDict()
         self._job_counter = 0
         self._client_counter = 0
         self.active_template_key: Optional[tuple] = None
@@ -683,9 +684,19 @@ class BTCKStratumServer:
             network_target = compact_to_target(job.bits)
             is_current_template = job.template_key == self.active_template_key
             job_age = max(0.0, time.time() - job.created_at)
-            within_late_block_grace = job_age <= self.late_block_grace_seconds
-            is_block = hash_value <= network_target and (
-                is_current_template or within_late_block_grace
+            meets_network_target = hash_value <= network_target
+            # When every parent slot is occupied, admit one block for this wave
+            # so it consumes the selected tip plus seven stranded tips.  Once
+            # the DAG is uncongested, admit up to one full parent-width batch;
+            # the next wave can merge all of those siblings at once.
+            template_submission_limit = (
+                1 if len(job.parents) >= self.network.max_parents else self.network.max_parents
+            )
+            template_submission_count = self.template_submission_counts.get(job.template_key, 0)
+            is_block = (
+                meets_network_target
+                and is_current_template
+                and template_submission_count < template_submission_limit
             )
             logger.info(
                 "⛏️ Valid share from %s (%s) | Nonce: %016x | JobDiff: %.1f | Block: %s | Template: %s (age %.2fs)",
@@ -704,6 +715,13 @@ class BTCKStratumServer:
 
             # If it qualifies as a block candidate, submit to node
             if is_block:
+                # Claim synchronously before the RPC await so concurrent client
+                # tasks cannot exceed this topology's bounded wave size. Shares
+                # beyond the cap remain fully credited to the miner.
+                self.template_submission_counts[job.template_key] = template_submission_count + 1
+                self.template_submission_counts.move_to_end(job.template_key)
+                while len(self.template_submission_counts) > CLIENT_JOB_HISTORY_LIMIT:
+                    self.template_submission_counts.popitem(last=False)
                 try:
                     candidate = job.build_block(nonce)
                     if candidate.hash != pow_value.hex():
@@ -774,18 +792,25 @@ class BTCKStratumServer:
                                     client.wallet_address[:16] + "...",
                                     client.worker_name,
                                 )
-                        # The bounded refresh loop publishes the newest DAG view.
-                        # Broadcasting here as well creates a positive feedback
-                        # loop: parallel candidates generate duplicate jobs,
-                        # which IceRiver firmware queues and later returns as
-                        # increasingly stale work.
+                        # The bounded refresh loop closes the current wave and
+                        # publishes one successor template for its merged tips.
                     else:
                         logger.info("ℹ️ Share was block candidate but DAG tips advanced (stale block, share credited to miner)")
                 except Exception as exc:
+                    remaining = self.template_submission_counts.get(job.template_key, 1) - 1
+                    if remaining > 0:
+                        self.template_submission_counts[job.template_key] = remaining
+                    else:
+                        self.template_submission_counts.pop(job.template_key, None)
                     logger.warning("Node submitBlock error: %s (share still credited to miner)", exc)
-            elif hash_value <= network_target:
+            elif meets_network_target:
                 logger.info(
-                    "ℹ️ Valid late share credited but not submitted: template age %.2fs exceeds %.2fs grace",
+                    "ℹ️ Block-quality share credited but not submitted: %s (age %.2fs, grace %.2fs)",
+                    (
+                        "template submission batch full"
+                        if template_submission_count >= template_submission_limit
+                        else "superseded template"
+                    ),
                     job_age,
                     self.late_block_grace_seconds,
                 )
@@ -980,7 +1005,7 @@ class BTCKStratumServer:
                 # coalesced into the next DAG-parent snapshot.  With eight parent
                 # slots, a four-second batch can merge the expected KS0 sibling
                 # volume without creating an ever-growing stale-job queue.
-                await self._broadcast_template(force=True)
+                await self._broadcast_template(force=False)
                 now = time.monotonic()
                 if self.pplns_engine and now >= next_reconcile_at:
                     dashboard = await self.node_rpc.call("getDashboardInfo", {"recent_limit": 500})
