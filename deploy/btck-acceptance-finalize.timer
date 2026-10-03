@@ -1,0 +1,11 @@
+[Unit]
+Description=One-shot BTC-K v3 24-hour acceptance finalizer
+
+[Timer]
+OnActiveSec=24h 5min
+AccuracySec=1min
+Persistent=true
+Unit=btck-acceptance-finalize.service
+
+[Install]
+WantedBy=timers.target

@@ -124,6 +124,9 @@ summary = {
         "duplicate": count(log, "Duplicate share"),
         "rate_limit": count(log, "rate limit"),
         "late_credited_not_submitted": count(log, "Valid late share credited but not submitted"),
+        "block_quality_credited_not_submitted": count(
+            log, "Block-quality share credited but not submitted"
+        ),
         "node_submit_errors": count(log, "Node submitBlock error"),
         "connections": count(log, "Miner connected"),
         "authorizations": count(log, "Miner authorized"),
