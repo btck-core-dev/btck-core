@@ -17,6 +17,9 @@ docker compose ps --format json > "$work_dir/compose-ps.jsonl"
 docker stats --no-stream --format json \
   btck-full-node btck-stratum-pool btck-explorer > "$work_dir/docker-stats.jsonl"
 docker inspect btck-full-node btck-stratum-pool btck-explorer > "$work_dir/docker-inspect.json"
+python3 "$PROJECT_DIR/deploy/generate_deployment_manifest.py" \
+  --project-dir "$PROJECT_DIR" \
+  --output "$work_dir/deployment-manifest.json"
 if [ -f "$OBSERVATION_DIR/stratum-rejections-wire.log" ]; then
   tail -n 10000 "$OBSERVATION_DIR/stratum-rejections-wire.log" \
     > "$work_dir/stratum-wire-rejections.log"

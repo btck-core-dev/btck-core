@@ -98,6 +98,19 @@ def _format_hashrate(rate: float, approximate: bool = True) -> str:
     return f"{prefix}{rate:.0f} H/s"
 
 
+def _relative_network_difficulty(bits: int) -> float:
+    """Return difficulty relative to this network's configured PoW limit.
+
+    Bitcoin's historical difficulty-one target is not meaningful for a
+    private/dev network with its own pow limit.  Using it made the easiest
+    valid BTC-K target appear as ``0.0000`` even though it is, by definition,
+    the network's 1.0x floor.
+    """
+    if not bits:
+        return 0.0
+    return compact_to_target(NETWORK.pow_limit_bits) / compact_to_target(bits)
+
+
 def _observed_block_frequency(blocks: List[Dict[str, Any]]) -> float | None:
     """Return blue-ledger throughput from a timestamp window.
 
@@ -151,9 +164,18 @@ def build_production_stats_payload() -> Dict[str, Any]:
     network_hashrate_hps = 0.0
     if next_bits:
         network_target = compact_to_target(next_bits)
-        network_diff = ((1 << 224) - 1) / network_target
+        network_diff = _relative_network_difficulty(next_bits)
         if observed_freq:
-            network_hashrate_hps = network_diff * (2**32) / observed_freq
+            network_hashrate_hps = (1 << 256) / (network_target + 1) / observed_freq
+
+    daa_at_pow_limit = bool(next_bits and next_bits == NETWORK.pow_limit_bits)
+    # At the PoW floor this pool intentionally coalesces many valid ASIC
+    # solutions into bounded DAG waves. Block arrival rate therefore measures
+    # the submission policy, not physical network hashes. Do not publish a
+    # mathematically tiny but operationally misleading hashrate estimate.
+    network_hashrate_estimate_valid = bool(
+        observed_freq and not (daa_at_pow_limit and pool_snapshot.get("active_workers", 0))
+    )
 
     pool_blocks = {
         str(block.get("block_hash")): block
@@ -305,8 +327,13 @@ def build_production_stats_payload() -> Dict[str, Any]:
         "accumulated_eco_reserve_btck": eco_sats / SATK_PER_COIN,
         "network_diff": network_diff,
         "network_bits": f"0x{next_bits:08x}" if next_bits else None,
-        "daa_at_pow_limit": bool(next_bits and next_bits == NETWORK.pow_limit_bits),
-        "network_hashrate_str": _format_hashrate(network_hashrate_hps) if observed_freq else "N/A",
+        "daa_at_pow_limit": daa_at_pow_limit,
+        "network_hashrate_estimate_valid": network_hashrate_estimate_valid,
+        "network_hashrate_str": (
+            _format_hashrate(network_hashrate_hps)
+            if network_hashrate_estimate_valid
+            else "N/A (pow-limit submission cap)" if daa_at_pow_limit else "N/A"
+        ),
         "total_pool_hashrate_str": _format_hashrate(float(pool_snapshot.get("pool_hashrate_hps", 0.0))),
         "pool_hashrate_window_seconds": float(pool_snapshot.get("window_seconds", 600.0) or 600.0),
         "active_worker_count": int(pool_snapshot.get("active_workers", 0) or 0),

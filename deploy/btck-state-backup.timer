@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily BTC-K chain and pool accounting backup
+
+[Timer]
+OnCalendar=*-*-* 00:30:00 UTC
+RandomizedDelaySec=10m
+Persistent=true
+Unit=btck-state-backup.service
+
+[Install]
+WantedBy=timers.target

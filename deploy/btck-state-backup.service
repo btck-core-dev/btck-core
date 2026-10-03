@@ -1,0 +1,10 @@
+[Unit]
+Description=Online backup of BTC-K chain and pool accounting state
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+User=root
+Environment=BTCK_BACKUP_ROOT=/home/ubuntu/btck-backups/live-state
+ExecStart=/home/ubuntu/btck-devnet/deploy/backup_live_state.sh

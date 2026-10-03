@@ -1431,13 +1431,13 @@
         }
         const networkDiff = Number(data.network_diff || 0);
         document.getElementById("stat-network-diff").innerText = networkDiff > 0
-          ? networkDiff.toExponential(4)
+          ? `${networkDiff < 10000 ? networkDiff.toFixed(4) : networkDiff.toExponential(4)}×`
           : "N/A";
         const diffNote = document.getElementById("stat-network-diff-note");
         if (diffNote) {
           const bits = data.network_bits || "unknown bits";
           diffNote.innerText = data.daa_at_pow_limit
-            ? `DAA minimum difficulty reached (${bits})`
+            ? `DAA floor: 1.0000× network PoW limit (${bits})`
             : `Consensus DAA target (${bits}; 264-block window)`;
           diffNote.style.color = data.daa_at_pow_limit ? "#f59e0b" : "";
         }
