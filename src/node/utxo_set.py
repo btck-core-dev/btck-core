@@ -38,19 +38,79 @@ class UTXOEntry:
     timelock_until_height: int = 0
     kind: str = "standard"
 
+
+class TrackedUTXODict(dict):
+    """Dictionary with O(1) value-conservation totals.
+
+    Consensus code and tests intentionally expose the UTXO mapping. Keeping
+    accounting in the mapping itself means direct fixture/import assignments
+    cannot silently bypass the cached totals.
+    """
+
+    def __init__(self, values=()):
+        super().__init__()
+        self.total_satk = 0
+        self.kind_totals: Dict[str, int] = {}
+        self.update(values)
+
+    def _add_entry(self, entry: UTXOEntry, sign: int) -> None:
+        amount = int(entry.amount_satk) * sign
+        self.total_satk += amount
+        self.kind_totals[entry.kind] = self.kind_totals.get(entry.kind, 0) + amount
+        if self.kind_totals[entry.kind] == 0:
+            self.kind_totals.pop(entry.kind, None)
+
+    def __setitem__(self, key, value) -> None:
+        previous = self.get(key)
+        if previous is not None:
+            self._add_entry(previous, -1)
+        super().__setitem__(key, value)
+        self._add_entry(value, 1)
+
+    def __delitem__(self, key) -> None:
+        self._add_entry(self[key], -1)
+        super().__delitem__(key)
+
+    def pop(self, key, *default):
+        if key not in self:
+            if default:
+                return default[0]
+            raise KeyError(key)
+        value = self[key]
+        del self[key]
+        return value
+
+    def update(self, values=(), **kwargs) -> None:
+        source = dict(values, **kwargs)
+        for key, value in source.items():
+            self[key] = value
+
+    def clear(self) -> None:
+        super().clear()
+        self.total_satk = 0
+        self.kind_totals.clear()
+
 class UTXOSet:
     """
     Consensus UTXO Set tracking all spendable outputs across the BlockDAG.
     """
     def __init__(self):
         # Outpoint (txid, vout) -> UTXOEntry
-        self.utxos: Dict[Tuple[str, int], UTXOEntry] = {}
+        self._utxos = TrackedUTXODict()
         # Block hash -> list of (spent_outpoint, UTXOEntry) for rollbacks
         self._block_spent_undo: Dict[str, List[Tuple[Tuple[str, int], UTXOEntry]]] = {}
         # Block hash -> list of created outpoints for rollbacks
         self._block_created_undo: Dict[str, List[Tuple[str, int]]] = {}
         self._block_fees: Dict[str, int] = {}
         self._block_accepted_txids: Dict[str, List[str]] = {}
+
+    @property
+    def utxos(self) -> TrackedUTXODict:
+        return self._utxos
+
+    @utxos.setter
+    def utxos(self, values) -> None:
+        self._utxos = values if isinstance(values, TrackedUTXODict) else TrackedUTXODict(values)
 
     def get_utxo(self, txid: str, vout: int) -> Optional[UTXOEntry]:
         return self.utxos.get((txid, vout))
@@ -156,6 +216,65 @@ class UTXOSet:
 
         spent_undo: List[Tuple[Tuple[str, int], UTXOEntry]] = []
         created_undo: List[Tuple[str, int]] = []
+
+        # Empty mining blocks dominate the live chain. They only append the
+        # bounded protocol outputs below, so copying the complete accumulated
+        # UTXO map before every block is unnecessary. Validate all additions
+        # first and commit them together while preserving the same undo data.
+        if not transactions and pool_payout_sats == 0 and not vesting_outputs:
+            additions: Dict[Tuple[str, int], UTXOEntry] = {}
+
+            def stage(outpoint, entry):
+                if outpoint in self.utxos or outpoint in additions:
+                    return False
+                additions[outpoint] = entry
+                created_undo.append(outpoint)
+                return True
+
+            if reward_sats > 0:
+                cb_outpoint = (f"cb_{block_hash}", 0)
+                if not stage(cb_outpoint, UTXOEntry(
+                    amount_satk=reward_sats,
+                    P_onetime_hex=coinbase_output[1].hex(),
+                    R_ephem_hex=coinbase_output[0].hex(),
+                    block_height=block_height,
+                    is_coinbase=True,
+                    kind="miner",
+                )):
+                    return False, f"Duplicate coinbase outpoint: {cb_outpoint}"
+            if eco_output and eco_output[0] > 0:
+                eco_amount, eco_r, eco_p = eco_output
+                eco_outpoint = (f"eco_{block_hash}", 0)
+                if not stage(eco_outpoint, UTXOEntry(
+                    amount_satk=eco_amount,
+                    P_onetime_hex=eco_p.hex(),
+                    R_ephem_hex=eco_r.hex(),
+                    block_height=block_height,
+                    is_coinbase=True,
+                    kind="eco",
+                )):
+                    return False, f"Duplicate ecosystem outpoint: {eco_outpoint}"
+            if pool_deposit_sats < 0:
+                return False, "Jackpot pool amounts cannot be negative"
+            if pool_deposit_sats > 0:
+                pool_outpoint = (f"pool_{block_hash}", 0)
+                if not stage(pool_outpoint, UTXOEntry(
+                    amount_satk=pool_deposit_sats,
+                    P_onetime_hex="",
+                    R_ephem_hex="",
+                    block_height=block_height,
+                    is_coinbase=True,
+                    kind="jackpot_pool",
+                )):
+                    return False, f"Duplicate jackpot pool outpoint: {pool_outpoint}"
+
+            self.utxos.update(additions)
+            self._block_spent_undo[block_hash] = []
+            self._block_created_undo[block_hash] = created_undo
+            self._block_fees[block_hash] = 0
+            self._block_accepted_txids[block_hash] = []
+            return True, "Block applied successfully"
+
         overlay = dict(self.utxos)
         total_fees_sats = 0
         accepted_txids: List[str] = []
@@ -321,10 +440,10 @@ class UTXOSet:
         return list(self._block_accepted_txids.get(block_hash, []))
 
     def total_value_sats(self) -> int:
-        return sum(entry.amount_satk for entry in self.utxos.values())
+        return self.utxos.total_satk
 
     def value_by_kind_sats(self, kind: str) -> int:
-        return sum(entry.amount_satk for entry in self.utxos.values() if entry.kind == kind)
+        return self.utxos.kind_totals.get(kind, 0)
 
 if __name__ == "__main__":
     print("Self-testing UTXOSet...")

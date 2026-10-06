@@ -66,6 +66,7 @@ class DAGBlock:
         blue_score: int = 0,
         payload_hash: bytes = b"",
         chain_id: Optional[str] = None,
+        _known_hash: Optional[str] = None,
     ):
         default_network = load_network() if version is None or chain_id is None else None
         self.version = version if version is not None else default_network.block_version
@@ -95,8 +96,9 @@ class DAGBlock:
         self.combo_payout_sats: int = 0
         self.fees_sats: int = 0
         
-        # Calculate Block Hash with canonical serialization
-        self.hash = self.compute_hash()
+        # Durable replay may supply the already-validated hash for history
+        # covered by a state-root checkpoint. Live/network blocks never do.
+        self.hash = _known_hash if _known_hash is not None else self.compute_hash()
 
     def compute_hash(self) -> str:
         return calculate_block_pow(
@@ -230,7 +232,15 @@ class BlockDAG:
             parents,
             key=lambda parent: (self.blocks[parent].blue_work, parent),
         )
-        chain = [self.blocks[block_hash] for block_hash in self.get_selected_parent_chain(selected_parent)]
+        # DAA consumes only its bounded trailing window. Rebuilding the full
+        # selected-parent chain for every candidate made admission O(height)
+        # and caused measurable throughput decay during the 24-hour soak.
+        recent = []
+        current = selected_parent
+        while current != self.genesis_hash and len(recent) < self.network.daa_window_blocks:
+            recent.append(self.blocks[current])
+            current = self.blocks[current].selected_parent
+        chain = [self.blocks[self.genesis_hash], *reversed(recent)]
         return next_difficulty_bits(chain, self.network)
 
     def get_virtual_blue_order(self, tip_hash: str) -> List[str]:
@@ -261,6 +271,7 @@ class BlockDAG:
         if ancestor_hash == descendant_hash:
             self._cache_ancestor_result(cache_key, True)
             return True
+        ancestor_work = self.blocks[ancestor_hash].blue_work
         pending = list(self.blocks[descendant_hash].parents)
         visited: Set[str] = set()
         while pending:
@@ -271,6 +282,13 @@ class BlockDAG:
             if current in visited:
                 continue
             visited.add(current)
+            # Blue work is strictly increasing across every accepted parent
+            # edge. Once a branch is at or below the candidate ancestor's work
+            # and is not that exact block, none of its older parents can be the
+            # candidate. This turns the common sibling-tip negative query from
+            # a full-history walk into a bounded near-tip check.
+            if self.blocks[current].blue_work <= ancestor_work:
+                continue
             pending.extend(self.blocks[current].parents)
         self._cache_ancestor_result(cache_key, False)
         return False
@@ -356,7 +374,7 @@ class BlockDAG:
                 merge_reds.append(candidate)
         return merge_blues, merge_reds, anticone_sizes
 
-    def _validate_block(self, block: DAGBlock) -> None:
+    def _validate_block(self, block: DAGBlock, *, verify_header_hash: bool = True) -> None:
         """Validate every stateless/header rule without mutating consensus state."""
         if block.hash in self.blocks:
             raise ValueError("Block already exists")
@@ -386,7 +404,7 @@ class BlockDAG:
             raise ValueError("Block payload commitment must be 32 bytes")
         if block.payload_hash != transaction_commitment(block.transactions):
             raise ValueError("Block payload commitment does not match its transactions")
-        if block.compute_hash() != block.hash:
+        if verify_header_hash and block.compute_hash() != block.hash:
             raise ValueError("Block header was mutated after hashing")
 
         newest_parent_time = max(self.blocks[parent].timestamp for parent in block.parents)
@@ -583,7 +601,10 @@ class BlockDAG:
         """
         if block.hash in self.blocks:
             return False
-        self._validate_block(block)
+        # ChainStore.deserialize_block already recomputed and matched the
+        # canonical header hash. Avoid performing the expensive kHeavyHash a
+        # second time for the same durable record during startup.
+        self._validate_block(block, verify_header_hash=False)
         return self._commit_validated_block(block)
 
     def _commit_validated_block(self, block: DAGBlock) -> bool:
@@ -606,14 +627,20 @@ class BlockDAG:
         )
 
         if is_new_selected_tip:
-            old_selected_chain = list(self.virtual_selected_parent_chain)
-            if block.selected_parent == self.selected_tip:
-                # Normal one-block extension must remain O(1); rebuilding and
-                # comparing the full chain each second becomes quadratic.
-                new_selected_chain = old_selected_chain + [block.hash]
+            is_linear_extension = block.selected_parent == self.selected_tip
+            if is_linear_extension:
+                # Do not copy either lifetime chain here.  Python list
+                # concatenation is O(chain length), so doing it for every
+                # ordinary extension makes both live admission and startup
+                # replay quadratic.  Only the bounded new suffix is needed
+                # while applying issuance; append it after validation.
                 old_chain = self.virtual_blue_order
-                new_chain = old_chain + block.merge_set_blues[1:] + [block.hash]
+                chain_extension = block.merge_set_blues[1:] + [block.hash]
                 common_ancestor_idx = len(old_chain)
+                blocks_to_apply = enumerate(chain_extension, start=common_ancestor_idx)
+                # Newly merged blues are not members of the selected-parent
+                # chain.  Of this suffix, only the extending block is selected.
+                selected_chain_set = {block.hash}
             else:
                 new_selected_chain = self.get_selected_parent_chain(block.hash)
                 old_chain = self.virtual_blue_order
@@ -624,6 +651,10 @@ class BlockDAG:
                         common_ancestor_idx += 1
                     else:
                         break
+                blocks_to_apply = enumerate(
+                    new_chain[common_ancestor_idx:], start=common_ancestor_idx
+                )
+                selected_chain_set = set(new_selected_chain)
 
             # If reorg occurred, revert orphaned blocks in reverse order
             for orphaned_hash in reversed(old_chain[common_ancestor_idx:]):
@@ -644,9 +675,7 @@ class BlockDAG:
                 self.combo_machine.revert_to_height(common_ancestor_idx - 1)
 
             # Mint subsidies for blue blocks along the canonical virtual order.
-            selected_chain_set = set(new_selected_chain)
-            for idx in range(common_ancestor_idx, len(new_chain)):
-                b_hash = new_chain[idx]
+            for idx, b_hash in blocks_to_apply:
                 b = self.blocks[b_hash]
                 b_hash_bytes = bytes.fromhex(b.hash)
                 
@@ -720,8 +749,12 @@ class BlockDAG:
                     raise ValueError("Consensus jackpot balance does not match pool UTXOs")
 
             self.selected_tip = block.hash
-            self.virtual_selected_parent_chain = new_selected_chain
-            self.virtual_blue_order = new_chain
+            if is_linear_extension:
+                self.virtual_selected_parent_chain.append(block.hash)
+                self.virtual_blue_order.extend(chain_extension)
+            else:
+                self.virtual_selected_parent_chain = new_selected_chain
+                self.virtual_blue_order = new_chain
 
         else:
             # Unmerged or red block: no subsidy until a future blue merge.
@@ -840,10 +873,10 @@ class BlockDAG:
         encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
         return hashlib.sha256(encoded).hexdigest()
 
-    def get_dag_info(self) -> dict:
+    def get_dag_info(self, *, include_state_root: bool = True) -> dict:
         selected = self.blocks[self.selected_tip]
         next_bits = self.expected_bits(self.get_mining_parents())
-        return {
+        info = {
             "network": self.network.name,
             "chain_id": self.network.chain_id,
             "genesis_hash": self.genesis_hash,
@@ -862,8 +895,10 @@ class BlockDAG:
             "pool_balance_btck": self.pool_balance_sats / SATS_PER_COIN,
             "utxo_total_sats": self.utxo_set.total_value_sats(),
             "eco_fund_utxo_sats": self.utxo_set.value_by_kind_sats("eco"),
-            "state_root": self.state_root(),
         }
+        if include_state_root:
+            info["state_root"] = self.state_root()
+        return info
 
     def get_dashboard_info(self, recent_limit: int = 120) -> dict:
         """Return a lightweight, consensus-authoritative explorer snapshot.

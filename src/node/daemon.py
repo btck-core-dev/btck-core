@@ -61,9 +61,14 @@ class BTCKDaemon:
         self.mempool: Dict[str, Any] = {}
         self.chain_store: Optional[ChainStore] = None
         self.replayed_blocks = 0
+        self.latest_checkpoint_sequence = 0
+        self.latest_checkpoint_state_root = ""
         if persistent:
             self.chain_store = ChainStore(self.data_dir / "chain.sqlite3", self.network)
             self.replayed_blocks = self.chain_store.replay_into(self.dag)
+            checkpoint = self.chain_store.latest_checkpoint()
+            if checkpoint:
+                self.latest_checkpoint_sequence, self.latest_checkpoint_state_root = checkpoint
         self.p2p = P2PNetwork(
             dag=self.dag,
             p2p_host=self.p2p_host,
@@ -96,7 +101,18 @@ class BTCKDaemon:
         if not self.chain_store:
             return
         state_root = self.dag.state_root() if self.chain_store.should_checkpoint_next_block() else ""
-        self.chain_store.append_block(block, state_root)
+        sequence = self.chain_store.append_block(block, state_root)
+        if state_root:
+            self.latest_checkpoint_sequence = sequence
+            self.latest_checkpoint_state_root = state_root
+            if self.chain_store.should_snapshot(sequence):
+                try:
+                    self.chain_store.write_snapshot(self.dag, sequence, block.hash, state_root)
+                except Exception:
+                    # The accepted-block journal is already durable. A snapshot
+                    # is a recovery accelerator, never a reason to roll back a
+                    # consensus-valid block or diverge from peers.
+                    logger.exception("Failed to write consensus snapshot at sequence %d", sequence)
 
     def _mempool_overlay(self):
         overlay = copy.deepcopy(self.dag.utxo_set.utxos)
@@ -255,7 +271,13 @@ class BTCKDaemon:
         return hmac.compare_digest(supplied, expected)
 
     def get_node_info(self) -> dict:
-        dag_info = self.dag.get_dag_info()
+        # Full state-root construction serializes the lifetime DAG and can take
+        # minutes on a long chain.  Online status endpoints must stay bounded;
+        # expose the newest already-verified durable checkpoint instead.
+        dag_info = self.dag.get_dag_info(include_state_root=False)
+        dag_info["state_root"] = self.latest_checkpoint_state_root
+        dag_info["state_root_is_checkpoint"] = bool(self.latest_checkpoint_state_root)
+        dag_info["state_root_checkpoint_sequence"] = self.latest_checkpoint_sequence
         return {
             "version": "1.0.0-cypherpunk",
             "protocol_version": 1,
@@ -269,6 +291,12 @@ class BTCKDaemon:
                 "manifest": str(self.network.manifest_path),
                 "persistence_enabled": self.chain_store is not None,
                 "replayed_blocks": self.replayed_blocks,
+                "loaded_snapshot_sequence": (
+                    self.chain_store.loaded_snapshot_sequence if self.chain_store else 0
+                ),
+                "tail_replayed_blocks": (
+                    self.chain_store.tail_replayed_blocks if self.chain_store else 0
+                ),
             },
             "uptime_seconds": int(time.time() - self.start_time),
             "block_time_target": "1.0s",
@@ -336,7 +364,11 @@ class BTCKDaemon:
             return {"jsonrpc": "2.0", "result": {"initiated": True, "peer": peer_addr}, "id": req_id}
 
         elif method == "getBlockDagInfo":
-            return {"jsonrpc": "2.0", "result": self.dag.get_dag_info(), "id": req_id}
+            dag_info = self.dag.get_dag_info(include_state_root=False)
+            dag_info["state_root"] = self.latest_checkpoint_state_root
+            dag_info["state_root_is_checkpoint"] = bool(self.latest_checkpoint_state_root)
+            dag_info["state_root_checkpoint_sequence"] = self.latest_checkpoint_sequence
+            return {"jsonrpc": "2.0", "result": dag_info, "id": req_id}
 
         elif method == "getDashboardInfo":
             limit = int(params.get("recent_limit", 120)) if isinstance(params, dict) else 120

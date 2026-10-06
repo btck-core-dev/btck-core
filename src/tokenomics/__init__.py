@@ -1,0 +1,1 @@
+"""BTC-K tokenomics primitives."""

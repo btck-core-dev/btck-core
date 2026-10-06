@@ -48,6 +48,23 @@ def make_two_conflicting_transactions():
 
 
 class TestUTXOAtomicity(unittest.TestCase):
+    def test_empty_mining_block_updates_utxos_in_place(self):
+        utxos = UTXOSet()
+        mapping_id = id(utxos.utxos)
+        applied, error = utxos.apply_block(
+            block_hash="ab" * 32,
+            block_height=1,
+            coinbase_output=(bytes.fromhex("02" + "11" * 32), bytes.fromhex("03" + "22" * 32)),
+            reward_sats=100,
+            transactions=[],
+            eco_output=(20, bytes.fromhex("02" + "33" * 32), bytes.fromhex("03" + "44" * 32)),
+            pool_deposit_sats=30,
+        )
+        self.assertTrue(applied, error)
+        self.assertEqual(id(utxos.utxos), mapping_id)
+        self.assertEqual(utxos.total_value_sats(), 150)
+        self.assertEqual(utxos.value_by_kind_sats("jackpot_pool"), 30)
+
     def test_cross_transaction_double_spend_leaves_no_partial_state(self):
         utxos = UTXOSet()
         outpoint, entry, tx_a, tx_b = make_two_conflicting_transactions()

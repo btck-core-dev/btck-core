@@ -33,6 +33,8 @@ __pycache__/
 venv/
 env/
 .venv/
+build/
+dist/
 
 # OS
 .DS_Store
@@ -41,4 +43,3 @@ Thumbs.db
 # Contracts artifacts
 contracts/node_modules/
 contracts/build/
-

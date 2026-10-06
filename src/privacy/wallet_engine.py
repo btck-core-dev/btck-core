@@ -24,6 +24,7 @@ from privacy.stealth_address import (
     sha256
 )
 from tokenomics.emission_schedule import SATK_PER_COIN
+from privacy.wallet_crypto import WALLET_FORMAT, decrypt_wallet_payload, encrypt_wallet_payload
 
 def _tagged_hash(tag: str, payload: bytes) -> bytes:
     tag_hash = hashlib.sha256(tag.encode("ascii")).digest()
@@ -219,9 +220,14 @@ class StealthWallet:
         return cls(keypair=kp, name=name)
 
     @classmethod
-    def load_from_json(cls, filepath: str) -> "StealthWallet":
+    def load_from_json(cls, filepath: str, password: Optional[str] = None) -> "StealthWallet":
         with open(filepath, "r", encoding="utf-8") as f:
             data = json.load(f)
+        if data.get("format") == WALLET_FORMAT:
+            if password is None:
+                raise ValueError("Encrypted wallet requires a password")
+            private, public = decrypt_wallet_payload(data, password)
+            data = {**public, **private}
         if data.get("spend_priv_hex") and data.get("view_priv_hex"):
             spend = str(data["spend_priv_hex"])
             view = str(data["view_priv_hex"])
@@ -237,6 +243,14 @@ class StealthWallet:
             if expected_address != wallet.address and expected_address != wallet.keypair.get_legacy_hex_address():
                 raise ValueError("Wallet address does not match its private keys")
         return wallet
+
+    def export_encrypted(self, password: str) -> dict:
+        public = self.export_to_dict(include_private=False)
+        private = {
+            "spend_priv_hex": f"{self.keypair.spend_priv:064x}",
+            "view_priv_hex": f"{self.keypair.view_priv:064x}",
+        }
+        return encrypt_wallet_payload(private, public, password)
 
     def export_to_dict(self, include_private: bool = False) -> dict:
         d = {
