@@ -20,10 +20,11 @@ VERSION = "3.2.0-rc2"
 
 NODE_PREFIXES = (
     "src/config/", "src/consensus/", "src/node/", "src/p2p/", "src/privacy/", "src/tokenomics/",
-    "params/",
+    "src/stratum/", "web/", "params/",
 )
 NODE_FILES = {
     "Dockerfile", "README.md", "requirements.txt", "docker-compose.yml", "bin/btck-cli",
+    "src/web_explorer_server.py",
     "deploy/btckd.service", "deploy/install_seed_node.sh", "deploy/verify_chain_replay.py",
     "scripts/backup_genesis_state.sh", "scripts/mainnet_preflight.py",
     "scripts/mainnet_genesis_rehearsal.py", "scripts/mine_mainnet_genesis.py", "scripts/start_node.sh",
@@ -93,18 +94,27 @@ def main() -> None:
     output_dir = args.output_dir.resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
     files = tracked_files()
+    node_files = select(files, NODE_FILES, NODE_PREFIXES)
+    pool_files = select(files, POOL_FILES, POOL_PREFIXES)
+    preflight_runtime = {
+        "scripts/mainnet_preflight.py", "src/web_explorer_server.py",
+        "src/stratum/stratum_server.py", "src/node/daemon.py", "web/index.html",
+    }
+    missing = sorted(preflight_runtime - set(node_files))
+    if missing:
+        raise SystemExit("node bundle cannot run MAINNET preflight; missing: " + ", ".join(missing))
     node_name = f"btck-node-{VERSION}"
     pool_name = f"btck-pool-stack-{VERSION}"
     node_archive = output_dir / f"{node_name}.tar.gz"
     pool_archive = output_dir / f"{pool_name}.tar.gz"
-    build_archive(node_archive, node_name, select(files, NODE_FILES, NODE_PREFIXES), """# BTC-K node pre-genesis candidate
+    build_archive(node_archive, node_name, node_files, """# BTC-K node pre-genesis candidate
 
 This is a source release for Python 3.10+ or Docker Compose. It is deliberately
 unable to start formal MAINNET while the checked-in manifest remains locked.
 Run `python3 scripts/mainnet_preflight.py`, create a 32+ character RPC token,
 then review `docker compose config` before any start. Do not expose RPC publicly.
 """)
-    build_archive(pool_archive, pool_name, select(files, POOL_FILES, POOL_PREFIXES), """# BTC-K pool/explorer pre-genesis candidate
+    build_archive(pool_archive, pool_name, pool_files, """# BTC-K pool/explorer pre-genesis candidate
 
 This source bundle includes the node dependency, Stratum, Explorer and the
 opt-in TLS edge. Copy `deploy/public-edge/.env.public.example` outside the
