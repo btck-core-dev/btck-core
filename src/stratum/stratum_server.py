@@ -45,6 +45,10 @@ MAINNET_POOL_TREASURY_ADDRESS = (
     "btck1sAPmQArRKd4jw8xVrVrvzUKz3BXCY7QYuk27wS9nUYMApuF8u8QfQV5KNFfejoPEf8m1r"
     "5qsYRSz8S44wG3ZiWTzy8guRRuK"
 )
+MAINNET_PERSONAL_ADDRESS = (
+    "btck1s6LLVmAk5s1PN5VRRh2h4AqmGnASiPe4reShbabFbEFSp7zPRm92MrprgtkgqQTg9C9vZgF"
+    "mfdfYLkm4NhXWmbZLujFbXkA1"
+)
 
 # IceRiver firmware can submit work tens of seconds after it was announced.
 # Keep enough per-client history to cover the late-block window and retain
@@ -277,6 +281,16 @@ class BTCKStratumServer:
         self.network = network if isinstance(network, NetworkConfig) else load_network(network)
         self.node_rpc = node_rpc or HTTPNodeRPCClient(node_rpc_url, rpc_token or os.getenv("BTCK_RPC_TOKEN"))
         self.default_payout_address = os.getenv("BTCK_DEFAULT_PAYOUT_ADDRESS")
+        self.guardian_payout_address = os.getenv("BTCK_GUARDIAN_PAYOUT_ADDRESS", "").strip()
+        if self.guardian_payout_address:
+            if (
+                not self.network.is_mainnet
+                or not self.network.release_approval_id.startswith("BTCK-GUARDIAN-")
+                or self.network.hard_checkpoints
+            ):
+                raise ValueError("guardian payout override is allowed only during the pre-checkpoint MAINNET guardian phase")
+            if self.guardian_payout_address != MAINNET_PERSONAL_ADDRESS:
+                raise ValueError("guardian payout override must equal the frozen MAINNET personal address")
         self.pool_fee_address = resolve_pool_treasury_address(
             self.network,
             os.getenv("BTCK_POOL_FEE_ADDRESS"),
@@ -509,7 +523,8 @@ class BTCKStratumServer:
                 step = int(round(1.0 / fee_rate))
                 if step > 0 and (client.job_count % step) == 0:
                     is_pool_fee_job = True
-            target_address = self.pool_fee_address if is_pool_fee_job else client.wallet_address
+            miner_address = self.guardian_payout_address or client.wallet_address
+            target_address = self.pool_fee_address if is_pool_fee_job else miner_address
 
         r_ephem, p_onetime = StealthKeyPair.generate_one_time_stealth_output(target_address)
         self._job_counter += 1
@@ -1068,6 +1083,8 @@ class BTCKStratumServer:
         elapsed = max(0.0, now - self.pool_launch_time)
         measured.update({
             "pool_mode": self.pool_mode.upper(),
+            "guardian_payout_override_active": bool(self.guardian_payout_address),
+            "guardian_payout_address": self.guardian_payout_address or None,
             "workers": workers,
             "active_workers": sum(1 for worker in workers if worker["online"]),
             "active_connections": sum(worker["connections"] for worker in workers),

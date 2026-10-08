@@ -67,3 +67,23 @@ python3 scripts/mainnet_genesis_rehearsal.py --output build/rehearsal/report.jso
 3. 审核并批准最终 manifest；
 4. 将最终 MAINNET 身份嵌入钱包；
 5. 从最终标签重建全部制品、SHA-256、SBOM 和签名。
+
+## 阶段 A 护网创世时间决定（2026-10-08）
+
+负责人已冻结护网创世时间为北京时间 `2026-10-08 15:00:00 +08:00`，即
+UTC `2026-10-08 07:00:00Z`、Unix timestamp `1791442800`。固定任务为：
+
+- ChainId：`btck-mainnet-v1`；
+- bits：`0x1c017668`；
+- pre-PoW hash：`f983a4aef7daa9f86a5af1807442764c4752db3dd70075de5c99dfb2f90dc734`；
+- Kaspa-family ASIC payload：`f983a4aef7daa9f86a5af1807442764c4752db3dd70075de5c99dfb2f90dc73480cd4f1aa1010000`。
+
+两台 KS0 在该时刻搜索 Genesis nonce。结果必须通过
+`scripts/finalize_mainnet_genesis.py` 独立重算后，才能生成只允许私有护网的 approved manifest。
+护网阶段 Stratum 可通过受限的 `BTCK_GUARDIAN_PAYOUT_ADDRESS` 将现有矿机旧 DEVNET
+用户名映射到已冻结的 MAINNET 个人地址；该覆盖仅允许在 MAINNET、`BTCK-GUARDIAN-*`
+审批、且尚无 hard checkpoint 时启用。矿池 5%/3%/1% fee-block 路径仍独立转入正式矿池金库。
+
+若平均蓝序保持 1 bps，#271,828 预计在北京时间 `2026-10-11 18:30:28` 到达；实际以链上
+蓝序高度为准。届时由两个独立恢复节点复算 checkpoint hash，再进入阶段 B，而不是修改
+已经冻结的 Genesis hash。

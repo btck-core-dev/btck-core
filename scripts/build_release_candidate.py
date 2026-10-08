@@ -27,7 +27,8 @@ NODE_FILES = {
     "src/web_explorer_server.py",
     "deploy/btckd.service", "deploy/install_seed_node.sh", "deploy/verify_chain_replay.py",
     "scripts/backup_genesis_state.sh", "scripts/mainnet_preflight.py",
-    "scripts/mainnet_genesis_rehearsal.py", "scripts/mine_mainnet_genesis.py", "scripts/start_node.sh",
+    "scripts/finalize_mainnet_genesis.py", "scripts/mainnet_genesis_rehearsal.py",
+    "scripts/mine_mainnet_genesis.py", "scripts/start_node.sh",
 }
 POOL_PREFIXES = NODE_PREFIXES + ("src/stratum/", "web/", "deploy/public-edge/")
 POOL_FILES = NODE_FILES | {
