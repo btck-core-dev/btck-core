@@ -1,3 +1,4 @@
+import asyncio
 import json
 import os
 import sys
@@ -78,6 +79,21 @@ class TestStratumTargetVerification(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.writer.messages[-1]["error"][0], 23)
         await self.server.process_message(self.client, {"id": 4, "method": "mining.submit", "params": ["worker", job.job_id, f"{nonce:x}"]})
         self.assertEqual(self.writer.messages[-1]["error"][0], 22)
+        counters = self.server.get_status_payload()["share_counters"]
+        self.assertEqual(counters["rejected"], 2)
+        self.assertEqual(counters["rejected_by_reason"]["low_difficulty"], 1)
+        self.assertEqual(counters["rejected_by_reason"]["duplicate"], 1)
+
+    def test_status_payload_never_queries_accounting_database_inline(self):
+        class ExplodingAccounting:
+            def get_dashboard_stats(self):
+                raise AssertionError("status request touched SQLite")
+
+        self.server.pplns_engine = ExplodingAccounting()
+        self.server._measured_status_cache = self.server._empty_measured_status()
+        payload = self.server.get_status_payload()
+        self.assertEqual(payload["accepted_blocks"], 0)
+        self.assertIn("share_counters", payload)
 
     async def test_client_cannot_lower_difficulty(self):
         original = self.server.share_target
@@ -177,6 +193,39 @@ class TestStratumTargetVerification(unittest.IsolatedAsyncioTestCase):
             {"id": 30, "method": "mining.submit", "params": ["worker", job.job_id, "1"]},
         )
         self.assertTrue(self._response(30)["result"])
+
+    async def test_vardiff_preserves_candidate_rate_with_two_miners(self):
+        self.client.is_kaspa = True
+        self.client.share_diff = 128.0
+        self.client.min_diff = 128.0
+        self.client.max_diff = 65536.0
+        self.client.vardiff_window_start = time.monotonic() - 16.0
+        self.client.vardiff_shares = 11  # about 41 shares/minute
+        second = StratumClient(None, MockWriter(), "client-2")
+        second.authorized = True
+        second.is_kaspa = True
+        self.server.clients[second.client_id] = second
+
+        await self.server._check_client_vardiff(self.client)
+
+        self.assertEqual(self.client.share_diff, 128.0)
+
+    async def test_vardiff_raises_when_pool_has_enough_miners(self):
+        self.client.is_kaspa = True
+        self.client.share_diff = 128.0
+        self.client.min_diff = 128.0
+        self.client.max_diff = 65536.0
+        self.client.vardiff_window_start = time.monotonic() - 16.0
+        self.client.vardiff_shares = 13
+        for index in range(2, 9):
+            peer = StratumClient(None, MockWriter(), f"client-{index}")
+            peer.authorized = True
+            peer.is_kaspa = True
+            self.server.clients[peer.client_id] = peer
+
+        await self.server._check_client_vardiff(self.client)
+
+        self.assertEqual(self.client.share_diff, 512.0)
 
     async def test_recent_late_block_candidate_is_credited_without_dag_submission(self):
         self.client.is_kaspa = True
@@ -292,6 +341,111 @@ class TestStratumTargetVerification(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(self.server.get_pool_fee_rate(), 0.03)
         with patch("stratum.stratum_server.time.time", return_value=launch + 30 * 86400):
             self.assertEqual(self.server.get_pool_fee_rate(), 0.01)
+
+    async def test_template_refresh_uses_fixed_deadlines(self):
+        self.server.template_refresh_seconds = 0.04
+        calls = []
+
+        async def slow_broadcast(*, force=False):
+            calls.append(time.monotonic())
+            await asyncio.sleep(0.025)
+            return True
+
+        self.server._broadcast_template = slow_broadcast
+        self.server.running = True
+        task = asyncio.create_task(self.server._refresh_loop())
+        try:
+            await asyncio.sleep(0.19)
+        finally:
+            self.server.running = False
+            task.cancel()
+            with self.assertRaises(asyncio.CancelledError):
+                await task
+
+        self.assertGreaterEqual(len(calls), 4)
+        intervals = [right - left for left, right in zip(calls, calls[1:])]
+        self.assertTrue(all(interval < 0.06 for interval in intervals), intervals)
+
+    async def test_template_refresh_retries_unchanged_parent_without_full_interval(self):
+        self.server.template_refresh_seconds = 0.08
+        self.server.template_retry_seconds = 0.01
+        calls = []
+
+        async def unchanged_then_new(*, force=False):
+            calls.append(time.monotonic())
+            return len(calls) >= 2
+
+        self.server._broadcast_template = unchanged_then_new
+        self.server.running = True
+        task = asyncio.create_task(self.server._refresh_loop())
+        try:
+            await asyncio.sleep(0.13)
+        finally:
+            self.server.running = False
+            task.cancel()
+            with self.assertRaises(asyncio.CancelledError):
+                await task
+
+        self.assertGreaterEqual(len(calls), 2)
+        self.assertLess(calls[1] - calls[0], self.server.template_refresh_seconds / 2)
+
+    async def test_template_refresh_holds_underfilled_asic_batch_until_quota(self):
+        self.server.template_refresh_seconds = 0.04
+        self.server.template_retry_seconds = 0.01
+        self.server.active_template_key = ("active",)
+        self.server.active_template_started_at = time.monotonic()
+        self.server.active_template_submission_limit = 8
+        self.server.template_submission_counts[("active",)] = 3
+        calls = []
+
+        async def broadcast(*, force=False):
+            calls.append(time.monotonic())
+            return True
+
+        self.server._broadcast_template = broadcast
+        self.server.running = True
+        task = asyncio.create_task(self.server._refresh_loop())
+        try:
+            await asyncio.sleep(0.055)
+            self.assertEqual(calls, [])
+            self.server.template_submission_counts[("active",)] = 8
+            await asyncio.sleep(0.025)
+        finally:
+            self.server.running = False
+            task.cancel()
+            with self.assertRaises(asyncio.CancelledError):
+                await task
+
+        self.assertGreaterEqual(len(calls), 1)
+
+    async def test_one_block_merge_batch_rotates_as_soon_as_quota_is_filled(self):
+        self.server.template_refresh_seconds = 0.04
+        self.server.template_retry_seconds = 0.01
+        calls = []
+
+        async def broadcast(*, force=False):
+            calls.append(time.monotonic())
+            if len(calls) == 1:
+                self.server.active_template_key = ("merge",)
+                self.server.active_template_started_at = time.monotonic()
+                self.server.active_template_submission_limit = 1
+            return True
+
+        self.server._broadcast_template = broadcast
+        self.server.running = True
+        task = asyncio.create_task(self.server._refresh_loop())
+        try:
+            await asyncio.sleep(0.052)
+            self.server.template_submission_counts[("merge",)] = 1
+            await asyncio.sleep(0.025)
+        finally:
+            self.server.running = False
+            task.cancel()
+            with self.assertRaises(asyncio.CancelledError):
+                await task
+
+        self.assertGreaterEqual(len(calls), 2)
+        self.assertLess(calls[1] - calls[0], self.server.template_refresh_seconds)
 
 
 if __name__ == "__main__":

@@ -1,6 +1,7 @@
 """Security regression tests for devnet/testnet/mainnet isolation."""
 
 import os
+import json
 import sys
 import tempfile
 import unittest
@@ -14,6 +15,7 @@ from config.network import DisabledFeatureError, MainnetReleaseError, load_netwo
 from node.blockdag import BlockDAG
 from node.daemon import BTCKDaemon
 from p2p.p2p_network import P2PNetwork, PeerConnection
+from tests.pow_helpers import mine_block
 
 
 class _MemoryWriter:
@@ -63,6 +65,49 @@ class TestNetworkIsolation(unittest.TestCase):
     def test_mainnet_is_locked_without_approved_manifest(self):
         with self.assertRaises(MainnetReleaseError):
             load_network("mainnet")
+
+    def test_locked_mainnet_candidate_uses_frozen_public_wallet_outputs(self):
+        project = Path(__file__).resolve().parents[1]
+        manifest = json.loads(
+            (project / "params/networks/mainnet.json").read_text(encoding="utf-8")
+        )
+        wallets = json.loads(
+            (project / "params/mainnet_wallets_public.json").read_text(encoding="utf-8")
+        )
+        self.assertFalse(manifest["release"]["approved"])
+        self.assertEqual(manifest["chain_id"], "btck-mainnet-v1")
+        self.assertEqual(manifest["consensus"]["pow_limit_bits"], "0x1c176680")
+        self.assertEqual(manifest["consensus"]["daa"]["initial_bits"], "0x1c017668")
+        self.assertEqual(manifest["genesis"]["version"], 2)
+        self.assertEqual(manifest["genesis"]["bits"], 0x1C017668)
+        self.assertEqual(
+            manifest["genesis"]["headline"],
+            "2026-10-06 Euronews: Belgian physicist wins Nobel for turning Antarctic ice into a telescope",
+        )
+        self.assertEqual(manifest["consensus"]["eco_fund_output"], wallets["eco_fund_output"])
+        self.assertEqual(manifest["genesis"]["coinbase_output"], wallets["genesis_coinbase_output"])
+
+    def test_manifest_hard_checkpoint_is_enforced_on_virtual_blue_order(self):
+        source = load_network("simnet").manifest_path
+        raw = json.loads(source.read_text(encoding="utf-8"))
+        raw["consensus"]["hard_checkpoints"] = {"1": "00" * 32}
+        with tempfile.TemporaryDirectory() as root:
+            manifest = Path(root) / "simnet.json"
+            manifest.write_text(json.dumps(raw), encoding="utf-8")
+            config = load_network("simnet", manifest_path=manifest)
+            dag = BlockDAG(network=config)
+            block = mine_block(
+                dag,
+                parents=[dag.genesis_hash],
+                timestamp=config.genesis.timestamp + 1.0,
+                nonce=1,
+                coinbase_output=(
+                    bytes.fromhex("02" + "11" * 32),
+                    bytes.fromhex("03" + "22" * 32),
+                ),
+            )
+            with self.assertRaisesRegex(ValueError, "Hard checkpoint mismatch"):
+                dag.add_block(block)
 
     def test_safe_stratum_enabled_but_unsafe_prototypes_disabled(self):
         self.assertEqual(require_feature("stratum", "devnet").name, "devnet")

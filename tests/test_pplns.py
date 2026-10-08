@@ -162,6 +162,68 @@ class TestPPLNSEngine(unittest.TestCase):
         self.assertEqual(second["error"], "already_settled")
         self.assertEqual(self.engine.get_miner(wallet).unpaid_satk, balance)
 
+    def test_combo_anti_hopping_uses_durable_share_slots(self):
+        start = 1_700_000_000.0
+        honest = "btck1s_combo_honest"
+        hopper = "btck1s_combo_hopper"
+        for slot in range(72):
+            if slot not in (15, 45):
+                self.engine.record_share(
+                    honest, "ks0-a", 128.0, timestamp=start + slot * 600 + 1
+                )
+        for slot in (70, 71):
+            self.engine.record_share(
+                hopper, "rental", 128.0, timestamp=start + slot * 600 + 1
+            )
+
+        result = self.engine.evaluate_combo_anti_hopping(
+            epoch_id=1,
+            stage_id=1,
+            epoch_start_time=start,
+            epoch_end_time=start + 43_200,
+        )
+        decisions = {
+            (item["wallet_address"], item["worker_name"]): item
+            for item in result["workers"]
+        }
+        self.assertTrue(decisions[(honest, "ks0-a")]["qualified"])
+        self.assertFalse(decisions[(hopper, "rental")]["qualified"])
+
+        winner_hash = "11" * 32
+        beacon_hash = "22" * 32
+        self.engine.process_block(
+            block_hash=winner_hash,
+            height=43_200,
+            reward_satk=5 * SATK_PER_COIN,
+            pool_fee_rate=0.0,
+            finder_wallet=honest,
+            finder_worker="ks0-a",
+            block_timestamp=start + 43_199,
+        )
+        resolution = {
+            "epoch_id": 1,
+            "stage_id": 1,
+            "winner_block_hash": winner_hash,
+            "beacon_hash": beacon_hash,
+            "jackpot_amount_satk": 1_000_000,
+            "tranches": [
+                {"tranche_index": 0, "amount_satk": 500_000, "unlock_block_height": 43_300},
+                {"tranche_index": 1, "amount_satk": 500_000, "unlock_block_height": 216_100},
+            ],
+            "epoch_start_timestamp": start,
+            "draw_timestamp": start + 43_200,
+        }
+        first = self.engine.reconcile_combo_qualifications([resolution])
+        second = self.engine.reconcile_combo_qualifications([resolution])
+        self.assertEqual(len(first), 1)
+        self.assertTrue(first[0]["qualified"])
+        self.assertEqual(second, [])
+        before = self.engine.get_miner(honest).unpaid_satk
+        released = self.engine.release_mature_combo_entitlements(43_300)
+        self.assertEqual(len(released), 1)
+        self.assertEqual(self.engine.get_miner(honest).unpaid_satk, before + 500_000)
+        self.assertEqual(self.engine.release_mature_combo_entitlements(43_300), [])
+
 
 class MockNodeRPC:
     def __init__(self, utxos):

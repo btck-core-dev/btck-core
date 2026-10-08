@@ -21,6 +21,18 @@ class TestAcceptanceSummary(unittest.TestCase):
                 "low_difficulty_23": 0,
                 "rate_limit_25": 0,
             },
+            "stratum_share_counters": {
+                "epoch": "test-epoch",
+                "accepted": shares,
+                "rejected": 0,
+                "rejected_by_reason": {
+                    "stale": 0,
+                    "invalid": 0,
+                    "duplicate": 0,
+                    "rate_limit": 0,
+                    "low_difficulty": 0,
+                },
+            },
         }
         dashboard = {
             "total_blocks": height,
@@ -122,6 +134,28 @@ class TestAcceptanceSummary(unittest.TestCase):
             self.assertTrue(report["acceptance"]["stability_pass"])
             self.assertFalse(report["acceptance"]["performance_pass"])
             self.assertEqual(report["acceptance"]["verdict"], "CONDITIONAL_PASS")
+
+    def test_counter_epoch_change_fails_stability_closed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            first = "20261003T080000Z"
+            last = "20261004T080000Z"
+            self.write_snapshot(root, first, 100, 110, 20)
+            self.write_snapshot(root, last, 86_500, 90_000, 220)
+            last_summary_path = root / last / "summary.json"
+            last_summary = json.loads(last_summary_path.read_text(encoding="utf-8"))
+            last_summary["stratum_share_counters"]["epoch"] = "restarted-process"
+            last_summary_path.write_text(json.dumps(last_summary), encoding="utf-8")
+            os.symlink(first, root / "acceptance-start")
+            os.symlink(last, root / "latest")
+
+            script = Path(__file__).resolve().parents[1] / "deploy" / "summarize_v3_acceptance.py"
+            report = json.loads(subprocess.check_output(
+                [sys.executable, str(script), "--observation-dir", str(root)], text=True
+            ))
+            self.assertFalse(report["pool"]["rejection_counter_valid"])
+            self.assertFalse(report["acceptance"]["stability_pass"])
+            self.assertEqual(report["acceptance"]["verdict"], "FAIL")
 
 
 if __name__ == "__main__":

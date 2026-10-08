@@ -22,7 +22,8 @@
     "eco_fund_output": [
       "03c395438119021d49471729edef452582963699a3cff50b8761de539cf3de0f38",
       "0225d7284b0c28657971333c47e5fbb95a8ed9d03320ac8cc9c20816b0ee419159"
-    ]
+    ],
+    "hard_checkpoints": {}
   },
   "genesis": {
     "version": 2,

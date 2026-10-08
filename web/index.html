@@ -847,8 +847,7 @@
         <a href="#section-miners" class="nav-btn">Workers</a>
         <a href="#section-blocks" class="nav-btn">Blocks</a>
         <a href="#section-setup" class="nav-btn">Setup</a>
-        <a href="https://moltbook.com/u/btck-network" target="_blank" class="nav-btn" style="color: #bc8cff;">🤖 Moltbook</a>
-        <a href="/wallet" target="_blank" class="nav-btn wallet-btn">🛡️ Web Wallet</a>
+        <span class="nav-btn wallet-btn" title="The browser wallet is excluded from the public beta">Wallet: desktop/CLI beta</span>
       </div>
     </div>
   </header>
@@ -1007,7 +1006,7 @@
 
       <div class="lookup-form">
         <div class="lookup-input-wrap">
-          <input type="text" id="miner-lookup-input" class="lookup-input" placeholder="Paste your BTC-K stealth address or worker name (e.g. ks001, miner_154, btck1s02095f...)" onkeyup="handleLookupKeyup(event)">
+          <input type="text" id="miner-lookup-input" class="lookup-input" placeholder="Paste your BTC-K stealth address or worker name (e.g. rig01 or btck1s...)" onkeyup="handleLookupKeyup(event)">
         </div>
         <button class="lookup-btn" onclick="executeMinerLookup()">Lookup Stats</button>
       </div>
@@ -1023,7 +1022,7 @@
           <div style="background: var(--bg-surface); padding: 14px; border-radius: 8px; border: 1px solid var(--border-subtle);">
             <div style="font-size: 11px; color: var(--text-muted); text-transform: uppercase;">Accepted Shares</div>
             <div style="font-size: 22px; font-weight: 800; color: var(--emerald-primary);" id="mp-shares">0</div>
-            <div style="font-size: 11px; color: var(--text-muted);">Efficiency: 100.0% (0 rejected)</div>
+            <div style="font-size: 11px; color: var(--text-muted);">Accepted shares reported by the live pool ledger</div>
           </div>
           <div style="background: var(--bg-surface); padding: 14px; border-radius: 8px; border: 1px solid var(--border-subtle);">
             <div style="font-size: 11px; color: var(--text-muted); text-transform: uppercase;">Blocks Found</div>
@@ -1093,6 +1092,14 @@
           <span style="font-size: 11px; color: var(--emerald-primary); font-family: var(--font-mono);">● 1.0s GhostDAG Feed</span>
         </div>
 
+        <div class="lookup-form" style="margin: 0 0 12px;">
+          <div class="lookup-input-wrap">
+            <input type="text" id="block-search-input" class="lookup-input" placeholder="Search a recent block by height or hash" onkeyup="handleBlockSearchKeyup(event)">
+          </div>
+          <button class="lookup-btn" onclick="searchBlock()">Search Block</button>
+        </div>
+        <div id="block-search-result" style="display:none;margin:0 0 12px;padding:10px;border:1px solid var(--border-subtle);border-radius:6px;color:var(--text-muted);"></div>
+
         <div style="overflow-x: auto;">
           <table class="pool-table">
             <thead>
@@ -1124,17 +1131,16 @@
       <div class="setup-tabs">
         <button class="setup-tab-btn active" onclick="switchSetupTab('tab-iceriver', this)">IceRiver (KS0/KS1/KS2/KS3/KS5)</button>
         <button class="setup-tab-btn" onclick="switchSetupTab('tab-antminer', this)">Antminer (KS3/KS5)</button>
-        <button class="setup-tab-btn" onclick="switchSetupTab('tab-gpu', this)">GPU Symbiotic Worker</button>
       </div>
 
       <div id="tab-iceriver" class="setup-tab-content">
         <div class="config-box">
           <div class="comment"># In your IceRiver Miner WebUI (http://&lt;MINER_IP&gt; -> Mining Settings):</div>
-          <div><span class="key">Pool 1 Address:</span>  <span class="val">stratum+tcp://pool.btck.network:3333</span>  <button class="copy-btn" onclick="copyText('stratum+tcp://pool.btck.network:3333')" style="margin-left: 8px;">Copy</button></div>
+          <div><span class="key">Pool 1 Address:</span>  <span class="val">stratum+tcp://185.130.45.240:3333</span>  <button class="copy-btn" onclick="copyText('stratum+tcp://185.130.45.240:3333')" style="margin-left: 8px;">Copy</button></div>
           <div><span class="key">Pool 1 Worker:</span>   <span class="val">&lt;YOUR_STEALTH_ADDRESS&gt;.&lt;WORKER_NAME&gt;</span></div>
           <div><span class="key">Pool 1 Password:</span> <span class="val">x</span></div>
           <div class="comment" style="margin-top: 8px;"># Example Worker Username:</div>
-          <div>btck1s022fd5c7684238a4ee4505c01cef3353279d5330a5901ae135ebbe47a0e47c71a403c6248a22724350e3bfabd6a6280bf50ada1977f0e4f240783d3a03caae334b2d3f0cff62.ks001</div>
+          <div>&lt;YOUR_STEALTH_ADDRESS&gt;.rig01</div>
           <div class="comment" style="margin-top: 8px;"># Thermal Best Practice for KS0 Ultra: Lock Fan to 100% full speed (5,900 RPM) to prevent thermal throttling.</div>
         </div>
       </div>
@@ -1142,20 +1148,12 @@
       <div id="tab-antminer" class="setup-tab-content" style="display: none;">
         <div class="config-box">
           <div class="comment"># In Antminer Dashboard (KS3 / KS5 / KS5 Pro):</div>
-          <div><span class="key">URL:</span>      <span class="val">stratum+tcp://pool.btck.network:3333</span></div>
+          <div><span class="key">URL:</span>      <span class="val">stratum+tcp://185.130.45.240:3333</span></div>
           <div><span class="key">Worker:</span>   <span class="val">&lt;YOUR_STEALTH_ADDRESS&gt;.antminer01</span></div>
           <div><span class="key">Password:</span> <span class="val">x</span></div>
         </div>
       </div>
 
-      <div id="tab-gpu" class="setup-tab-content" style="display: none;">
-        <div class="config-box">
-          <div class="comment"># GPU Co-Mining Daemon (NVIDIA RTX 30/40, A100, H100):</div>
-          <div>curl -sSL https://get.btck.network/worker.sh | bash -s -- \</div>
-          <div>&nbsp;&nbsp;--wallet &lt;YOUR_STEALTH_ADDRESS&gt; \</div>
-          <div>&nbsp;&nbsp;--pool stratum+tcp://pool.btck.network:3333</div>
-        </div>
-      </div>
     </section>
 
     <!-- Footer -->
@@ -1164,12 +1162,7 @@
         <strong>Bitcoin K (BTCK) Official Mining Pool</strong> — Pure Proof-of-Work • Zero Premine • Deterministic 21M Scarcity
       </div>
       <div class="footer-links">
-        <a href="https://github.com/btck-org/btck-core" target="_blank">GitHub</a>
-        <a href="https://moltbook.com/u/btck-network" target="_blank">Moltbook Hub</a>
-        <a href="/wallet" target="_blank">Web Wallet</a>
-        <a href="https://discord.gg/btck-network" target="_blank">Discord</a>
-        <a href="https://t.me/btck_official" target="_blank">Telegram</a>
-        <a href="https://twitter.com/BitcoinK_Net" target="_blank">X (Twitter)</a>
+        <span>Source, checksums and official channels will be linked at public beta release.</span>
       </div>
     </footer>
 
@@ -1216,6 +1209,38 @@
       tt.innerText = msg;
       t.classList.add("show");
       setTimeout(() => t.classList.remove("show"), 2500);
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? "").replace(/[&<>'"]/g, ch => ({
+        "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;"
+      })[ch]);
+    }
+
+    function handleBlockSearchKeyup(e) {
+      if (e.key === "Enter") searchBlock();
+    }
+
+    async function searchBlock() {
+      const input = document.getElementById("block-search-input");
+      const result = document.getElementById("block-search-result");
+      const query = input.value.trim();
+      if (!query) return;
+      result.style.display = "block";
+      result.innerText = "Searching the node's recent block window…";
+      try {
+        const response = await fetch(`/api/search?q=${encodeURIComponent(query)}`);
+        const payload = await response.json();
+        if (!response.ok || !payload.found) {
+          result.innerText = payload.message || "Block not found in the recent node window.";
+          return;
+        }
+        const block = payload.block;
+        const when = block.timestamp ? new Date(block.timestamp * 1000).toISOString() : "unknown";
+        result.innerText = `Height #${block.height} • ${block.full_hash} • ${when}`;
+      } catch (error) {
+        result.innerText = "Search is temporarily unavailable.";
+      }
     }
 
     function switchSetupTab(tabId, btn) {
@@ -1329,7 +1354,7 @@
               <span style="color: #fff; font-weight: 600;">${isOnline ? "Online" : "Offline"}</span>
             </td>
             <td>
-              <strong style="color: #fff;">${k}</strong>
+              <strong style="color: #fff;">${escapeHtml(k)}</strong>
               <div style="font-size: 10px; color: var(--text-muted); cursor: pointer;" onclick="copyText('${v.address}')">${addrTrunc}</div>
             </td>
             <td>
@@ -1369,7 +1394,7 @@
           <tr>
             <td style="color: var(--cyan-primary); font-weight: 700;">#${h.toLocaleString()}</td>
             <td>
-              <span style="color: #fff; font-weight: 600;">${worker}</span>
+              <span style="color: #fff; font-weight: 600;">${escapeHtml(worker)}</span>
             </td>
             <td style="text-align: right; color: var(--gold-light); font-weight: 700;">${reward} BTCK</td>
             <td style="text-align: right; color: var(--text-muted);">${timeStr}</td>
@@ -1403,7 +1428,7 @@
           <tr>
             <td style="color: var(--cyan-primary); font-weight: 700;">#${h.toLocaleString()}</td>
             <td>
-              <div class="winner-highlight">${worker}</div>
+              <div class="winner-highlight">${escapeHtml(worker)}</div>
               <div class="winner-addr" ${addr ? `onclick="copyText('${addr}')"` : ""}>${addrTrunc}</div>
             </td>
             <td style="text-align: right;" class="winner-highlight">${payout} BTCK</td>

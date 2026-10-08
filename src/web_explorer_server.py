@@ -2,7 +2,7 @@
 """
 BTC-K Private Blockchain Explorer & Mining Pool Web Server
 -----------------------------------------------------------
-Serves the BTC-K DEVNET Web Dashboard & BlockDAG Explorer.
+Serves the BTC-K network-scoped Web Dashboard & BlockDAG Explorer.
 - Binds to BTCK_EXPLORER_HOST (loopback by default; explicit in containers).
 - Pulls consensus state from btckd and measured pool state from Stratum APIs.
 - Serves Mining Pool, BlockDAG Visualizer, Web Wallet, and Treasury.
@@ -72,7 +72,7 @@ def _pool_status_updater():
                     _LAST_POOL_CACHE_TIME = time.time()
         except Exception:
             pass
-        time.sleep(2.0)
+        time.sleep(10.0)
 
 # Start background updater thread
 _updater_thread = threading.Thread(target=_node_info_updater, daemon=True)
@@ -340,6 +340,7 @@ def build_production_stats_payload() -> Dict[str, Any]:
         "active_connection_count": int(pool_snapshot.get("active_connections", 0) or 0),
         "is_actively_mining": int(pool_snapshot.get("active_workers", 0) or 0) > 0,
         "miners_summary": miners_summary,
+        "stratum_share_counters": pool_snapshot.get("share_counters"),
         "combo_hof": combo_hof,
         "blocks": display_blocks,
         "network": node_snapshot.get("network", {}),
@@ -347,9 +348,34 @@ def build_production_stats_payload() -> Dict[str, Any]:
             "node_age_seconds": node_age,
             "pool_age_seconds": pool_age,
             "node_fresh": node_age is not None and node_age < 15.0,
-            "pool_fresh": pool_age is not None and pool_age < 10.0,
+            "pool_fresh": pool_age is not None and pool_age < 25.0,
             "source": "btckd:/dashboard + stratum:/status",
         },
+    }
+
+
+def _search_recent_blocks(query: str, stats: Dict[str, Any] | None = None) -> Dict[str, Any]:
+    """Search the node-authoritative recent blue-order window.
+
+    The current node dashboard exposes a bounded recent window rather than a
+    historical index.  The API states that scope explicitly instead of
+    pretending an arbitrary height/hash was found.
+    """
+    needle = query.strip().lower()
+    if not needle:
+        return {"found": False, "message": "A block height or hash is required"}
+    snapshot = stats if stats is not None else build_stats_payload()
+    blocks = snapshot.get("blocks", []) or []
+    for block in blocks:
+        height_match = needle.lstrip("#").isdigit() and int(needle.lstrip("#")) == int(block.get("height", -1))
+        full_hash = str(block.get("full_hash", "")).lower()
+        hash_match = len(needle) >= 8 and full_hash.startswith(needle)
+        if height_match or hash_match:
+            return {"found": True, "scope": "recent_node_window", "block": block}
+    return {
+        "found": False,
+        "scope": "recent_node_window",
+        "message": "Block not present in the node's recent explorer window",
     }
 
 
@@ -396,13 +422,32 @@ class ExplorerHTTPHandler(BaseHTTPRequestHandler):
         elif path == "/style.css":
             self.serve_static_file("style.css", "text/css; charset=utf-8")
         elif path == "/app.js":
-            self.serve_static_file("app.js", "application/javascript; charset=utf-8")
-        elif path in ("/wallet", "/wallet.html"):
-            self.serve_static_file("wallet.html", "text/html; charset=utf-8")
-        elif path in ("/wallet/treasury", "/wallet_treasury", "/wallet_treasury.html"):
-            self.serve_static_file("wallet_treasury.html", "text/html; charset=utf-8")
+            self.send_error(410, "Legacy demo application is not included in the public beta")
+        elif path in ("/wallet", "/wallet.html", "/wallet/treasury", "/wallet_treasury", "/wallet_treasury.html"):
+            self.send_json_response({
+                "available": False,
+                "message": "The unaudited browser wallet is not part of the public beta. Use the signed release wallet or offline CLI.",
+            }, 410)
         elif path == "/api/stats":
             self.send_json_response(build_stats_payload())
+        elif path == "/api/blocks":
+            stats = build_stats_payload()
+            try:
+                limit = max(1, min(int(urllib.parse.parse_qs(parsed.query).get("limit", [50])[0]), 120))
+            except (TypeError, ValueError):
+                limit = 50
+            self.send_json_response({
+                "scope": "recent_node_window",
+                "blocks": (stats.get("blocks", []) or [])[-limit:],
+            })
+        elif path == "/api/search":
+            query = urllib.parse.parse_qs(parsed.query).get("q", [""])[0]
+            result = _search_recent_blocks(query)
+            self.send_json_response(result, 200 if result.get("found") else 404)
+        elif path.startswith("/api/block/"):
+            query = urllib.parse.unquote(path.removeprefix("/api/block/"))
+            result = _search_recent_blocks(query)
+            self.send_json_response(result, 200 if result.get("found") else 404)
         elif path == "/api/combo/history":
             self.send_json_response(build_stats_payload().get("combo_hof", []))
         elif path == "/api/benchmark/hourly":
@@ -423,6 +468,9 @@ class ExplorerHTTPHandler(BaseHTTPRequestHandler):
         else:
             # Fallback static lookup
             clean_path = path.lstrip("/")
+            if clean_path in {"wallet.html", "wallet_treasury.html", "app.js"}:
+                self.send_error(410, "Legacy demo asset is not included in the public beta")
+                return
             target = WEB_DIR / clean_path
             if target.exists() and target.is_file():
                 ct = "text/plain"

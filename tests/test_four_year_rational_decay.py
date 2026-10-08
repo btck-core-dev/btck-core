@@ -6,7 +6,7 @@ Strictly validates all 11 core criteria specified in Audit Report 29:
 2. Blocks 1..126,144,000 sum strictly to 2,100,000,000,000,000 SatK (0 SatK drift).
 3. Block #126,144,001+ subsidy strictly terminates to 0 SatK.
 4. Daily integer quotas table matches canonical SHA-256 checksum.
-5. 4-Stage Tiered Combo Ratios (20%, 30%, 40%, 50%) and Intervals (12h, 36h, 108h, 324h).
+5. 4-Stage Tiered Combo Ratios (15%, 25%, 35%, 45%) plus 5% ecosystem reserve.
 6. Future Random Beacon (+100 blocks) + Kademlia XOR Distance Winner Selection.
 7. Progressive Streaming Vesting Schedule & Exact SatK Conservation.
 8. Continuous Solvency Invariant: Minted == Total Paid + Retained Pool Balance.
@@ -25,6 +25,9 @@ from tokenomics.emission_schedule import (
     get_block_budget_sats,
     get_base_block_reward_sats,
     get_combo_spec_for_height,
+    split_post_mining_fees,
+    POST_MINING_MINER_FEE_PERCENT,
+    POST_MINING_COMBO_FEE_PERCENT,
     compute_block_issuance,
     compute_beacon_xor_winner,
     compute_jackpot_vesting_tranches,
@@ -73,8 +76,8 @@ class TestFourYearRationalDecay(unittest.TestCase):
         self.assertEqual(get_block_budget_sats(TOTAL_BLOCKS + 1000), 0)
         self.assertEqual(get_block_budget_sats(TOTAL_BLOCKS + 1_000_000), 0)
 
-    def test_05_genesis_72h_allocation(self):
-        """Audit Section 6: 创世72小时安全储备测算"""
+    def test_05_euler_reserve_first_72h_allocation(self):
+        """护网期前72小时发行测算；完整护网期固定到271,828块。"""
         gen_72h_sats = sum(DAILY_QUOTAS_SATK[:3])
         gen_72h_btck = gen_72h_sats / SATK_PER_COIN
         pct = (gen_72h_sats / TOTAL_HARD_CAP_SATK) * 100
@@ -103,6 +106,33 @@ class TestFourYearRationalDecay(unittest.TestCase):
         self.assertEqual(r4, 0.45)
         self.assertEqual(int4, 1_166_400)
 
+        stage5, r5, int5 = get_combo_spec_for_height(TOTAL_BLOCKS + 1)
+        self.assertEqual(stage5, 5)
+        self.assertEqual(r5, 0.50)
+        self.assertEqual(int5, 1_166_400)
+
+    def test_06b_post_mining_fee_split_is_frozen_50_50(self):
+        self.assertEqual(POST_MINING_MINER_FEE_PERCENT, 50)
+        self.assertEqual(POST_MINING_COMBO_FEE_PERCENT, 50)
+        self.assertEqual(split_post_mining_fees(100), (50, 50))
+        self.assertEqual(split_post_mining_fees(101), (51, 50))
+        params_path = os.path.abspath(os.path.join(
+            os.path.dirname(__file__), "..", "params", "btck_parameters.json"
+        ))
+        with open(params_path, "r", encoding="utf-8") as handle:
+            params = json.load(handle)
+        post_mining = params["tokenomics"]["post_mining_era"]["fee_combo_jackpot"]
+        frozen = params["tokenomics"]["post_4_years_security_budget"]["consensus_frozen_split"]
+        self.assertEqual(post_mining["activation_height"], TOTAL_BLOCKS + 1)
+        self.assertEqual(post_mining["miner_split_ratio"], 0.5)
+        self.assertEqual(post_mining["jackpot_pool_ratio"], 0.5)
+        self.assertEqual(frozen["activation_height"], TOTAL_BLOCKS + 1)
+        self.assertEqual(frozen["miner_immediate_packing_ratio"], 0.5)
+        self.assertEqual(frozen["perpetual_lottery_pool_ratio"], 0.5)
+        self.assertTrue(frozen["permanent"])
+        with self.assertRaises(ValueError):
+            split_post_mining_fees(-1)
+
     def test_07_beacon_xor_distance_winner_selection(self):
         """Audit Section 10: 未来随机信标 + Kademlia XOR 几何距离选奖"""
         candidates = [hashlib.sha256(f"BLOCK_HASH_{i}".encode()).digest() for i in range(100)]
@@ -117,6 +147,15 @@ class TestFourYearRationalDecay(unittest.TestCase):
         for c in candidates:
             dist = int.from_bytes(c, "big") ^ beacon_int
             self.assertGreaterEqual(dist, min_dist)
+
+    def test_07b_canonical_beacon_seed_fixed_vector(self):
+        """SHA256(kHeavyHash beacon bytes || epoch uint64 little-endian)."""
+        beacon_hash = bytes.fromhex("00" * 31 + "01")
+        seed = hashlib.sha256(beacon_hash + (7).to_bytes(8, "little")).hexdigest()
+        self.assertEqual(
+            seed,
+            "8f4bd02b82c87006f5a5f6caa3cbd04f108ebd03c3448dd2b98c180517e2de5d",
+        )
 
     def test_08_streaming_vesting_maturation(self):
         """Audit Section 9: 大奖分期成熟机制与 SatK 严格守恒"""

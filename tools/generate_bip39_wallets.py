@@ -74,7 +74,7 @@ def generate_single_account(name: str, account_type: str, strength_bits: int = 1
     seed = mnemonic_to_seed(mnemonic)
     v_int, s_int, kp = derive_btck_stealth_wallet(seed, account_index=0)
     
-    return {
+    result = {
         "name": name,
         "type": account_type,
         "word_count": len(mnemonic.split()),
@@ -85,6 +85,14 @@ def generate_single_account(name: str, account_type: str, strength_bits: int = 1
         "view_private_key_hex": f"{v_int:064x}",
         "spend_private_key_hex": f"{s_int:064x}",
     }
+    if account_type == "eco_fund":
+        r_ephem, p_onetime = StealthKeyPair.generate_one_time_stealth_output(
+            kp.get_public_stealth_address()
+        )
+        if not kp.is_my_stealth_output(r_ephem, p_onetime):
+            raise RuntimeError("Generated ecosystem output failed ownership verification")
+        result["eco_fund_output"] = [r_ephem.hex(), p_onetime.hex()]
+    return result
 
 
 def generate_isolated_wallets(strength_bits: int = 128) -> list[dict]:
@@ -113,7 +121,7 @@ def generate_hierarchical_wallets(strength_bits: int = 128) -> tuple[str, list[d
     wallets = []
     for name, acct_type, idx in configs:
         v_int, s_int, kp = derive_btck_stealth_wallet(seed, account_index=idx)
-        wallets.append({
+        wallet = {
             "name": name,
             "type": acct_type,
             "account_index": idx,
@@ -122,7 +130,15 @@ def generate_hierarchical_wallets(strength_bits: int = 128) -> tuple[str, list[d
             "spend_public_key": kp.spend_pub_bytes.hex(),
             "view_private_key_hex": f"{v_int:064x}",
             "spend_private_key_hex": f"{s_int:064x}",
-        })
+        }
+        if acct_type == "eco_fund":
+            r_ephem, p_onetime = StealthKeyPair.generate_one_time_stealth_output(
+                kp.get_public_stealth_address()
+            )
+            if not kp.is_my_stealth_output(r_ephem, p_onetime):
+                raise RuntimeError("Generated ecosystem output failed ownership verification")
+            wallet["eco_fund_output"] = [r_ephem.hex(), p_onetime.hex()]
+        wallets.append(wallet)
     return master_mnemonic, wallets
 
 
@@ -174,7 +190,8 @@ def display_wallets(wallets: list[dict], master_mnemonic: str = None):
         tag = w['type'].upper()
         print(f"• {tag}_ADDRESS = \"{w['stealth_address']}\"")
         if w['type'] == 'eco_fund':
-            print(f"• ECO_FUND_OUTPUT = [\"{w['spend_public_key']}\", \"{w['view_public_key']}\"]")
+            print(f"• ECO_FUND_OUTPUT = {json.dumps(w['eco_fund_output'])}")
+            print("  Field order: [R_ephem, P_onetime]; these are not the master spend/view public keys.")
     print("=" * 72 + "\n")
 
 

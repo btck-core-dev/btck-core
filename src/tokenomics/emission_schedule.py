@@ -94,6 +94,17 @@ class ComboStageSpec:
 
 # Consensus AI Standby & Hardware Symbiosis Reserve Ratio (Carved from Combo lottery pool)
 ECO_RESERVE_RATIO = 0.05
+ECO_RESERVE_PERCENT = 5
+COMBO_PERCENT_BY_STAGE = {1: 15, 2: 25, 3: 35, 4: 45, 5: 50}
+INSTANT_UNLOCK_PERCENT_BY_STAGE = {1: 50, 2: 25, 3: 10, 4: 10}
+
+# v2.4 frozen post-mining fee split.  At height TOTAL_BLOCKS + 1 the
+# subsidy and ecosystem issuance are both zero; transaction fees continue the
+# stage-4 progression as 50% immediate miner security budget and 50% perpetual
+# Combo funding.  Odd SatK remain with the immediate miner payout.
+POST_MINING_MINER_FEE_PERCENT = 50
+POST_MINING_COMBO_FEE_PERCENT = 50
+assert POST_MINING_MINER_FEE_PERCENT + POST_MINING_COMBO_FEE_PERCENT == 100
 
 COMBO_STAGES: List[ComboStageSpec] = [
     ComboStageSpec(1, 1, 1, 31_536_000, 0.15, 43_200, 12, 48, 172_800, 0.50, 1),
@@ -131,7 +142,16 @@ def get_combo_spec_for_height(block_height: int) -> Tuple[int, float, int]:
         if stage.start_block <= block_height <= stage.end_block:
             return (stage.stage_id, stage.combo_ratio, stage.draw_interval_blocks)
     # Post-4-Year fee era (Subsidy is 0; transaction fee lottery)
-    return (5, 0.50, 1_166_400)
+    return (5, POST_MINING_COMBO_FEE_PERCENT / 100, 1_166_400)
+
+
+def split_post_mining_fees(total_fee_satk: int) -> Tuple[int, int]:
+    """Return the frozen v2.4 (immediate miner, perpetual Combo) fee split."""
+    if total_fee_satk < 0:
+        raise ValueError("Transaction fees cannot be negative")
+    combo_satk = (total_fee_satk * POST_MINING_COMBO_FEE_PERCENT) // 100
+    miner_satk = total_fee_satk - combo_satk
+    return miner_satk, combo_satk
 
 # =====================================================================
 # 4. Block Budget & Subsidy Query Engine
@@ -187,7 +207,11 @@ def compute_beacon_xor_winner(
     if not candidate_block_hashes:
         raise ValueError("Candidate block list cannot be empty")
     
-    # Deterministic Beacon Seed mixing epoch index
+    # Candidate and beacon block hashes are canonical kHeavyHash PoW values.
+    # The canonical whitepaper then applies one SHA-256 domain step exactly as
+    # SHA256(BlockHash[H_end+100] || EpochIndex_uint64_le).  Do not replace
+    # this with BLAKE3 or add node-local fields: every implementation must
+    # derive the same 256-bit target from public consensus data.
     beacon_seed = hashlib.sha256(beacon_hash + epoch_index.to_bytes(8, 'little')).digest()
     beacon_int = int.from_bytes(beacon_seed, 'big')
     
@@ -230,7 +254,9 @@ def compute_jackpot_vesting_tranches(
     for spec in COMBO_STAGES:
         if spec.stage_id == stage_id:
             tranches = []
-            instant_amount = int(jackpot_amount_satk * spec.instant_unlock_ratio)
+            instant_amount = (
+                jackpot_amount_satk * INSTANT_UNLOCK_PERCENT_BY_STAGE[stage_id]
+            ) // 100
             streaming_amount = jackpot_amount_satk - instant_amount
             
             # Initial instant unlock at draw_block_height
@@ -299,8 +325,8 @@ def compute_block_issuance(
     Mathematical Rules:
     1. minted_sats = min(get_block_budget_sats(height), TOTAL_HARD_CAP_SATK - current_issued_sats)
     2. stage_id, combo_ratio, draw_interval = get_combo_spec_for_height(height)
-    3. eco_deposit_sats = int(minted_sats * ECO_RESERVE_RATIO) (5% consensus hardware symbiosis reserve)
-    4. pool_deposit_sats = int(minted_sats * combo_ratio) (15% -> 45%)
+    3. eco_deposit_sats = minted_sats * 5 // 100 (integer-only consensus)
+    4. pool_deposit_sats = minted_sats * stage_percent // 100 (15% -> 45%)
     5. miner_base_sats = minted_sats - pool_deposit_sats - eco_deposit_sats (strictly 80% / 70% / 60% / 50%)
     6. available_pool = current_pool_balance_sats + pool_deposit_sats
     7. is_combo marks a scheduled draw only; payout waits for the future beacon
@@ -323,9 +349,9 @@ def compute_block_issuance(
     remaining_cap = max(0, TOTAL_HARD_CAP_SATK - current_issued_sats)
     minted = min(budget, remaining_cap)
     
-    _, combo_ratio, _ = get_combo_spec_for_height(block_height)
-    eco_deposit = int(minted * ECO_RESERVE_RATIO) if (0 < block_height <= TOTAL_BLOCKS) else 0
-    pool_deposit = int(minted * combo_ratio)
+    stage_id, _, _ = get_combo_spec_for_height(block_height)
+    eco_deposit = (minted * ECO_RESERVE_PERCENT) // 100 if (0 < block_height <= TOTAL_BLOCKS) else 0
+    pool_deposit = (minted * COMBO_PERCENT_BY_STAGE[stage_id]) // 100
     miner_base = minted - pool_deposit - eco_deposit
     
     available_pool = current_pool_balance_sats + pool_deposit
@@ -364,9 +390,9 @@ def get_block_reward_sats(
     """Returns (miner_payout_sats, is_combo)."""
     budget_sats = get_block_budget_sats(block_height)
     is_combo = is_combo_block(block_height, block_hash)
-    _, combo_ratio, _ = get_combo_spec_for_height(block_height)
-    eco_deposit = int(budget_sats * ECO_RESERVE_RATIO) if (0 < block_height <= TOTAL_BLOCKS) else 0
-    pool_dep = int(budget_sats * combo_ratio)
+    stage_id, _, _ = get_combo_spec_for_height(block_height)
+    eco_deposit = (budget_sats * ECO_RESERVE_PERCENT) // 100 if (0 < block_height <= TOTAL_BLOCKS) else 0
+    pool_dep = (budget_sats * COMBO_PERCENT_BY_STAGE[stage_id]) // 100
     miner_base = budget_sats - pool_dep - eco_deposit
     
     if current_pool_balance_sats is not None:

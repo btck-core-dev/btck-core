@@ -23,7 +23,7 @@ from privacy.stealth_address import (
     _pubkey_to_bytes, _bytes_to_pubkey,
     sha256
 )
-from tokenomics.emission_schedule import SATK_PER_COIN
+from tokenomics.emission_schedule import SATK_PER_COIN, get_regular_coinbase_maturity_blocks
 from privacy.wallet_crypto import WALLET_FORMAT, decrypt_wallet_payload, encrypt_wallet_payload
 
 def _tagged_hash(tag: str, payload: bytes) -> bytes:
@@ -124,6 +124,9 @@ class UTXO:
     R_ephem_hex: str
     P_onetime_hex: str
     block_height: int
+    is_coinbase: bool = False
+    timelock_until_height: int = 0
+    kind: str = "standard"
     spent: bool = False
 
 @dataclass
@@ -288,7 +291,10 @@ class StealthWallet:
                         amount_satk=out["amount_satk"],
                         R_ephem_hex=out["R_ephem_hex"],
                         P_onetime_hex=out["P_onetime_hex"],
-                        block_height=out.get("height", 0)
+                        block_height=out.get("height", 0),
+                        is_coinbase=bool(out.get("is_coinbase", False)),
+                        timelock_until_height=int(out.get("timelock_until_height", 0) or 0),
+                        kind=str(out.get("kind", "standard")),
                     )
                     self.utxos.append(utxo)
                     new_discovered.append(utxo)
@@ -300,11 +306,30 @@ class StealthWallet:
     def get_balance_btck(self) -> float:
         return self.get_balance_satk() / SATK_PER_COIN
 
+    @staticmethod
+    def is_utxo_spendable(utxo: UTXO, current_height: int) -> bool:
+        if utxo.spent or utxo.kind == "jackpot_pool":
+            return False
+        if utxo.timelock_until_height > 0:
+            return current_height >= utxo.timelock_until_height
+        if utxo.is_coinbase:
+            maturity = get_regular_coinbase_maturity_blocks(utxo.block_height)
+            return current_height - utxo.block_height >= maturity
+        return True
+
+    def get_spendable_balance_satk(self, current_height: int) -> int:
+        return sum(
+            utxo.amount_satk
+            for utxo in self.utxos
+            if self.is_utxo_spendable(utxo, current_height)
+        )
+
     def create_and_sign_transfer(
         self,
         recipient_stealth_addr: str,
         amount_satk: int,
-        fee_satk: int = 10_000
+        fee_satk: int = 10_000,
+        current_height: Optional[int] = None,
     ) -> StealthTransaction:
         """
         Spend Key Offline Signing:
@@ -314,7 +339,16 @@ class StealthWallet:
         4. Derives one-time private key p_i = s + c_i mod N for each input.
         5. Signs sighash with Schnorr signature.
         """
-        available_utxos = [u for u in self.utxos if not u.spent]
+        available_utxos = [
+            utxo for utxo in self.utxos
+            if (
+                not utxo.spent
+                and (
+                    current_height is None
+                    or self.is_utxo_spendable(utxo, current_height)
+                )
+            )
+        ]
         total_selected = 0
         selected_utxos: List[UTXO] = []
         

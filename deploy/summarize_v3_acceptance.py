@@ -69,12 +69,41 @@ def main() -> None:
     first_dash, last_dash = first["dashboard"], last["dashboard"]
     blue_delta = int(numeric_delta(first_dash, last_dash, "total_blocks"))
     dag_delta = int(numeric_delta(first_dash, last_dash, "total_dag_blocks"))
-    wire_first = first["summary"].get("wire_rejections_since_monitor_start", {})
-    wire_last = last["summary"].get("wire_rejections_since_monitor_start", {})
-    wire_delta = {
-        key: max(0, int(wire_last.get(key, 0) or 0) - int(wire_first.get(key, 0) or 0))
-        for key in sorted(set(wire_first) | set(wire_last))
-    }
+    counter_rows = [item["summary"].get("stratum_share_counters") for item in snapshots]
+    counter_error = None
+    counter_epoch = None
+    counter_delta: dict[str, int] = {}
+    reason_delta: dict[str, int] = {}
+    if not all(isinstance(row, dict) for row in counter_rows):
+        counter_error = "missing stratum monotonic share counters"
+    else:
+        epochs = {str(row.get("epoch", "")) for row in counter_rows}
+        if "" in epochs or len(epochs) != 1:
+            counter_error = "stratum share counter epoch changed during window"
+        else:
+            counter_epoch = next(iter(epochs))
+            fields = ("accepted", "rejected")
+            for field in fields:
+                values = [int(row.get(field, 0) or 0) for row in counter_rows]
+                if any(after < before for before, after in zip(values, values[1:])):
+                    counter_error = f"stratum {field} counter decreased during window"
+                    break
+                counter_delta[field] = values[-1] - values[0]
+            if counter_error is None:
+                reason_keys = sorted({
+                    key
+                    for row in counter_rows
+                    for key in (row.get("rejected_by_reason", {}) or {})
+                })
+                for key in reason_keys:
+                    values = [
+                        int((row.get("rejected_by_reason", {}) or {}).get(key, 0) or 0)
+                        for row in counter_rows
+                    ]
+                    if any(after < before for before, after in zip(values, values[1:])):
+                        counter_error = f"stratum rejection counter {key} decreased during window"
+                        break
+                    reason_delta[key] = values[-1] - values[0]
     hourly = [item["summary"].get("stratum_last_65m", {}) for item in snapshots]
     runtime = [item["summary"].get("runtime_errors_last_65m", {}) for item in snapshots]
 
@@ -92,11 +121,19 @@ def main() -> None:
             "ending_status": after.get("status"),
         }
 
-    accepted_shares = sum(max(0, row["shares"]) for row in miner_delta.values())
-    rejected_shares = sum(wire_delta.values())
-    submitted_shares = accepted_shares + rejected_shares
-    rejection_rate = rejected_shares / submitted_shares if submitted_shares else None
-    duplicate_rate = wire_delta.get("duplicate_22", 0) / submitted_shares if submitted_shares else None
+    ledger_accepted_shares = sum(max(0, row["shares"]) for row in miner_delta.values())
+    counters_valid = counter_error is None
+    accepted_shares = counter_delta.get("accepted", ledger_accepted_shares)
+    rejected_shares = counter_delta.get("rejected") if counters_valid else None
+    submitted_shares = (
+        accepted_shares + rejected_shares if rejected_shares is not None else 0
+    )
+    rejection_rate = (
+        rejected_shares / submitted_shares if submitted_shares else None
+    )
+    duplicate_rate = (
+        reason_delta.get("duplicate", 0) / submitted_shares if submitted_shares else None
+    )
     seconds_per_blue = elapsed / blue_delta if blue_delta > 0 else None
     tips_max = max(int(item["summary"]["chain"].get("tips_count", 0)) for item in snapshots)
     max_tracebacks = max(int(row.get("tracebacks", 0) or 0) for row in runtime)
@@ -111,7 +148,10 @@ def main() -> None:
         "node_submit_errors_zero": max_node_submit_errors == 0,
         "at_least_two_online_workers": online_workers >= 2,
         "tips_bounded_at_16": tips_max <= 16,
-        "wire_rejection_rate_below_1pct": rejection_rate is not None and rejection_rate < 0.01,
+        "share_rejection_counters_valid": counters_valid,
+        "wire_rejection_rate_below_1pct": (
+            counters_valid and rejection_rate is not None and rejection_rate < 0.01
+        ),
         "blue_cadence_at_most_1_25s": seconds_per_blue is not None and seconds_per_blue <= 1.25,
     }
     stability_keys = tuple(key for key in checks if key != "blue_cadence_at_most_1_25s")
@@ -149,11 +189,15 @@ def main() -> None:
             "ending_hashrate": last_dash.get("total_pool_hashrate_str"),
             "ending_active_workers": last_dash.get("active_worker_count"),
             "accepted_share_delta": accepted_shares,
+            "ledger_accepted_share_delta": ledger_accepted_shares,
             "wire_rejection_count": rejected_shares,
             "wire_rejection_rate": round(rejection_rate, 8) if rejection_rate is not None else None,
             "wire_duplicate_rate": round(duplicate_rate, 8) if duplicate_rate is not None else None,
             "miners": miner_delta,
-            "wire_rejection_delta": wire_delta,
+            "rejection_counter_epoch": counter_epoch,
+            "rejection_counter_valid": counters_valid,
+            "rejection_counter_error": counter_error,
+            "wire_rejection_delta": reason_delta if counters_valid else {},
             "max_65m_window": {
                 key: max(int(row.get(key, 0) or 0) for row in hourly)
                 for key in ("stale", "low_difficulty", "duplicate", "rate_limit", "node_submit_errors")

@@ -18,9 +18,24 @@ from urllib.request import Request, urlopen
 BASE_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(BASE_DIR / "src"))
 
-WALLET_VERSION = "3.1.0-rc1"
+WALLET_VERSION = "3.2.0-rc1"
+RECOVERY_SCHEME = "bip39-btck-dksap-v1"
+
+APPROVED_NETWORKS = {
+    "devnet": {
+        "name": "devnet",
+        "chain_id": "btck-devnet-v3",
+        "genesis_hash": "00afe7ba34ab52100a7e086f8bf16cee97dfaa80eaf7bc157a8d933d6ed6fa2a",
+    },
+    "testnet": {
+        "name": "testnet",
+        "chain_id": "btck-testnet-v3",
+        "genesis_hash": "773ef89465a3f3e9eafa7a759740f7ee9f9046039b351af80f54518296f5b747",
+    },
+}
 
 from privacy.stealth_address import StealthKeyPair
+from privacy.bip39 import WORDLIST, derive_btck_stealth_wallet, generate_mnemonic, mnemonic_to_seed, validate_mnemonic
 from privacy.wallet_crypto import WALLET_FORMAT
 from privacy.wallet_engine import SATK_PER_COIN, StealthWallet, UTXO, transaction_from_dict, transaction_to_dict
 
@@ -57,6 +72,16 @@ def amount_to_satk(value: str) -> int:
     return int(satk)
 
 
+def validate_network_identity(network: dict) -> dict:
+    if not isinstance(network, dict):
+        raise CLIError("Network identity must be an object")
+    actual = {key: network.get(key) for key in ("name", "chain_id", "genesis_hash")}
+    expected = APPROVED_NETWORKS.get(str(actual["name"]))
+    if expected is None or actual != expected:
+        raise CLIError("Network identity is unknown or not approved by this wallet release")
+    return actual
+
+
 def read_json(path: str, description: str) -> dict:
     try:
         payload = json.loads(Path(path).read_text(encoding="utf-8"))
@@ -75,6 +100,90 @@ def write_private_json(path: Path, payload: dict) -> None:
     with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
         json.dump(payload, handle, indent=2, sort_keys=True)
         handle.write("\n")
+
+
+def _wallet_from_mnemonic(mnemonic: str, name: str, account_index: int = 0) -> StealthWallet:
+    normalized = " ".join(mnemonic.strip().lower().split())
+    if not validate_mnemonic(normalized):
+        raise CLIError("Mnemonic is not a valid BIP-39 recovery phrase")
+    _view, _spend, keypair = derive_btck_stealth_wallet(
+        mnemonic_to_seed(normalized), account_index=account_index,
+    )
+    return StealthWallet(keypair=keypair, name=name)
+
+
+def _encrypted_recoverable_wallet(
+    wallet: StealthWallet,
+    password: str,
+    *,
+    word_count: int,
+    account_index: int = 0,
+) -> dict:
+    envelope = wallet.export_encrypted(password)
+    envelope["recovery"] = {
+        "scheme": RECOVERY_SCHEME,
+        "word_count": int(word_count),
+        "account_index": int(account_index),
+        "mnemonic_stored": False,
+    }
+    return envelope
+
+
+def _read_mnemonic_file(path: str) -> str:
+    mnemonic_path = Path(path)
+    try:
+        if mnemonic_path.stat().st_mode & 0o077:
+            raise CLIError("Mnemonic file must not be accessible by group or other users")
+        return mnemonic_path.read_text(encoding="utf-8").strip()
+    except OSError as exc:
+        raise CLIError(f"Cannot read mnemonic file: {exc}") from exc
+
+
+def _prompt_visible_mnemonic(word_count: int) -> str:
+    valid_words = set(WORDLIST)
+    print("助记词将在本机终端中明文显示输入；请确认周围无人、没有录屏或远程控制。")
+    words = []
+    for index in range(word_count):
+        while True:
+            word = input(f"请输入第 {index + 1:02d}/{word_count} 个助记词：").strip().lower()
+            if word in valid_words:
+                words.append(word)
+                break
+            print("该单词不在 BIP-39 英文词表中，请检查拼写后重新输入。")
+    return " ".join(words)
+
+
+def _prompt_mnemonic(args, *, word_count: int) -> str:
+    if getattr(args, "mnemonic_file", None):
+        return _read_mnemonic_file(args.mnemonic_file)
+    return _prompt_visible_mnemonic(word_count)
+
+
+def _print_recovery_sheet(name: str, address: str, mnemonic: str) -> None:
+    words = mnemonic.split()
+    print("\n" + "=" * 72)
+    print(f"WRITE DOWN NOW — {name}")
+    print(f"Address: {address}")
+    for offset in range(0, len(words), 4):
+        print("  " + "   ".join(
+            f"{index + 1:02d}. {words[index]}"
+            for index in range(offset, min(offset + 4, len(words)))
+        ))
+    print("The recovery words are NOT stored in the wallet file and will not be shown again.")
+    print("=" * 72)
+
+
+def _confirm_recovery(
+    wallet: StealthWallet,
+    account_index: int = 0,
+    word_count: int = 24,
+) -> None:
+    print("请按编号逐个重新输入全部助记词，以确认纸质备份完整无误。")
+    repeated = _prompt_visible_mnemonic(word_count)
+    recovered = _wallet_from_mnemonic(repeated, wallet.name, account_index=account_index)
+    if not secrets_compare(wallet.address, recovered.address):
+        raise CLIError("助记词不能恢复当前钱包；该钱包尚未通过验证，禁止入账")
+    print("助记词完整恢复验证通过。")
 
 
 def wallet_password(args, *, confirm: bool = False) -> str:
@@ -123,12 +232,153 @@ def scan_wallet(args, wallet: StealthWallet):
 
 
 def cmd_new(args):
-    wallet = StealthWallet.generate(name=args.name)
+    words = int(getattr(args, "words", 24))
+    mnemonic = generate_mnemonic(256 if words == 24 else 128)
+    wallet = _wallet_from_mnemonic(mnemonic, args.name)
     output = Path(args.output or f"{args.name}_wallet.json")
-    write_private_json(output, wallet.export_encrypted(wallet_password(args, confirm=True)))
+    write_private_json(
+        output,
+        _encrypted_recoverable_wallet(
+            wallet, wallet_password(args, confirm=True), word_count=words,
+        ),
+    )
     print(f"Encrypted wallet created: {output} (mode 600)")
     print(f"Address: {wallet.address}")
-    print("Back up this file offline. Private keys were not printed.")
+    _print_recovery_sheet(args.name, wallet.address, mnemonic)
+    if not getattr(args, "skip_immediate_recovery_check", False):
+        _confirm_recovery(wallet, word_count=words)
+
+
+def cmd_restore(args):
+    mnemonic = " ".join(
+        _prompt_mnemonic(args, word_count=int(args.words)).strip().lower().split()
+    )
+    words = len(mnemonic.split())
+    wallet = _wallet_from_mnemonic(mnemonic, args.name, account_index=args.account_index)
+    output = Path(args.output)
+    write_private_json(
+        output,
+        _encrypted_recoverable_wallet(
+            wallet,
+            wallet_password(args, confirm=True),
+            word_count=words,
+            account_index=args.account_index,
+        ),
+    )
+    print(f"Wallet restored to: {output} (mode 600)")
+    print(f"Address: {wallet.address}")
+
+
+def cmd_verify_recovery(args):
+    wallet = load_wallet(args.wallet, args)
+    raw = read_json(args.wallet, "wallet file")
+    recovery = raw.get("recovery", {})
+    if recovery.get("scheme") != RECOVERY_SCHEME:
+        raise CLIError("Wallet does not declare the supported mnemonic recovery scheme")
+    account_index = int(recovery.get("account_index", 0))
+    recovered = _wallet_from_mnemonic(
+        _prompt_mnemonic(
+            args, word_count=int(recovery.get("word_count", 24)),
+        ),
+        wallet.name,
+        account_index=account_index,
+    )
+    if not secrets_compare(wallet.address, recovered.address):
+        raise CLIError("Recovery phrase does not reproduce this wallet address")
+    print("Recovery verified: mnemonic and encrypted wallet produce the same address.")
+    print(f"Address: {wallet.address}")
+
+
+def cmd_eco_output(args):
+    wallet = load_wallet(args.wallet, args)
+    r_ephem, p_onetime = StealthKeyPair.generate_one_time_stealth_output(wallet.address)
+    if not wallet.keypair.is_my_stealth_output(r_ephem, p_onetime):
+        raise CLIError("Internal error: generated ecosystem output is not recoverable by this wallet")
+    payload = {
+        "format": "btck-mainnet-eco-output-v1",
+        "wallet_address": wallet.address,
+        "eco_fund_output": [r_ephem.hex(), p_onetime.hex()],
+        "field_order": ["R_ephem", "P_onetime"],
+    }
+    write_private_json(Path(args.out), payload)
+    print(f"Verified public ecosystem output written: {args.out}")
+    print(json.dumps(payload, indent=2))
+
+
+def cmd_init_mainnet_wallets(args):
+    destination = Path(args.output_dir).expanduser()
+    destination.mkdir(mode=0o700, parents=True, exist_ok=True)
+    if destination.stat().st_mode & 0o077:
+        raise CLIError("Output directory must not be accessible by group or other users")
+    roles = (
+        ("personal", "BTC-K Mainnet Personal / Mining"),
+        ("pool_treasury", "BTC-K Mainnet Pool Treasury"),
+        ("eco_fund", "BTC-K Mainnet Ecosystem Fund"),
+    )
+    targets = {role: destination / f"{role}_wallet.json" for role, _name in roles}
+    targets["public"] = destination / "mainnet_wallet_public.json"
+    if targets["public"].exists():
+        raise CLIError(
+            "主网三钱包公开参数已经存在；为避免覆盖正式身份，本程序拒绝再次初始化"
+        )
+    existing_wallets = [targets[role] for role, _name in roles if targets[role].exists()]
+    if existing_wallets and not getattr(args, "resume", False):
+        raise CLIError(
+            "检测到未完成的钱包初始化；请使用 --resume 验证现有钱包后继续"
+        )
+
+    created: dict[str, tuple[StealthWallet, str]] = {}
+    word_count = int(args.words)
+    for role, name in roles:
+        if targets[role].exists():
+            print(f"\n检测到已创建的钱包：{name}")
+            existing_wallet = load_wallet(str(targets[role]), args)
+            raw = read_json(str(targets[role]), "wallet file")
+            recovery = raw.get("recovery", {})
+            if recovery.get("scheme") != RECOVERY_SCHEME:
+                raise CLIError(f"现有 {role} 钱包没有受支持的助记词恢复标记")
+            existing_word_count = int(recovery.get("word_count", word_count))
+            existing_account_index = int(recovery.get("account_index", 0))
+            _confirm_recovery(
+                existing_wallet,
+                account_index=existing_account_index,
+                word_count=existing_word_count,
+            )
+            created[role] = (existing_wallet, "")
+            continue
+        print(f"\nCreate password for {name} (minimum 10 characters).")
+        password = wallet_password(args, confirm=True)
+        mnemonic = generate_mnemonic(256 if word_count == 24 else 128)
+        wallet = _wallet_from_mnemonic(mnemonic, name)
+        write_private_json(
+            targets[role],
+            _encrypted_recoverable_wallet(
+                wallet, password, word_count=word_count,
+            ),
+        )
+        restored = StealthWallet.load_from_json(str(targets[role]), password=password)
+        if restored.address != wallet.address:
+            raise CLIError(f"Encrypted round-trip verification failed for {role}")
+        created[role] = (wallet, mnemonic)
+        _print_recovery_sheet(name, wallet.address, mnemonic)
+        if not getattr(args, "skip_immediate_recovery_check", False):
+            _confirm_recovery(wallet, word_count=word_count)
+
+    eco_wallet = created["eco_fund"][0]
+    r_ephem, p_onetime = StealthKeyPair.generate_one_time_stealth_output(eco_wallet.address)
+    if not eco_wallet.keypair.is_my_stealth_output(r_ephem, p_onetime):
+        raise CLIError("Generated ecosystem output failed ownership verification")
+    public = {
+        "format": "btck-mainnet-wallet-public-v1",
+        "personal_address": created["personal"][0].address,
+        "pool_treasury_address": created["pool_treasury"][0].address,
+        "eco_fund_address": eco_wallet.address,
+        "eco_fund_output": [r_ephem.hex(), p_onetime.hex()],
+        "eco_fund_output_order": ["R_ephem", "P_onetime"],
+    }
+    write_private_json(targets["public"], public)
+    print(f"\nThree encrypted wallets and verified public parameters created in: {destination}")
+    print("Before funding or genesis, run verify-recovery separately for all three wallets.")
 
 
 def cmd_info(args):
@@ -149,19 +399,23 @@ def cmd_balance(args):
     snapshot = scan_wallet(args, wallet)
     print(f"Network height: {snapshot['selected_height']}")
     print(f"Address: {wallet.address}")
-    print(f"Spendable/tracked outputs: {len(wallet.utxos)}")
-    print(f"Balance: {wallet.get_balance_satk()} SatK ({wallet.get_balance_btck():.8f} BTC-K)")
+    height = int(snapshot["selected_height"])
+    spendable_satk = wallet.get_spendable_balance_satk(height)
+    print(f"Tracked outputs: {len(wallet.utxos)}")
+    print(f"Tracked balance: {wallet.get_balance_satk()} SatK ({wallet.get_balance_btck():.8f} BTC-K)")
+    print(f"Spendable balance: {spendable_satk} SatK ({spendable_satk / SATK_PER_COIN:.8f} BTC-K)")
 
 
 def cmd_transfer(args):
     if args.offline:
         raise CLIError("Legacy --offline is disabled; use export-watch, prepare, sign and broadcast")
     wallet = load_wallet(args.wallet, args)
-    scan_wallet(args, wallet)
+    snapshot = scan_wallet(args, wallet)
     tx = wallet.create_and_sign_transfer(
         recipient_stealth_addr=args.to,
         amount_satk=amount_to_satk(args.amount),
         fee_satk=amount_to_satk(args.fee),
+        current_height=int(snapshot["selected_height"]),
     )
     raw = transaction_to_dict(tx)
     result = rpc_call(args, "submitTransaction", {"transaction": raw})
@@ -229,6 +483,8 @@ def cmd_prepare(args):
     selected = []
     selected_total = 0
     for utxo in wallet.utxos:
+        if not wallet.is_utxo_spendable(utxo, int(snapshot["selected_height"])):
+            continue
         selected.append({
             "txid": utxo.txid,
             "vout": utxo.vout,
@@ -236,6 +492,9 @@ def cmd_prepare(args):
             "R_ephem_hex": utxo.R_ephem_hex,
             "P_onetime_hex": utxo.P_onetime_hex,
             "block_height": utxo.block_height,
+            "is_coinbase": utxo.is_coinbase,
+            "timelock_until_height": utxo.timelock_until_height,
+            "kind": utxo.kind,
         })
         selected_total += utxo.amount_satk
         if selected_total >= needed:
@@ -243,14 +502,15 @@ def cmd_prepare(args):
     if selected_total < needed:
         raise CLIError(f"Insufficient balance: have {selected_total} SatK, need {needed} SatK")
     dag = rpc_call(args, "getBlockDagInfo")
+    network = validate_network_identity({
+        "name": dag.get("network"),
+        "chain_id": dag.get("chain_id"),
+        "genesis_hash": dag.get("genesis_hash"),
+    })
     package = {
         "format": "btck-unsigned-transfer-v1",
         "created_at": int(time.time()),
-        "network": {
-            "name": dag["network"],
-            "chain_id": dag["chain_id"],
-            "genesis_hash": dag["genesis_hash"],
-        },
+        "network": network,
         "selected_height": int(snapshot["selected_height"]),
         "sender_address": wallet.address,
         "recipient_address": args.to,
@@ -268,6 +528,7 @@ def cmd_sign(args):
     package = read_json(args.package, "unsigned transfer package")
     if package.get("format") != "btck-unsigned-transfer-v1" or package.get("package_id") != _package_id(package):
         raise CLIError("Unsigned transfer package format or digest is invalid")
+    validate_network_identity(package.get("network"))
     print(f"Package ID: {package['package_id']}")
     print(f"Network: {package.get('network')}")
     print(f"Recipient: {package.get('recipient_address')}")
@@ -294,6 +555,9 @@ def cmd_sign(args):
             txid=outpoint[0], vout=outpoint[1], amount_satk=int(raw["amount_satk"]),
             R_ephem_hex=raw["R_ephem_hex"], P_onetime_hex=raw["P_onetime_hex"],
             block_height=int(raw.get("block_height", 0)),
+            is_coinbase=bool(raw.get("is_coinbase", False)),
+            timelock_until_height=int(raw.get("timelock_until_height", 0) or 0),
+            kind=str(raw.get("kind", "standard")),
         ))
     if not inputs:
         raise CLIError("Unsigned transfer package has no inputs")
@@ -320,8 +584,10 @@ def cmd_broadcast(args):
     payload = read_json(args.transaction, "signed transaction")
     if payload.get("format") == "btck-signed-transfer-v1":
         network = rpc_call(args, "getBlockDagInfo")
-        expected = payload.get("network", {})
-        actual = {key: network.get(key) for key in ("name", "chain_id", "genesis_hash")}
+        expected = validate_network_identity(payload.get("network", {}))
+        actual = validate_network_identity(
+            {key: network.get(key) for key in ("name", "chain_id", "genesis_hash")}
+        )
         if expected != actual:
             raise CLIError("Signed transaction package is bound to a different network")
         tx = transaction_from_dict(payload["transaction"])
@@ -350,10 +616,50 @@ def build_parser():
     )
     commands = parser.add_subparsers(dest="command", required=True)
 
-    new = commands.add_parser("new", help="Create a wallet file")
+    new = commands.add_parser("new", help="Create a recoverable encrypted wallet")
     new.add_argument("--name", default="my_wallet")
     new.add_argument("-o", "--output")
+    new.add_argument("--words", type=int, choices=(12, 24), default=24)
+    new.add_argument(
+        "--skip-immediate-recovery-check", action="store_true",
+        help="automation only; create without immediately re-entering the words",
+    )
     new.set_defaults(func=cmd_new)
+
+    restore = commands.add_parser("restore", help="Restore an encrypted wallet from BIP-39 words")
+    restore.add_argument("--name", default="restored_wallet")
+    restore.add_argument("-o", "--output", required=True)
+    restore.add_argument("--account-index", type=int, default=0)
+    restore.add_argument("--words", type=int, choices=(12, 24), default=24)
+    restore.add_argument("--mnemonic-file", help="Read words from a mode-600 file instead of visible word-by-word input")
+    restore.set_defaults(func=cmd_restore)
+
+    verify = commands.add_parser("verify-recovery", help="Prove recovery words reproduce a wallet address")
+    verify.add_argument("wallet")
+    verify.add_argument("--mnemonic-file", help="Read words from a mode-600 file instead of visible word-by-word input")
+    verify.set_defaults(func=cmd_verify_recovery)
+
+    eco_output = commands.add_parser(
+        "eco-output", help="Create a verified public (R_ephem, P_onetime) ecosystem output",
+    )
+    eco_output.add_argument("wallet")
+    eco_output.add_argument("--out", required=True)
+    eco_output.set_defaults(func=cmd_eco_output)
+
+    init_wallets = commands.add_parser(
+        "init-mainnet-wallets", help="Create independent personal, pool and ecosystem wallets",
+    )
+    init_wallets.add_argument("--output-dir", required=True)
+    init_wallets.add_argument("--words", type=int, choices=(12, 24), default=24)
+    init_wallets.add_argument(
+        "--resume", action="store_true",
+        help="verify existing partial wallet files and continue without overwriting",
+    )
+    init_wallets.add_argument(
+        "--skip-immediate-recovery-check", action="store_true",
+        help="automation only; create without immediately re-entering each phrase",
+    )
+    init_wallets.set_defaults(func=cmd_init_mainnet_wallets)
 
     info = commands.add_parser("info", help="Show wallet information")
     info.add_argument("wallet")

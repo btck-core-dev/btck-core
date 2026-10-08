@@ -66,6 +66,7 @@ class NetworkConfig:
     daa_median_time_blocks: int
     daa_max_adjustment_factor: int
     eco_fund_output: tuple[bytes, bytes]
+    hard_checkpoints: Mapping[int, str]
     genesis: GenesisConfig
     features: Mapping[str, bool]
     manifest_path: Path
@@ -156,6 +157,20 @@ def _parse_manifest(path: Path, requested_name: str) -> NetworkConfig:
         and all(isinstance(value, str) and _HEX_66.fullmatch(value) for value in eco_output),
         "consensus.eco_fund_output must contain two compressed 33-byte points",
     )
+    checkpoints_raw = consensus.get("hard_checkpoints", {})
+    _require(isinstance(checkpoints_raw, dict), "consensus.hard_checkpoints must be an object")
+    hard_checkpoints: dict[int, str] = {}
+    for raw_height, raw_hash in checkpoints_raw.items():
+        try:
+            height = int(raw_height)
+        except (TypeError, ValueError) as exc:
+            raise NetworkConfigurationError("Checkpoint heights must be integers") from exc
+        _require(height > 0, "Hard checkpoint height must be positive")
+        _require(
+            isinstance(raw_hash, str) and bool(_HEX_64.fullmatch(raw_hash)),
+            f"Hard checkpoint {height} must be a 32-byte hex hash",
+        )
+        hard_checkpoints[height] = raw_hash.lower()
 
     release = raw.get("release", {})
     approved = release.get("approved") is True
@@ -213,6 +228,7 @@ def _parse_manifest(path: Path, requested_name: str) -> NetworkConfig:
         daa_median_time_blocks=daa_median_time_blocks,
         daa_max_adjustment_factor=daa_max_adjustment_factor,
         eco_fund_output=(bytes.fromhex(eco_output[0]), bytes.fromhex(eco_output[1])),
+        hard_checkpoints=hard_checkpoints,
         genesis=genesis,
         features=dict(features),
         manifest_path=path.resolve(),

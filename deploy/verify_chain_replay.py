@@ -72,6 +72,11 @@ def main() -> None:
     parser.add_argument("--data-root", type=Path, required=True)
     parser.add_argument("--expect", type=Path, help="prior replay evidence to compare")
     parser.add_argument("--output", type=Path, help="atomically write machine evidence")
+    parser.add_argument(
+        "--write-snapshot",
+        action="store_true",
+        help="write a startup snapshot when the replay ends exactly at a durable checkpoint",
+    )
     args = parser.parse_args()
 
     started = time.monotonic()
@@ -102,6 +107,33 @@ def main() -> None:
         "loaded_snapshot_sequence": daemon.chain_store.loaded_snapshot_sequence,
         "tail_replayed_blocks": daemon.chain_store.tail_replayed_blocks,
     }
+    if args.write_snapshot:
+        checkpoint = daemon.chain_store.latest_checkpoint()
+        if checkpoint is None:
+            raise SystemExit("cannot write snapshot: chain has no durable checkpoint")
+        checkpoint_sequence, checkpoint_state_root = checkpoint
+        if checkpoint_sequence != daemon.replayed_blocks:
+            raise SystemExit(
+                "cannot write snapshot: replay must end exactly at the latest durable checkpoint "
+                f"({daemon.replayed_blocks} records replayed, checkpoint is {checkpoint_sequence})"
+            )
+        if info["state_root"] != checkpoint_state_root:
+            raise SystemExit("cannot write snapshot: replayed state root does not match checkpoint")
+        with daemon.chain_store._connect() as connection:
+            row = connection.execute(
+                "SELECT block_hash FROM accepted_blocks WHERE sequence = ?",
+                (checkpoint_sequence,),
+            ).fetchone()
+        if row is None:
+            raise SystemExit("cannot write snapshot: checkpoint block is missing")
+        daemon.chain_store.write_snapshot(
+            daemon.dag,
+            checkpoint_sequence,
+            str(row[0]),
+            checkpoint_state_root,
+        )
+        result["snapshot_path"] = str(daemon.chain_store.snapshot_path)
+        result["snapshot_sequence"] = checkpoint_sequence
     mismatches = []
     if args.expect:
         expected = json.loads(args.expect.read_text(encoding="utf-8"))

@@ -333,14 +333,21 @@ class BTCKDaemon:
             }
 
         elif method == "submitAlert":
+            if self.network.is_mainnet:
+                return {
+                    "jsonrpc": "2.0",
+                    "error": {
+                        "code": -32601,
+                        "message": "MAINNET operator alerts are disabled; consensus checkpoints require a reviewed manifest release",
+                    },
+                    "id": req_id,
+                }
             try:
                 payload_dict = params.get("payload", {})
                 sig_hex = params.get("signature_hex", "")
                 payload = NetworkAlertPayload(**payload_dict)
                 signed_alert = SignedNetworkAlert(payload=payload, signature_hex=sig_hex)
                 success, msg = consensus_guardian.alerts.process_incoming_alert(signed_alert)
-                if success and payload.checkpoint_height and payload.checkpoint_hash:
-                    consensus_guardian.checkpoints.add_checkpoint(payload.checkpoint_height, payload.checkpoint_hash)
                 return {
                     "jsonrpc": "2.0",
                     "result": {

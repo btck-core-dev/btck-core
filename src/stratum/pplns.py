@@ -27,7 +27,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-from tokenomics.emission_schedule import SATK_PER_COIN
+from tokenomics.emission_schedule import SATK_PER_COIN, compute_beacon_xor_winner
+from tokenomics.anti_hopping import AntiHoppingGate
 from privacy.wallet_engine import StealthWallet, transaction_to_dict
 
 logger = logging.getLogger("btck-pplns")
@@ -89,6 +90,8 @@ class PPLNSEngine:
 
                 CREATE INDEX IF NOT EXISTS idx_shares_timestamp ON shares(timestamp);
                 CREATE INDEX IF NOT EXISTS idx_shares_wallet ON shares(wallet_address);
+                CREATE INDEX IF NOT EXISTS idx_shares_worker
+                    ON shares(wallet_address, worker_name);
                 CREATE INDEX IF NOT EXISTS idx_shares_settled ON shares(block_hash_settled);
 
                 CREATE TABLE IF NOT EXISTS miners (
@@ -130,6 +133,32 @@ class PPLNSEngine:
                     key TEXT PRIMARY KEY,
                     value TEXT NOT NULL
                 );
+
+                CREATE TABLE IF NOT EXISTS combo_qualification_audits (
+                    epoch_id INTEGER PRIMARY KEY,
+                    stage_id INTEGER NOT NULL,
+                    winner_block_hash TEXT NOT NULL,
+                    finder_wallet TEXT NOT NULL,
+                    finder_worker TEXT NOT NULL,
+                    qualified INTEGER NOT NULL,
+                    duty_cycle REAL NOT NULL,
+                    reason TEXT NOT NULL,
+                    epoch_start_time REAL NOT NULL,
+                    epoch_end_time REAL NOT NULL,
+                    audited_at REAL NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS combo_entitlements (
+                    epoch_id INTEGER NOT NULL,
+                    tranche_index INTEGER NOT NULL,
+                    attributed_block_hash TEXT NOT NULL,
+                    wallet_address TEXT NOT NULL,
+                    worker_name TEXT NOT NULL,
+                    amount_satk INTEGER NOT NULL,
+                    unlock_height INTEGER NOT NULL,
+                    credited INTEGER NOT NULL DEFAULT 0,
+                    PRIMARY KEY (epoch_id, tranche_index)
+                );
                 """
             )
             block_columns = {row[1] for row in conn.execute("PRAGMA table_info(blocks)")}
@@ -140,6 +169,29 @@ class PPLNSEngine:
             ):
                 if column not in block_columns:
                     conn.execute(f"ALTER TABLE blocks ADD COLUMN {column} {declaration}")
+            combo_columns = {
+                row[1] for row in conn.execute("PRAGMA table_info(combo_qualification_audits)")
+            }
+            for column, declaration in (
+                ("attributed_block_hash", "TEXT NOT NULL DEFAULT ''"),
+                ("attributed_wallet", "TEXT NOT NULL DEFAULT ''"),
+                ("attributed_worker", "TEXT NOT NULL DEFAULT ''"),
+                ("jackpot_amount_satk", "INTEGER NOT NULL DEFAULT 0"),
+            ):
+                if column not in combo_columns:
+                    conn.execute(
+                        f"ALTER TABLE combo_qualification_audits ADD COLUMN {column} {declaration}"
+                    )
+            conn.executescript(
+                """
+                CREATE INDEX IF NOT EXISTS idx_blocks_finder
+                    ON blocks(finder_wallet, finder_worker);
+                CREATE INDEX IF NOT EXISTS idx_blocks_timestamp
+                    ON blocks(timestamp DESC);
+                CREATE INDEX IF NOT EXISTS idx_blocks_fee_recipient
+                    ON blocks(is_pool_fee, payout_address);
+                """
+            )
 
     def get_or_create_launch_time(self, requested: float = 0.0) -> float:
         """Return a restart-stable pool launch timestamp."""
@@ -190,6 +242,273 @@ class PPLNSEngine:
                 (wallet_address, float(difficulty), ts),
             )
 
+    @staticmethod
+    def _worker_id(wallet_address: str, worker_name: str) -> str:
+        return f"{wallet_address}\x1f{worker_name}"
+
+    def evaluate_combo_anti_hopping(
+        self,
+        *,
+        epoch_id: int,
+        stage_id: int,
+        epoch_start_time: float,
+        epoch_end_time: float,
+    ) -> dict:
+        """Evaluate the official pool's durable Share ledger for one Combo epoch.
+
+        This is deliberately a pool payout gate, not node consensus input.
+        Private Stratum shares are not globally observable; feeding them into
+        BlockDAG consensus would make nodes choose different winners. L1 keeps
+        using public kHeavyHash blocks, while a pool treasury only attributes a
+        won Combo to workers that passed this reproducible >=95% duty-cycle gate.
+        """
+        gate = AntiHoppingGate.create_for_stage(stage_id, int(epoch_id), min_duty_cycle=0.95)
+        start = float(epoch_start_time)
+        end = float(epoch_end_time)
+        if end <= start:
+            raise ValueError("Combo epoch end time must be after start time")
+
+        with self._get_connection() as conn:
+            rows = conn.execute(
+                """
+                SELECT wallet_address, worker_name, timestamp
+                FROM shares
+                WHERE timestamp >= ? AND timestamp <= ?
+                ORDER BY timestamp, id
+                """,
+                (start, end),
+            ).fetchall()
+
+        identities: Dict[str, Tuple[str, str]] = {}
+        for row in rows:
+            wallet = str(row["wallet_address"])
+            worker = str(row["worker_name"])
+            worker_id = self._worker_id(wallet, worker)
+            identities[worker_id] = (wallet, worker)
+            slot = int((float(row["timestamp"]) - start) // gate.slot_duration_seconds)
+            slot = max(0, min(gate.total_slots - 1, slot))
+            gate.record_asic_share(worker_id, slot, payout_address=wallet)
+
+        workers = []
+        for worker_id, (wallet, worker) in sorted(identities.items()):
+            qualified, duty_cycle, reason = gate.evaluate_worker_qualification(
+                worker_id, gate.total_slots - 1
+            )
+            workers.append({
+                "wallet_address": wallet,
+                "worker_name": worker,
+                "qualified": qualified,
+                "duty_cycle": duty_cycle,
+                "reason": reason,
+            })
+        return {
+            "epoch_id": int(epoch_id),
+            "stage_id": int(stage_id),
+            "total_slots": gate.total_slots,
+            "workers": workers,
+        }
+
+    def reconcile_combo_qualifications(
+        self, resolutions: List[dict], current_height: int = 0
+    ) -> List[dict]:
+        """Attribute pool-owned Combo wins and create height-locked entitlements.
+
+        The L1 winner decides whether this pool treasury received the jackpot.
+        Inside that pool, the same future beacon is re-applied only to blocks
+        found by >=95%-qualified workers. This prevents a late rental worker
+        from receiving the pool's Combo without putting private Share data into
+        global consensus.
+        """
+        audited = []
+        with self._get_connection() as conn:
+            known = {
+                int(row["epoch_id"])
+                for row in conn.execute("SELECT epoch_id FROM combo_qualification_audits")
+            }
+
+        for resolution in resolutions:
+            epoch_id = int(resolution.get("epoch_id", 0))
+            if epoch_id <= 0 or epoch_id in known:
+                continue
+            winner_hash = str(resolution.get("winner_block_hash", ""))
+            with self._get_connection() as conn:
+                winner = conn.execute(
+                    "SELECT finder_wallet, finder_worker FROM blocks WHERE block_hash = ?",
+                    (winner_hash,),
+                ).fetchone()
+            # A different pool or solo miner won this L1 epoch; this pool has
+            # no payout to attribute and therefore creates no local audit row.
+            if not winner:
+                continue
+
+            result = self.evaluate_combo_anti_hopping(
+                epoch_id=epoch_id,
+                stage_id=int(resolution.get("stage_id", 1)),
+                epoch_start_time=float(resolution["epoch_start_timestamp"]),
+                epoch_end_time=float(resolution["draw_timestamp"]),
+            )
+            finder_wallet = str(winner["finder_wallet"])
+            finder_worker = str(winner["finder_worker"])
+            qualified_workers = {
+                self._worker_id(item["wallet_address"], item["worker_name"]): item
+                for item in result["workers"]
+                if item["qualified"]
+            }
+            with self._get_connection() as conn:
+                pool_blocks = conn.execute(
+                    """
+                    SELECT block_hash, finder_wallet, finder_worker
+                    FROM blocks
+                    WHERE timestamp >= ? AND timestamp <= ? AND is_pool_fee = 0
+                    ORDER BY height, block_hash
+                    """,
+                    (
+                        float(resolution["epoch_start_timestamp"]),
+                        float(resolution["draw_timestamp"]),
+                    ),
+                ).fetchall()
+            eligible_blocks = [
+                row for row in pool_blocks
+                if self._worker_id(str(row["finder_wallet"]), str(row["finder_worker"]))
+                in qualified_workers
+                and len(str(row["block_hash"])) == 64
+            ]
+            attributed = None
+            if eligible_blocks:
+                winner_bytes, _ = compute_beacon_xor_winner(
+                    [bytes.fromhex(str(row["block_hash"])) for row in eligible_blocks],
+                    bytes.fromhex(str(resolution["beacon_hash"])),
+                    epoch_id,
+                )
+                attributed = next(
+                    row for row in eligible_blocks
+                    if str(row["block_hash"]) == winner_bytes.hex()
+                )
+
+            original = next(
+                (
+                    item for item in result["workers"]
+                    if item["wallet_address"] == finder_wallet
+                    and item["worker_name"] == finder_worker
+                ),
+                None,
+            )
+            decision = {
+                "qualified": attributed is not None,
+                "duty_cycle": float(original["duty_cycle"]) if original else 0.0,
+                "reason": (
+                    "Qualified pool candidate selected by canonical future beacon"
+                    if attributed is not None
+                    else "No >=95% qualified pool candidate; Combo remains undistributed"
+                ),
+            }
+            attributed_hash = str(attributed["block_hash"]) if attributed else ""
+            attributed_wallet = str(attributed["finder_wallet"]) if attributed else ""
+            attributed_worker = str(attributed["finder_worker"]) if attributed else ""
+            jackpot_amount = int(resolution.get("jackpot_amount_satk", 0))
+            with self._get_connection() as conn:
+                conn.execute(
+                    """
+                    INSERT OR IGNORE INTO combo_qualification_audits (
+                        epoch_id, stage_id, winner_block_hash, finder_wallet,
+                        finder_worker, qualified, duty_cycle, reason,
+                        epoch_start_time, epoch_end_time, audited_at,
+                        attributed_block_hash, attributed_wallet,
+                        attributed_worker, jackpot_amount_satk
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        epoch_id,
+                        int(resolution.get("stage_id", 1)),
+                        winner_hash,
+                        finder_wallet,
+                        finder_worker,
+                        1 if decision["qualified"] else 0,
+                        float(decision["duty_cycle"]),
+                        str(decision["reason"]),
+                        float(resolution["epoch_start_timestamp"]),
+                        float(resolution["draw_timestamp"]),
+                        time.time(),
+                        attributed_hash,
+                        attributed_wallet,
+                        attributed_worker,
+                        jackpot_amount,
+                    ),
+                )
+                if attributed is not None:
+                    for tranche in resolution.get("tranches", []):
+                        conn.execute(
+                            """
+                            INSERT OR IGNORE INTO combo_entitlements (
+                                epoch_id, tranche_index, attributed_block_hash,
+                                wallet_address, worker_name, amount_satk,
+                                unlock_height, credited
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?, 0)
+                            """,
+                            (
+                                epoch_id,
+                                int(tranche["tranche_index"]),
+                                attributed_hash,
+                                attributed_wallet,
+                                attributed_worker,
+                                int(tranche["amount_satk"]),
+                                int(tranche["unlock_block_height"]),
+                            ),
+                        )
+            record = {
+                "epoch_id": epoch_id,
+                "winner_block_hash": winner_hash,
+                "finder_wallet": finder_wallet,
+                "finder_worker": finder_worker,
+                "attributed_block_hash": attributed_hash,
+                "attributed_wallet": attributed_wallet,
+                "attributed_worker": attributed_worker,
+                **decision,
+            }
+            audited.append(record)
+            known.add(epoch_id)
+        if current_height > 0:
+            self.release_mature_combo_entitlements(current_height)
+        return audited
+
+    def release_mature_combo_entitlements(self, current_height: int) -> List[dict]:
+        """Atomically credit only Combo tranches whose consensus height unlocked."""
+        released = []
+        with self._get_connection() as conn:
+            rows = conn.execute(
+                """
+                SELECT * FROM combo_entitlements
+                WHERE credited = 0 AND unlock_height <= ?
+                ORDER BY unlock_height, epoch_id, tranche_index
+                """,
+                (int(current_height),),
+            ).fetchall()
+            for row in rows:
+                conn.execute(
+                    """
+                    INSERT INTO miners (wallet_address, unpaid_satk)
+                    VALUES (?, ?)
+                    ON CONFLICT(wallet_address) DO UPDATE SET
+                        unpaid_satk = unpaid_satk + excluded.unpaid_satk
+                    """,
+                    (row["wallet_address"], int(row["amount_satk"])),
+                )
+                conn.execute(
+                    """
+                    UPDATE combo_entitlements SET credited = 1
+                    WHERE epoch_id = ? AND tranche_index = ? AND credited = 0
+                    """,
+                    (int(row["epoch_id"]), int(row["tranche_index"])),
+                )
+                released.append({
+                    "epoch_id": int(row["epoch_id"]),
+                    "tranche_index": int(row["tranche_index"]),
+                    "wallet_address": str(row["wallet_address"]),
+                    "amount_satk": int(row["amount_satk"]),
+                    "unlock_height": int(row["unlock_height"]),
+                })
+        return released
+
     def process_block(
         self,
         block_hash: str,
@@ -199,6 +518,7 @@ class PPLNSEngine:
         finder_wallet: str = "",
         finder_worker: str = "",
         window_size: Optional[int] = None,
+        block_timestamp: Optional[float] = None,
     ) -> dict:
         """Settle a found block via PPLNS.
 
@@ -299,7 +619,7 @@ class PPLNSEngine:
                     total_distributed,
                     finder_wallet,
                     finder_worker,
-                    time.time(),
+                    time.time() if block_timestamp is None else float(block_timestamp),
                     len(rows),
                     total_window_weight,
                 ),

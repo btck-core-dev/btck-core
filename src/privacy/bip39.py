@@ -7,6 +7,7 @@ import base64
 import hashlib
 import hmac
 import secrets
+import unicodedata
 import zlib
 from typing import Tuple, List
 
@@ -66,8 +67,13 @@ def validate_mnemonic(mnemonic: str) -> bool:
 
 def mnemonic_to_seed(mnemonic: str, passphrase: str = "") -> bytes:
     """Convert mnemonic phrase to 512-bit (64-byte) binary seed via PBKDF2-HMAC-SHA512."""
-    mnemonic_bytes = mnemonic.strip().encode('utf-8')
-    salt = ('mnemonic' + passphrase).encode('utf-8')
+    # BIP-39 requires UTF-8 NFKD normalization for both the sentence and the
+    # optional passphrase.  English-only vectors often hide this requirement,
+    # but omitting it makes some perfectly valid recovery phrases non-portable.
+    normalized_mnemonic = unicodedata.normalize('NFKD', mnemonic.strip())
+    normalized_passphrase = unicodedata.normalize('NFKD', passphrase)
+    mnemonic_bytes = normalized_mnemonic.encode('utf-8')
+    salt = ('mnemonic' + normalized_passphrase).encode('utf-8')
     return hashlib.pbkdf2_hmac('sha512', mnemonic_bytes, salt, iterations=2048)
 
 

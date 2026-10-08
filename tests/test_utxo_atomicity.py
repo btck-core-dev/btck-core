@@ -176,6 +176,44 @@ class TestUTXOAtomicity(unittest.TestCase):
         self.assertEqual(dag.utxo_set.utxos, before_utxos)
         self.assertEqual(dag.utxo_set._block_created_undo, before_undo)
 
+    def test_failed_linear_commit_hook_restores_growing_consensus_views(self):
+        dag = BlockDAG(network="simnet")
+        genesis_time = dag.blocks[dag.genesis_hash].timestamp
+        child = mine_block(
+            dag,
+            parents=[dag.genesis_hash],
+            timestamp=genesis_time + 1,
+            coinbase_output=COINBASE_A,
+        )
+        before = (
+            set(dag.blocks),
+            set(dag.tips),
+            dag.selected_tip,
+            dag.issued_supply_sats,
+            dag.pool_balance_sats,
+            list(dag.virtual_selected_parent_chain),
+            list(dag.virtual_blue_order),
+            copy.deepcopy(dag.combo_machine.__dict__),
+        )
+
+        def fail_commit(_block):
+            raise RuntimeError("durable commit failed")
+
+        with self.assertRaisesRegex(RuntimeError, "durable commit failed"):
+            dag.add_block(child, commit_hook=fail_commit)
+
+        after = (
+            set(dag.blocks),
+            set(dag.tips),
+            dag.selected_tip,
+            dag.issued_supply_sats,
+            dag.pool_balance_sats,
+            dag.virtual_selected_parent_chain,
+            dag.virtual_blue_order,
+            dag.combo_machine.__dict__,
+        )
+        self.assertEqual(after, before)
+
     def test_failed_reorg_restores_every_consensus_view(self):
         dag = BlockDAG(network="simnet")
         genesis_time = dag.blocks[dag.genesis_hash].timestamp

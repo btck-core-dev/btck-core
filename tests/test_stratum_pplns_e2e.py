@@ -35,13 +35,20 @@ class TestStratumPPLNSE2E(unittest.IsolatedAsyncioTestCase):
 
         # Save treasury wallet JSON so stratum can load it
         self.treasury_file = os.path.join(self.temp_dir, "treasury_wallet.json")
+        self.treasury_password_file = os.path.join(self.temp_dir, "treasury_password.txt")
+        self.treasury_password = "integration treasury password"
         with open(self.treasury_file, "w") as f:
-            json.dump(self.treasury.export_to_dict(include_private=True), f)
+            json.dump(self.treasury.export_encrypted(self.treasury_password), f)
+        with open(self.treasury_password_file, "w") as f:
+            f.write(self.treasury_password + "\n")
+        os.chmod(self.treasury_file, 0o600)
+        os.chmod(self.treasury_password_file, 0o600)
 
         # Set environment variables for PPLNS mode
         os.environ["BTCK_POOL_MODE"] = "pplns"
         os.environ["BTCK_POOL_TREASURY_ADDRESS"] = self.treasury.address
         os.environ["BTCK_POOL_TREASURY_WALLET_FILE"] = self.treasury_file
+        os.environ["BTCK_POOL_TREASURY_WALLET_PASSWORD_FILE"] = self.treasury_password_file
         os.environ["BTCK_PPLNS_DB_PATH"] = self.db_path
         os.environ["BTCK_PPLNS_MIN_PAYOUT_BTCK"] = "1.0"
 
@@ -62,6 +69,7 @@ class TestStratumPPLNSE2E(unittest.IsolatedAsyncioTestCase):
             "BTCK_POOL_MODE",
             "BTCK_POOL_TREASURY_ADDRESS",
             "BTCK_POOL_TREASURY_WALLET_FILE",
+            "BTCK_POOL_TREASURY_WALLET_PASSWORD_FILE",
             "BTCK_PPLNS_DB_PATH",
             "BTCK_PPLNS_MIN_PAYOUT_BTCK",
         ]:
@@ -125,7 +133,15 @@ class TestStratumPPLNSE2E(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(submit_resp["result"])
 
             # 5. Verify PPLNS accounting
+            # A valid-share response is deliberately sent before the node RPC and
+            # PPLNS settlement finish, so wait briefly for the accepted block to
+            # become visible in the accounting ledger.
             stats = self.server.pplns_engine.get_pool_stats()
+            for _ in range(100):
+                if stats["blocks_found"] >= 1:
+                    break
+                await asyncio.sleep(0.01)
+                stats = self.server.pplns_engine.get_pool_stats()
             self.assertGreaterEqual(stats["blocks_found"], 1)
 
             # Miner 1 found the block, so Miner 1 gets reward credited

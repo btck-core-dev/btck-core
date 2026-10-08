@@ -6,7 +6,9 @@
 > [`tokenomics_v2_canonical.md`](tokenomics_v2_canonical.md): Phase 1 freezes
 > the Combo pool every 43,200 consensus blue-order blocks and resolves it with
 > a +100-block future beacon; issuance is split 80% miner base, 15% Combo pool
-> and 5% ecosystem reserve. Commercial pool fees are separate from L1 issuance.
+> and 5% ecosystem reserve. Combo then rises to 25%/35%/45% in years 2/3/4;
+> after subsidy exhaustion, transaction fees are permanently split 50% to the
+> immediate miner and 50% to Combo. Commercial pool fees remain separate.
 ### —— Powered by kHeavyHash ASIC Proof-of-Work, Dual-Key Stealth Addresses, and RFC 7231 HTTP 402 Pay-per-Token Settlement
 
 **Ticker:** BTCK  
@@ -109,7 +111,7 @@ BTCK 在底层实施基于 **secp256k1** 椭圆曲线的门罗级双密钥隐蔽
 * **总量硬顶 (Hard Cap)**：严格锁定在 **21,000,000 枚 (2100万)**，无任何通胀增发接口；
 * **出块间隔**：**1.0 秒 / 块**（每日固定产出 86,400 个区块）；
 * **创世基准奖励**：普通块 **50.0 BTCK / 块**（致敬中本聪创世时代）；
-* **分配机制**：**100% 公平发射 (Pure Fair Launch)**，零预挖、零 VC 额度、零团队私留。
+* **分配机制**：创世块 0 预铸、零 VC 额度、零团队预铸；前 271,828 块（约 75.51 小时）为公开披露的欧拉创世护网期，由可控 kHeavyHash 算力保护冷启动并在结束后固化真实 checkpoint。其详细发行严格服从现行规范 `tokenomics_v2_canonical.md`。
 
 ---
 
@@ -167,10 +169,10 @@ BTCK 将万维网预留的 **HTTP 402 Payment Required** 标准化落地为大�
 
 ## 五、 操盘实战：三位一体创世与错峰开盘协议 (Launch Operations)
 
-1. **三位一体创世协议 (The Launch Trifecta)**：
-   * **提前 15 分钟公开源码**：在 GitHub 正式公开完整节点与共识代码，开启倒计时，确保 100% 极客公信力与 Fair Launch 正统性；
-   * **初期仅提供源代码，不放安装包**：不提供 `.exe` 或 `.deb` 安装包，拉高外部普通投机客与自动化扫描脚本的编译接入门槛；
-   * **2.8 小时后正式公开官方矿池**：主网启动前 2.8 小时（Era 0，50币/块）仅通过私有代理端口直连个人核心算力（3.8 TH/s），确保以最低电费独占捕获 **85% ~ 98%（约 50万 ~ 56万枚）核心创世筹码**；第 2.8 小时全网公开矿池端口，欢迎全球算力无缝涌入！
+1. **欧拉创世护网协议 (Euler Genesis Security Launch)**：
+   * **固定护网高度**：主网从空状态和 0 SatK 创世块启动，前 **271,828 块（约 75.51 小时）**使用项目方可控 kHeavyHash 算力保护冷启动，防止成熟 KAS 租赁算力在安全深度形成前发动 51% 重组；
+   * **不迁移测试资产**：DEVNET/TESTNET 的区块、余额、密钥和 checkpoint 一律不得导入 MAINNET；护网期资产只能由主网有效 PoW 按现行 80%/15%/5% 规则逐块产生；
+   * **检查点后公开**：第 271,828 块稳定后，将其真实区块哈希写入正式节点制品并复核，随后公开源码、节点制品和矿池入口。公开材料必须如实披露护网算力控制、起止高度、资产流向和 checkpoint 哈希，不使用“从第 0 块已对所有外部矿工开放”的表述。
 2. **错峰开盘法则 (Staggered DEX Listing)**：
    * **前 3 ~ 7 天只挖矿不开盘**：制造市场筹码极端紧缺与场外 OTC 黑市高溢价求购热潮；
    * **第 3 ~ 7 天闪电注入 DEX 流动性**：自持 50,000 枚代币与 **$2,000 ~ $5,000 USDT** 注入 AMM 去中心化流动性池，首日开盘价定于 $0.04 ~ $0.10，压抑多日的场外买盘瞬间入场，引爆数十倍垂直拉升！

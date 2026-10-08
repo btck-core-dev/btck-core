@@ -2,8 +2,8 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "meta": {
     "title": "BTC-K Protocol Canonical Parameters (SSOT - Single Source of Truth)",
-    "version": "3.0.0",
-    "last_updated": "2026-10-02T21:30:00+08:00",
+    "version": "3.0.1",
+    "last_updated": "2026-10-08T01:00:00+08:00",
     "license": "MIT",
     "audit_alignment": "Doc 29 - Canonical 4-Year Rational Decay & Exact Integer Quotas"
   },
@@ -25,16 +25,19 @@
       "k_per_day": 0.15,
       "k_per_hour": 0.00625,
       "integral_formula": "C(t) = (R0 * 86400 / k) * ln(1 + k * t_day) = 3893500 * ln(1 + 0.15 * t_day)",
-      "genesis_72h_allocation": {
-        "duration_hours": 72,
-        "total_blocks": 259200,
-        "emission_btck": 1446676.58603144,
-        "percentage_of_total": 6.88893612,
+      "euler_genesis_security_reserve": {
+        "duration_hours": 75.50777778,
+        "total_blocks": 271828,
+        "emission_btck": 1502695.03742804,
+        "percentage_of_total": 7.15569065,
         "monopoly_hashrate_target_ths": 2.0,
         "naming": "创世护网安全储备 (Genesis Security Reserve / Patoshi Reserve)",
-        "emission_satk": 144667658603144,
-        "regular_miner_base_btck": 1157341.28,
-        "combo_draws_total_btck": 289335.3
+        "emission_satk": 150269503742804,
+        "regular_miner_base_btck": 1202156.03246208,
+        "combo_pool_deposit_btck": 225404.25391484,
+        "ecosystem_reserve_btck": 75134.75105112,
+        "checkpoint_height": 271828,
+        "checkpoint_hash_status": "TO_BE_FILLED_FROM_CANONICAL_MAINNET_BLOCK_271828_BEFORE_PUBLIC_RELEASE"
       },
       "canonical_daily_quotas_sha256": "7896cf36303e123f799c71b4d72b74a684e0079c1e32e57eac34d4ed04913e59",
       "day_0_block_1_satk": 629815765,
@@ -58,14 +61,14 @@
             0,
             31536000
           ],
-          "combo_ratio": 0.2,
+          "combo_ratio": 0.15,
           "draw_interval_hours": 12,
           "draw_interval_blocks": 43200,
           "draws_per_year": 730,
           "annual_total_btck": 15655219.9593851,
-          "annual_jackpot_pool_btck": 3131043.99187702,
-          "avg_jackpot_btck": 4289.10135873,
-          "genesis_first_jackpot_btck": 54416.08202745
+          "annual_jackpot_pool_btck": 2348282.99390777,
+          "avg_jackpot_btck": 3216.82601905,
+          "genesis_first_jackpot_btck": 40812.061248
         },
         {
           "stage": 2,
@@ -78,13 +81,13 @@
             31536000,
             63072000
           ],
-          "combo_ratio": 0.3,
+          "combo_ratio": 0.25,
           "draw_interval_hours": 36,
           "draw_interval_blocks": 129600,
           "draws_per_year": 243,
           "annual_total_btck": 2663680.46356581,
-          "annual_jackpot_pool_btck": 799104.13906974,
-          "avg_jackpot_btck": 3288.49439946
+          "annual_jackpot_pool_btck": 665920.11589145,
+          "avg_jackpot_btck": 2740.41199955
         },
         {
           "stage": 3,
@@ -97,13 +100,13 @@
             63072000,
             94608000
           ],
-          "combo_ratio": 0.4,
+          "combo_ratio": 0.35,
           "draw_interval_hours": 108,
           "draw_interval_blocks": 388800,
           "draws_per_year": 81,
           "annual_total_btck": 1566908.91994744,
-          "annual_jackpot_pool_btck": 626763.56797897,
-          "avg_jackpot_btck": 7737.82182689
+          "annual_jackpot_pool_btck": 548418.1219816,
+          "avg_jackpot_btck": 6770.59409854
         },
         {
           "stage": 4,
@@ -116,13 +119,13 @@
             94608000,
             126144000
           ],
-          "combo_ratio": 0.5,
+          "combo_ratio": 0.45,
           "draw_interval_hours": 324,
           "draw_interval_blocks": 1166400,
           "draws_per_year": 27,
           "annual_total_btck": 1114190.65710165,
-          "annual_jackpot_pool_btck": 557095.32855082,
-          "avg_jackpot_btck": 20633.16031669
+          "annual_jackpot_pool_btck": 501385.79569574,
+          "avg_jackpot_btck": 18569.84428503
         }
       ],
       "jackpot_maturity_blocks": 172800,
@@ -139,7 +142,8 @@
       "lottery_algorithm": {
         "name": "Future Random Beacon with Kademlia XOR Geometric Distance (未来随机信标异或几何距离法)",
         "beacon_offset_blocks": 100,
-        "beacon_seed_formula": "H_beacon = BLAKE3(BeaconBlockHeaderHash || EpochIndex || ChainId)",
+        "pow_hash_source": "Canonical 32-byte kHeavyHash block PoW values",
+        "beacon_seed_formula": "H_beacon = SHA256(KHeavyHash(Block[H_end+100]) || EpochIndex_uint64_le)",
         "distance_metric": "Distance(i) = BlockHash_i XOR H_beacon",
         "winning_criterion": "argmin_i(Distance_i) across all valid blocks in drawing epoch window [H_start, H_end]",
         "anti_monopoly_properties": [
@@ -207,6 +211,8 @@
         "enabled": true,
         "miner_split_ratio": 0.5,
         "jackpot_pool_ratio": 0.5,
+        "consensus_status": "FROZEN_V2_4_PERMANENT",
+        "activation_height": 126144001,
         "draw_interval_hours": 324,
         "draw_interval_blocks": 1166400,
         "lottery_algorithm": "Future Random Beacon with Kademlia XOR Metric"
@@ -215,10 +221,12 @@
     "post_4_years_security_budget": {
       "block_subsidy_satk": 0,
       "revenue_source": "Transaction Gas Fees & AI-RPC Micro-payments",
-      "recommended_initial_split": {
-        "miner_immediate_packing_ratio": 0.85,
-        "perpetual_lottery_pool_ratio": 0.15,
-        "rationale": "Doc 29 Section 8: Maintain stable baseline cash flows for miners to prevent hashrate cliff, with dynamic DAO governance tuning"
+      "consensus_frozen_split": {
+        "miner_immediate_packing_ratio": 0.5,
+        "perpetual_lottery_pool_ratio": 0.5,
+        "activation_height": 126144001,
+        "permanent": true,
+        "rationale": "v2.4 continuation of the annual Combo progression: 15% -> 25% -> 35% -> 45%, then 50% after the 5% ecosystem issuance ends"
       }
     }
   },
@@ -287,7 +295,8 @@
     "vardiff": {
       "target_share_time_sec": 8.0,
       "min_diff": 128,
-      "max_diff": 128,
+      "max_diff": 65536,
+      "minimum_pool_candidate_rate_hz": 1.25,
       "network_target_cap": false
     }
   },

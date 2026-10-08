@@ -487,17 +487,16 @@ class BlockDAG:
                 for blue_hash in affected_hashes
             }
             applied_hashes = [*affected_hashes, block.hash]
+            old_selected_chain_length = len(self.virtual_selected_parent_chain)
+            old_blue_order_length = len(self.virtual_blue_order)
             snapshot = (
                 set(self.tips),
                 self.selected_tip,
                 self.issued_supply_sats,
                 self.pool_balance_sats,
-                list(self.virtual_selected_parent_chain),
-                list(self.virtual_blue_order),
-                copy.deepcopy(self.combo_machine),
             )
             try:
-                accepted = self._commit_validated_block(block)
+                accepted = self._commit_validated_block(block, metadata_ready=True)
                 if accepted and commit_hook is not None:
                     commit_hook(block)
                 return accepted
@@ -517,10 +516,10 @@ class BlockDAG:
                     self.selected_tip,
                     self.issued_supply_sats,
                     self.pool_balance_sats,
-                    self.virtual_selected_parent_chain,
-                    self.virtual_blue_order,
-                    self.combo_machine,
                 ) = snapshot
+                del self.virtual_selected_parent_chain[old_selected_chain_length:]
+                del self.virtual_blue_order[old_blue_order_length:]
+                self.combo_machine.revert_to_height(old_blue_order_length - 1)
                 for blue_hash, values in affected_accounting.items():
                     blue = self.blocks[blue_hash]
                     for field, value in zip(accounting_fields, values):
@@ -563,7 +562,7 @@ class BlockDAG:
             copy.deepcopy(self.combo_machine),
         )
         try:
-            accepted = self._commit_validated_block(block)
+            accepted = self._commit_validated_block(block, metadata_ready=True)
             if accepted and commit_hook is not None:
                 commit_hook(block)
             return accepted
@@ -607,10 +606,13 @@ class BlockDAG:
         self._validate_block(block, verify_header_hash=False)
         return self._commit_validated_block(block)
 
-    def _commit_validated_block(self, block: DAGBlock) -> bool:
+    def _commit_validated_block(
+        self, block: DAGBlock, *, metadata_ready: bool = False
+    ) -> bool:
         """Mutating half of add_block; caller provides rollback protection."""
 
-        self._populate_ghostdag_metadata(block)
+        if not metadata_ready:
+            self._populate_ghostdag_metadata(block)
 
         selected_parent = self.blocks[block.selected_parent]
 
@@ -655,6 +657,30 @@ class BlockDAG:
                     new_chain[common_ancestor_idx:], start=common_ancestor_idx
                 )
                 selected_chain_set = set(new_selected_chain)
+
+            # Hard checkpoints are indexed by deterministic virtual blue-order
+            # height, not raw DAG arrival order. Reject a candidate selected
+            # view before reverting or minting anything if it would replace a
+            # manifest-pinned historical hash.
+            prospective_suffix = (
+                chain_extension
+                if is_linear_extension
+                else new_chain[common_ancestor_idx:]
+            )
+            for checkpoint_height, expected_hash in self.network.hard_checkpoints.items():
+                if checkpoint_height < common_ancestor_idx:
+                    # The already-accepted prefix was checked when it entered
+                    # the virtual order; any reorg below it would appear in the
+                    # suffix and be checked below.
+                    continue
+                suffix_index = checkpoint_height - common_ancestor_idx
+                if 0 <= suffix_index < len(prospective_suffix):
+                    actual_hash = prospective_suffix[suffix_index]
+                    if actual_hash != expected_hash:
+                        raise ValueError(
+                            "Hard checkpoint mismatch at virtual blue height "
+                            f"{checkpoint_height}: {actual_hash} != {expected_hash}"
+                        )
 
             # If reorg occurred, revert orphaned blocks in reverse order
             for orphaned_hash in reversed(old_chain[common_ancestor_idx:]):
@@ -935,10 +961,15 @@ class BlockDAG:
             if not epoch.resolution:
                 continue
             resolution = epoch.resolution
+            start_block = self.blocks[order[epoch.start_height]]
+            draw_block = self.blocks[order[resolution.draw_height]]
             resolutions.append({
                 "epoch_id": epoch_id,
                 "stage_id": resolution.stage_id,
+                "epoch_start_height": epoch.start_height,
+                "epoch_start_timestamp": start_block.timestamp,
                 "draw_height": resolution.draw_height,
+                "draw_timestamp": draw_block.timestamp,
                 "beacon_height": resolution.beacon_height,
                 "beacon_hash": resolution.beacon_hash,
                 "winner_block_hash": resolution.winner_block_hash,

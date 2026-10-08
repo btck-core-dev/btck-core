@@ -1,42 +1,43 @@
 {
   "manifest_version": 1,
   "network": "mainnet",
-  "chain_id": "btck-mainnet-unreleased",
+  "chain_id": "btck-mainnet-v1",
   "p2p_magic": "4254434d",
   "data_subdir": "mainnet",
   "release": {
     "approved": false,
     "approval_id": "",
-    "note": "LOCKED TEMPLATE. Replace genesis after independent review; never approve by copying devnet/testnet values."
+    "note": "LOCKED MAINNET CANDIDATE. Public wallet outputs, Euronews headline, PoW floor, DAA initial target and genesis bits are frozen; genesis timestamp, nonce and expected hash remain pending."
   },
   "consensus": {
     "block_version": 2,
-    "pow_limit_bits": "0x1d00ffff",
+    "pow_limit_bits": "0x1c176680",
     "max_future_seconds": 120,
     "max_parents": 8,
     "ghostdag_k": 18,
     "max_merge_set_size": 1024,
     "daa": {
       "window_blocks": 264,
-      "initial_bits": "0x1d00ffff",
+      "initial_bits": "0x1c017668",
       "target_interval_ms": 1000,
       "median_time_blocks": 11,
       "max_adjustment_factor": 2
     },
     "eco_fund_output": [
-      "020000000000000000000000000000000000000000000000000000000000000000",
-      "030000000000000000000000000000000000000000000000000000000000000000"
-    ]
+      "0218c8a8b18a55da9f1aeb1d60baebfe176419eca4fdf5549ffcb9c0190060d55c",
+      "0263bf9a23d411aad1e3e5a9c71414895ac32122ff8f7a68ac651cba5c5d0dfd4d"
+    ],
+    "hard_checkpoints": {}
   },
   "genesis": {
-    "version": 1,
+    "version": 2,
     "timestamp": 1.0,
-    "bits": 1,
+    "bits": 469857896,
     "nonce": "0x0",
-    "headline": "UNRELEASED BTC-K MAINNET TEMPLATE - DO NOT USE",
+    "headline": "2026-10-06 Euronews: Belgian physicist wins Nobel for turning Antarctic ice into a telescope",
     "coinbase_output": [
-      "020000000000000000000000000000000000000000000000000000000000000000",
-      "020000000000000000000000000000000000000000000000000000000000000000"
+      "03b51092a259bf7ef34de4585ab779e7504f4d984ffe3a47bfcaa96a0c1efb47a1",
+      "0219a04205e31791a2cfdc8368d75b6cec8020b2da106328a18b85323227e0aef7"
     ],
     "expected_hash": "0000000000000000000000000000000000000000000000000000000000000000"
   },

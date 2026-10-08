@@ -118,6 +118,7 @@ summary = {
         "fee_policy": dashboard.get("pool_fee_policy"),
         "miners": dashboard.get("miners_summary"),
     },
+    "stratum_share_counters": dashboard.get("stratum_share_counters"),
     "stratum_last_65m": {
         "valid_shares": count(log, "Valid share"),
         "accepted_blocks": count(log, "BLOCK ACCEPTED"),

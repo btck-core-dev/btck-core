@@ -5,8 +5,9 @@ Architecture & Security Specification:
 1. Cryptographic Network Defense & Emergency Alert System (Satoshi-style Alert System).
    - Signs emergency beacons using secp256k1 Schnorr signatures.
    - Nodes verify against hardcoded compressed network defense public key.
-   - Capable of triggering Safe Mode (read-only state during critical exploits),
-     broadcasting network upgrade directives, or injecting dynamic rolling checkpoints.
+   - DEVNET/TESTNET can trigger local Safe Mode or broadcast upgrade notices.
+   - MAINNET does not accept signed operator alerts; consensus checkpoints are
+     immutable manifest inputs and cannot be injected at runtime.
 2. Height-Activated Soft-Fork Registry (BIP-8 / BIP-9 Compatible Switchboard).
    - Allows seamless rule tightening and parameter hot-patching without chain splits.
 3. Rolling Consensus Checkpoint Guard (Long-Range 51% Reorganization Shield).
@@ -33,7 +34,7 @@ class AlertAction:
     ENABLE_SAFE_MODE = "ENABLE_SAFE_MODE" # Freeze transaction broadcasts (read-only)
     CLEAR_SAFE_MODE = "CLEAR_SAFE_MODE"   # Revoke safe mode, restore full processing
     FORCE_UPGRADE = "FORCE_UPGRADE"       # Require node update to minimum version
-    INJECT_CHECKPOINT = "INJECT_CHECKPOINT" # Lock in an immutable block checkpoint
+    INJECT_CHECKPOINT = "INJECT_CHECKPOINT" # Legacy non-consensus notice; never mutates MAINNET rules
 
 
 @dataclass
@@ -186,7 +187,6 @@ class RollingCheckpointGuard:
         # Initial canonical consensus checkpoints
         self.checkpoints: Dict[int, str] = {
             0: "genesis_block_0",
-            271_828: "0000000000000000000000000000000000000000000000000000000000042718" # Euler checkpoint homage
         }
 
     def add_checkpoint(self, height: int, block_hash: str):
