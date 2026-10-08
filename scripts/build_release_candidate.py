@@ -85,8 +85,9 @@ def main() -> None:
     if status and not args.allow_dirty:
         raise SystemExit("refusing to build from a dirty worktree")
     commit = run("git", "rev-parse", "HEAD")
-    tag = run("git", "describe", "--tags", "--exact-match", "HEAD")
-    if tag != "mainnet-pre-genesis-rc2":
+    tags = run("git", "tag", "--points-at", "HEAD").splitlines()
+    tag = "mainnet-pre-genesis-rc2"
+    if tag not in tags:
         raise SystemExit("HEAD must carry the mainnet-pre-genesis-rc2 tag")
     wallet_source = args.wallet_artifact.resolve()
     if not wallet_source.is_file():
