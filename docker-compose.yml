@@ -82,6 +82,7 @@ services:
       BTCK_NETWORK: "${BTCK_NETWORK:-devnet}"
       BTCK_EXPLORER_HOST: "0.0.0.0"
       BTCK_NODE_INFO_URL: "http://btck-node:16110/dashboard"
+      BTCK_NODE_RPC_URL: "http://btck-node:16110/rpc"
       BTCK_STRATUM_STATUS_URL: "http://btck-stratum:3337/status"
     ports:
       - "127.0.0.1:8088:8088"  # public access must go through the explicit TLS edge overlay

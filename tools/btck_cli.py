@@ -10,6 +10,7 @@ new public wallet release is built.
 from __future__ import annotations
 
 import argparse
+from dataclasses import asdict
 import getpass
 import hashlib
 import json
@@ -19,13 +20,15 @@ import time
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from urllib.error import HTTPError, URLError
+from urllib.parse import urlencode, urlparse
 from urllib.request import Request, urlopen
 
 BASE_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(BASE_DIR / "src"))
 
-WALLET_VERSION = "3.2.0-guardian1"
+WALLET_VERSION = "3.2.1-guardian1"
 RECOVERY_SCHEME = "bip39-btck-dksap-v1"
+DEFAULT_SYNC_URL = "https://explorer.btck.network/api/wallet/sync"
 
 APPROVED_NETWORKS = {
     "mainnet": {
@@ -50,7 +53,7 @@ APPROVED_NETWORKS = {
 
 from privacy.stealth_address import StealthKeyPair
 from privacy.bip39 import WORDLIST, derive_btck_stealth_wallet, generate_mnemonic, mnemonic_to_seed, validate_mnemonic
-from privacy.wallet_crypto import WALLET_FORMAT
+from privacy.wallet_crypto import WALLET_FORMAT, decrypt_wallet_payload, encrypt_wallet_payload
 from privacy.wallet_engine import SATK_PER_COIN, StealthWallet, UTXO, transaction_from_dict, transaction_to_dict
 
 
@@ -239,25 +242,160 @@ def load_wallet(path: str, args) -> StealthWallet:
         password = None
     else:
         raise CLIError("Legacy plaintext wallet refused; run migrate-encrypt on an offline host")
-    return StealthWallet.load_from_json(str(wallet_path), password=password)
+    wallet = StealthWallet.load_from_json(str(wallet_path), password=password)
+    wallet._source_path = wallet_path
+    wallet._unlock_password = password
+    return wallet
 
 
-def get_approved_node_identity(args) -> dict:
-    info = rpc_call(args, "getInfo")
-    network = info.get("network", {})
-    return validate_network_identity({
-        "name": network.get("name", network.get("network")),
-        "chain_id": network.get("chain_id"),
-        "genesis_hash": network.get("genesis_hash"),
-        "consensus_fingerprint": network.get("consensus_fingerprint"),
+def _sync_cache_path(wallet: StealthWallet) -> Path | None:
+    source = getattr(wallet, "_source_path", None)
+    return Path(str(source) + ".sync.json") if source else None
+
+
+def _load_sync_cache(wallet: StealthWallet) -> dict:
+    path = _sync_cache_path(wallet)
+    password = getattr(wallet, "_unlock_password", None)
+    if path is None or password is None or not path.exists():
+        return {"next_height": 0, "anchor_hash": "", "network": None}
+    try:
+        envelope = read_json(str(path), "wallet sync cache")
+        private, public = decrypt_wallet_payload(envelope, password)
+        if public.get("format") != "btck-wallet-sync-cache-v1":
+            raise ValueError("unsupported cache format")
+        if public.get("wallet_address") != wallet.address:
+            raise ValueError("cache belongs to a different wallet")
+        wallet.utxos = [UTXO(**item) for item in private.get("utxos", [])]
+        return {
+            "next_height": int(private.get("next_height", 0)),
+            "anchor_hash": str(private.get("anchor_hash", "")),
+            "network": private.get("network"),
+        }
+    except (OSError, TypeError, ValueError, KeyError) as exc:
+        raise CLIError(f"Encrypted wallet sync cache is unreadable: {exc}") from exc
+
+
+def _save_sync_cache(wallet: StealthWallet, state: dict) -> None:
+    path = _sync_cache_path(wallet)
+    password = getattr(wallet, "_unlock_password", None)
+    if path is None or password is None:
+        return
+    private = {
+        "next_height": int(state["next_height"]),
+        "anchor_hash": str(state["anchor_hash"]),
+        "network": state["network"],
+        "utxos": [asdict(utxo) for utxo in wallet.utxos],
+    }
+    public = {"format": "btck-wallet-sync-cache-v1", "wallet_address": wallet.address}
+    envelope = encrypt_wallet_payload(private, public, password)
+    temporary = path.with_name(f"{path.name}.tmp-{os.getpid()}")
+    descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            json.dump(envelope, handle, separators=(",", ":"), sort_keys=True)
+            handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+    finally:
+        if temporary.exists():
+            temporary.unlink()
+
+
+def _fetch_sync_page(args, state: dict) -> dict:
+    sync_url = str(getattr(args, "sync_url", DEFAULT_SYNC_URL))
+    parsed = urlparse(sync_url)
+    if parsed.scheme != "https" and not (
+        parsed.scheme == "http" and parsed.hostname in {"127.0.0.1", "localhost", "::1"}
+    ):
+        raise CLIError("Wallet sync requires HTTPS (plain HTTP is allowed only on loopback)")
+    query = urlencode({
+        "from_height": int(state["next_height"]),
+        "limit": int(getattr(args, "sync_page_size", 250)),
+        "anchor_hash": str(state["anchor_hash"]),
     })
+    request = Request(f"{sync_url}?{query}", headers={"User-Agent": f"BTC-K-Wallet/{WALLET_VERSION}"})
+    try:
+        with urlopen(request, timeout=float(getattr(args, "timeout", 10.0))) as response:
+            result = json.loads(response.read().decode("utf-8"))
+    except HTTPError as exc:
+        try:
+            detail = json.loads(exc.read().decode("utf-8")).get("error", str(exc))
+        except Exception:
+            detail = str(exc)
+        raise CLIError(f"Wallet sync request failed: {detail}") from exc
+    except (URLError, TimeoutError, json.JSONDecodeError) as exc:
+        raise CLIError(f"Wallet sync request failed: {exc}") from exc
+    if not isinstance(result, dict) or result.get("format") != "btck-wallet-sync-v1":
+        raise CLIError("Wallet sync endpoint returned an invalid response")
+    return result
 
 
 def scan_wallet(args, wallet: StealthWallet):
-    network = get_approved_node_identity(args)
-    snapshot = rpc_call(args, "getUTXOSet")
-    wallet.scan_chain_outputs(snapshot["outputs"])
-    return snapshot, network
+    state = _load_sync_cache(wallet)
+    reset_attempted = False
+    while True:
+        print(
+            f"同步链上数据：正在读取高度 {state['next_height']} 之后的新记录…",
+            file=sys.stderr, flush=True,
+        )
+        try:
+            page = _fetch_sync_page(args, state)
+        except CLIError as exc:
+            if (
+                not reset_attempted
+                and int(state["next_height"]) > 0
+                and ("stale" in str(exc).lower() or "outside the canonical" in str(exc).lower())
+            ):
+                print("检测到链游标变化，正在安全地从创世高度重新同步…", file=sys.stderr, flush=True)
+                wallet.utxos = []
+                state = {"next_height": 0, "anchor_hash": "", "network": None}
+                _save_sync_cache(wallet, state)
+                reset_attempted = True
+                continue
+            raise
+        network = validate_network_identity(page.get("network", {}))
+        if state["network"] is not None and state["network"] != network:
+            raise CLIError("Wallet sync cache network identity does not match the endpoint")
+        if int(page.get("from_height", -1)) != int(state["next_height"]):
+            raise CLIError("Wallet sync endpoint returned a discontinuous page")
+
+        expected_height = int(state["next_height"])
+        previous_hash = str(state["anchor_hash"])
+        for block in page.get("blocks", []):
+            if int(block.get("height", -1)) != expected_height:
+                raise CLIError("Wallet sync endpoint returned non-contiguous block heights")
+            block_hash = str(block.get("hash", ""))
+            if len(block_hash) != 64:
+                raise CLIError("Wallet sync endpoint returned an invalid block hash")
+            spent = {(str(item["txid"]), int(item["vout"])) for item in block.get("spent", [])}
+            if spent:
+                wallet.utxos = [utxo for utxo in wallet.utxos if (utxo.txid, utxo.vout) not in spent]
+            wallet.scan_chain_outputs(block.get("created", []))
+            expected_height += 1
+            previous_hash = block_hash
+
+        if int(page.get("next_height", -1)) != expected_height:
+            raise CLIError("Wallet sync endpoint returned an invalid next-height cursor")
+        if str(page.get("anchor_hash", "")) != previous_hash:
+            raise CLIError("Wallet sync endpoint returned an invalid anchor hash")
+
+        state = {
+            "next_height": int(page["next_height"]),
+            "anchor_hash": str(page["anchor_hash"]),
+            "network": network,
+        }
+        _save_sync_cache(wallet, state)
+        tip_height = int(page["tip_height"])
+        completed = min(state["next_height"], tip_height + 1)
+        percent = 100.0 if tip_height < 0 else completed * 100.0 / (tip_height + 1)
+        print(
+            f"同步进度：{completed}/{tip_height + 1}（{percent:.1f}%），"
+            f"已识别 {len(wallet.utxos)} 个未花费输出",
+            file=sys.stderr, flush=True,
+        )
+        if page.get("done"):
+            return {"selected_height": tip_height}, network
 
 
 def cmd_new(args):
@@ -627,6 +765,12 @@ def build_parser():
     parser.add_argument("--version", action="version", version=f"BTC-K Wallet {WALLET_VERSION}")
     parser.add_argument("--rpc-url", default=os.getenv("BTCK_RPC_URL", "http://127.0.0.1:16110/rpc"))
     parser.add_argument("--rpc-token", help="RPC bearer token (prefer BTCK_RPC_TOKEN environment variable)")
+    parser.add_argument(
+        "--sync-url",
+        default=os.getenv("BTCK_SYNC_URL", DEFAULT_SYNC_URL),
+        help="Public HTTPS endpoint used for secret-free incremental chain synchronization",
+    )
+    parser.add_argument("--sync-page-size", type=int, default=250)
     parser.add_argument("--timeout", type=float, default=10.0)
     parser.add_argument("--password-file", help="Read wallet password from a permission-restricted file")
     parser.add_argument(

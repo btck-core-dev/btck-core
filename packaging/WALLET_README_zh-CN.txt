@@ -1,11 +1,13 @@
-BTC-K Wallet 3.2.0-guardian1（macOS）
+BTC-K Wallet 3.2.1-guardian1（macOS）
 =====================================
 
 适用范围
 --------
 本包已内置并仅批准当前 BTC-K 私有护网 MAINNET（guardian1），同时支持 DEVNET/TESTNET。
 它不是高度 271,828 后的公网正式钱包；届时链身份改变，必须换用重新构建的公开版钱包。
-这是节点驱动的钱包程序：私钥和签名留在本机，余额查询和广播需要连接受信任的 BTC-K 节点 RPC。
+这是本地密钥钱包：私钥、查看密钥和签名始终留在本机。余额通过公开 HTTPS 增量接口读取
+不含钱包身份的链上输出页，再由本机识别属于自己的输出；服务器不会收到钱包地址或任何私钥。
+同步游标和已识别的 UTXO 保存在钱包旁的 .sync.json 文件中，并使用同一钱包口令加密。
 若文件名为 btck-wallet.pyz，需要 Python 3.10 或更高版本；原生 btck-wallet 文件不需要另装 Python。
 
 双击打开
@@ -46,13 +48,14 @@ SHA-256，再在“系统设置 → 隐私与安全性”中允许。菜单可�
 
 新钱包默认使用 scrypt + ChaCha20-Poly1305 口令加密。交互模式会安全提示输入口令；自动化场景可用仅本人可读的 --password-file，且该参数必须写在子命令之前。
 
-连接节点
---------
-推荐先通过 SSH 或受控私网把节点 RPC 映射到本机 127.0.0.1:16110，不要把 RPC token 放在命令历史中：
+同步链上余额
+------------
+正式钱包默认连接公开 HTTPS 只读同步接口，不需要 SSH、VPS 账号或完整节点：
 
-  export BTCK_RPC_URL=http://127.0.0.1:16110/rpc
-  export BTCK_RPC_TOKEN='从节点管理员安全取得的令牌'
-  ./btck-wallet.pyz balance miner_wallet.json
+  ./btck-wallet balance miner_wallet.json
+
+首次同步会逐页显示高度进度；以后只同步新增高度。删除加密的 .sync.json 只会触发重新扫描，
+不会影响钱包私钥或链上资产。
 
 转账
 ----

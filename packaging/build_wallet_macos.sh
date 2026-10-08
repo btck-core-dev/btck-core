@@ -6,7 +6,7 @@ BUILD_ROOT="${BTCK_WALLET_BUILD_ROOT:-$PROJECT_DIR/build/wallet-macos}"
 RELEASE_DIR="${BTCK_WALLET_RELEASE_DIR:-$PROJECT_DIR/dist/wallet}"
 VENV_DIR="$BUILD_ROOT/venv"
 ARCH="$(uname -m)"
-VERSION="3.2.0-guardian1"
+VERSION="3.2.1-guardian1"
 
 case "$ARCH" in
   arm64|x86_64) ;;

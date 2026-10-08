@@ -1,0 +1,25 @@
+[Unit]
+Description=BTC-K MAINNET Read-Only Wallet Sync Edge
+After=network-online.target btck-mainnet-node.service
+Requires=btck-mainnet-node.service
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/btck-mainnet-guardian
+EnvironmentFile=/home/ubuntu/btck-mainnet-guardian/evidence/guardian.env
+Environment=BTCK_EXPLORER_HOST=127.0.0.1
+Environment=BTCK_NODE_INFO_URL=http://127.0.0.1:17110/dashboard
+Environment=BTCK_NODE_RPC_URL=http://127.0.0.1:17110/rpc
+Environment=BTCK_STRATUM_STATUS_URL=http://127.0.0.1:3337/status
+ExecStart=/usr/bin/python3 /home/ubuntu/btck-mainnet-guardian/src/web_explorer_server.py 18088
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

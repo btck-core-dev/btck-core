@@ -313,6 +313,92 @@ class BTCKDaemon:
             }
         }
 
+    def get_wallet_sync_page(self, params: dict) -> dict:
+        """Return a bounded, secret-free canonical ledger delta for local wallets.
+
+        Clients identify their own stealth outputs locally.  The request contains
+        only a public cursor; it must never contain an address or view/spend key.
+        """
+        if not isinstance(params, dict):
+            raise ValueError("wallet sync parameters must be an object")
+        forbidden = {
+            "address", "wallet_address", "view_priv", "view_priv_scalar",
+            "spend_priv", "spend_priv_scalar", "spend_pub_hex",
+        }
+        leaked = sorted(forbidden.intersection(params))
+        if leaked:
+            raise ValueError("wallet sync refuses secret or identity parameters")
+
+        order = self.dag.virtual_blue_order
+        tip_height = len(order) - 1
+        from_height = int(params.get("from_height", 0))
+        limit = max(1, min(int(params.get("limit", 250)), 1000))
+        if from_height < 0 or from_height > tip_height + 1:
+            raise ValueError("from_height is outside the canonical ledger")
+        if from_height > 0:
+            anchor_hash = str(params.get("anchor_hash", ""))
+            expected_anchor = order[from_height - 1]
+            if anchor_hash != expected_anchor:
+                raise ValueError("wallet sync cursor is stale after a canonical reorganization")
+
+        # Recover entries that were created earlier and spent later.  Current
+        # entries come from the UTXO map; spent entries remain in undo records.
+        spent_entries = {}
+        for spent in self.dag.utxo_set._block_spent_undo.values():
+            for outpoint, entry in spent:
+                spent_entries.setdefault(outpoint, entry)
+
+        end_height = min(tip_height + 1, from_height + limit)
+        blocks = []
+        for height in range(from_height, end_height):
+            block_hash = order[height]
+            created = []
+            for txid, vout in self.dag.utxo_set._block_created_undo.get(block_hash, []):
+                outpoint = (txid, vout)
+                entry = self.dag.utxo_set.utxos.get(outpoint) or spent_entries.get(outpoint)
+                if entry is None or not entry.R_ephem_hex or not entry.P_onetime_hex:
+                    continue
+                created.append({
+                    "txid": txid,
+                    "vout": vout,
+                    "amount_satk": entry.amount_satk,
+                    "R_ephem_hex": entry.R_ephem_hex,
+                    "P_onetime_hex": entry.P_onetime_hex,
+                    "height": entry.block_height,
+                    "is_coinbase": entry.is_coinbase,
+                    "timelock_until_height": entry.timelock_until_height,
+                    "kind": entry.kind,
+                })
+            spent = [
+                {"txid": outpoint[0], "vout": outpoint[1]}
+                for outpoint, _entry in self.dag.utxo_set._block_spent_undo.get(block_hash, [])
+            ]
+            blocks.append({
+                "height": height,
+                "hash": block_hash,
+                "created": created,
+                "spent": spent,
+            })
+
+        next_height = end_height
+        anchor_hash = order[next_height - 1] if next_height > 0 else ""
+        return {
+            "format": "btck-wallet-sync-v1",
+            "network": {
+                "name": self.network.name,
+                "chain_id": self.network.chain_id,
+                "genesis_hash": self.dag.genesis_hash,
+                "consensus_fingerprint": self.network.consensus_fingerprint,
+            },
+            "from_height": from_height,
+            "next_height": next_height,
+            "anchor_hash": anchor_hash,
+            "tip_height": tip_height,
+            "tip_hash": order[tip_height] if tip_height >= 0 else "",
+            "done": next_height > tip_height,
+            "blocks": blocks,
+        }
+
     async def process_rpc(self, req: dict) -> dict:
         req_id = req.get("id")
         method = req.get("method")
@@ -320,6 +406,20 @@ class BTCKDaemon:
 
         if method == "getInfo":
             return {"jsonrpc": "2.0", "result": self.get_node_info(), "id": req_id}
+
+        elif method == "getWalletSyncPage":
+            try:
+                return {
+                    "jsonrpc": "2.0",
+                    "result": self.get_wallet_sync_page(params),
+                    "id": req_id,
+                }
+            except (TypeError, ValueError) as exc:
+                return {
+                    "jsonrpc": "2.0",
+                    "error": {"code": -32602, "message": str(exc)},
+                    "id": req_id,
+                }
 
         elif method == "getAlertInfo":
             return {

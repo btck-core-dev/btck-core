@@ -34,6 +34,7 @@ from privacy.stealth_address import StealthKeyPair
 
 WEB_DIR = Path(os.getenv("BTCK_WEB_DIR", str(BASE_DIR / "web")))
 NODE_INFO_URL = os.getenv("BTCK_NODE_INFO_URL", "http://127.0.0.1:16110/dashboard")
+NODE_RPC_URL = os.getenv("BTCK_NODE_RPC_URL", "http://127.0.0.1:16110/rpc")
 STRATUM_STATUS_URL = os.getenv("BTCK_STRATUM_STATUS_URL", "http://127.0.0.1:3337/status")
 NETWORK = load_network()
 
@@ -83,6 +84,30 @@ _pool_updater_thread.start()
 
 def fetch_node_info() -> Dict[str, Any]:
     return _CACHED_NODE_INFO
+
+
+def fetch_wallet_sync_page(from_height: int, limit: int, anchor_hash: str) -> Dict[str, Any]:
+    """Proxy a bounded, secret-free ledger page from the loopback node RPC."""
+    params = {"from_height": from_height, "limit": limit, "anchor_hash": anchor_hash}
+    payload = json.dumps({
+        "jsonrpc": "2.0", "id": 1, "method": "getWalletSyncPage", "params": params,
+    }, separators=(",", ":")).encode("utf-8")
+    request = urllib.request.Request(
+        NODE_RPC_URL,
+        data=payload,
+        headers={"Content-Type": "application/json", "User-Agent": "BTCK-Wallet-Edge/1.0"},
+        method="POST",
+    )
+    with urllib.request.urlopen(request, timeout=15.0) as response:
+        envelope = json.loads(response.read().decode("utf-8"))
+    if not isinstance(envelope, dict):
+        raise ValueError("node returned a malformed wallet sync envelope")
+    if "error" in envelope:
+        raise ValueError(str(envelope["error"].get("message", "wallet sync failed")))
+    result = envelope.get("result")
+    if not isinstance(result, dict):
+        raise ValueError("node returned a malformed wallet sync result")
+    return result
 
 
 def _format_hashrate(rate: float, approximate: bool = True) -> str:
@@ -440,6 +465,19 @@ class ExplorerHTTPHandler(BaseHTTPRequestHandler):
                 "scope": "recent_node_window",
                 "blocks": (stats.get("blocks", []) or [])[-limit:],
             })
+        elif path == "/api/wallet/sync":
+            query = urllib.parse.parse_qs(parsed.query)
+            try:
+                from_height = int(query.get("from_height", ["0"])[0])
+                limit = max(1, min(int(query.get("limit", ["250"])[0]), 1000))
+                anchor_hash = str(query.get("anchor_hash", [""])[0])
+                if from_height < 0 or (anchor_hash and len(anchor_hash) != 64):
+                    raise ValueError("invalid wallet sync cursor")
+                self.send_json_response(fetch_wallet_sync_page(from_height, limit, anchor_hash))
+            except (TypeError, ValueError) as exc:
+                self.send_json_response({"error": str(exc)}, 409)
+            except Exception:
+                self.send_json_response({"error": "wallet sync backend temporarily unavailable"}, 503)
         elif path == "/api/search":
             query = urllib.parse.parse_qs(parsed.query).get("q", [""])[0]
             result = _search_recent_blocks(query)

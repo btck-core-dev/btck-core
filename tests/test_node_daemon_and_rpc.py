@@ -91,6 +91,27 @@ class TestNodeDaemonAndRPC(unittest.IsolatedAsyncioTestCase):
                 self.assertTrue(block_info["accepted"])
                 parents = [block_info["hash"]]
 
+            # Wallet sync is public, paginated and contains no wallet identity
+            # or private key. The cursor hash binds the next page to this view.
+            first_page = await async_rpc_call(
+                test_host, test_port, "getWalletSyncPage",
+                {"from_height": 0, "limit": 3, "anchor_hash": ""}, token="",
+            )
+            self.assertEqual(first_page["result"]["format"], "btck-wallet-sync-v1")
+            self.assertEqual(first_page["result"]["next_height"], 3)
+            second_page = await async_rpc_call(
+                test_host, test_port, "getWalletSyncPage", {
+                    "from_height": 3, "limit": 10,
+                    "anchor_hash": first_page["result"]["anchor_hash"],
+                }, token="",
+            )
+            self.assertTrue(second_page["result"]["done"])
+            rejected_secret = await async_rpc_call(
+                test_host, test_port, "getWalletSyncPage",
+                {"from_height": 0, "view_priv_scalar": "1"}, token="",
+            )
+            self.assertIn("error", rejected_secret)
+
             # 4. Test scanStealthBalance with ONLY view_priv and spend_pub_hex (Spend key remains strictly offline)
             scan_res = await async_rpc_call(test_host, test_port, "scanStealthBalance", {
                 "view_priv_scalar": str(miner_wallet.view_priv),

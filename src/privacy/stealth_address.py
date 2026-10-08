@@ -18,8 +18,56 @@ _Gy = 0x483ADA7726A3C4655DA4FBFC0E1108A8FD17B448A68554199C47D08FFB10D4B8
 _G = (_Gx, _Gy)
 
 def _inv(k: int, p: int = _P) -> int:
-    """Modular inverse using extended Euclidean algorithm"""
-    return pow(k, p - 2, p)
+    """Modular inverse using CPython's extended-Euclidean implementation."""
+    return pow(k, -1, p)
+
+
+def _jacobian_double(point):
+    if point is None or point[1] == 0:
+        return None
+    x, y, z = point
+    yy = y * y % _P
+    s = 4 * x * yy % _P
+    m = 3 * x * x % _P
+    x3 = (m * m - 2 * s) % _P
+    y3 = (m * (s - x3) - 8 * yy * yy) % _P
+    z3 = 2 * y * z % _P
+    return x3, y3, z3
+
+
+def _jacobian_add(left, right):
+    if left is None:
+        return right
+    if right is None:
+        return left
+    x1, y1, z1 = left
+    x2, y2, z2 = right
+    z1z1 = z1 * z1 % _P
+    z2z2 = z2 * z2 % _P
+    u1 = x1 * z2z2 % _P
+    u2 = x2 * z1z1 % _P
+    s1 = y1 * z2 * z2z2 % _P
+    s2 = y2 * z1 * z1z1 % _P
+    if u1 == u2:
+        return _jacobian_double(left) if s1 == s2 else None
+    h = (u2 - u1) % _P
+    i = (2 * h) ** 2 % _P
+    j = h * i % _P
+    r = 2 * (s2 - s1) % _P
+    v = u1 * i % _P
+    x3 = (r * r - j - 2 * v) % _P
+    y3 = (r * (v - x3) - 2 * s1 * j) % _P
+    z3 = ((z1 + z2) ** 2 - z1z1 - z2z2) * h % _P
+    return x3, y3, z3
+
+
+def _jacobian_to_affine(point):
+    if point is None:
+        return None
+    x, y, z = point
+    z_inv = _inv(z)
+    z2 = z_inv * z_inv % _P
+    return x * z2 % _P, y * z2 * z_inv % _P
 
 def _point_add(p1: Optional[Tuple[int, int]], p2: Optional[Tuple[int, int]]) -> Optional[Tuple[int, int]]:
     """Elliptic curve point addition on secp256k1"""
@@ -44,14 +92,14 @@ def _point_mul(k: int, point: Tuple[int, int] = _G) -> Optional[Tuple[int, int]]
     k = k % _N
     if k == 0:
         return None
-    res = None
-    addend = point
+    result = None
+    addend = (point[0], point[1], 1)
     while k > 0:
         if k & 1:
-            res = _point_add(res, addend)
-        addend = _point_add(addend, addend)
+            result = _jacobian_add(result, addend)
+        addend = _jacobian_double(addend)
         k >>= 1
-    return res
+    return _jacobian_to_affine(result)
 
 def _pubkey_to_bytes(point: Tuple[int, int], compressed: bool = True) -> bytes:
     """Convert EC point to compressed (33-byte) or uncompressed (65-byte) representation"""

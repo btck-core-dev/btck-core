@@ -17,7 +17,7 @@ import btck_cli
 from privacy.stealth_address import StealthKeyPair
 from privacy.bip39 import mnemonic_to_seed, validate_mnemonic
 from privacy.wallet_crypto import aead_decrypt, aead_encrypt
-from privacy.wallet_engine import StealthWallet, transaction_from_dict
+from privacy.wallet_engine import StealthWallet, UTXO, transaction_from_dict
 from stratum.stratum_server import load_pool_treasury_wallet
 
 
@@ -73,6 +73,36 @@ class TestWalletEncryption(unittest.TestCase):
             self.assertEqual(restored.address, wallet.address)
             with self.assertRaisesRegex(ValueError, "incorrect|modified"):
                 StealthWallet.load_from_json(str(path), "wrong password here")
+
+    def test_incremental_sync_cache_is_encrypted_and_restored(self):
+        password = "incremental cache test password"
+        wallet = StealthWallet.generate("cache-test")
+        wallet.utxos = [UTXO(
+            txid="ab" * 32, vout=1, amount_satk=123456,
+            R_ephem_hex="02" + "11" * 32,
+            P_onetime_hex="03" + "22" * 32,
+            block_height=9,
+        )]
+        with tempfile.TemporaryDirectory() as root:
+            source = Path(root) / "wallet.json"
+            wallet._source_path = source
+            wallet._unlock_password = password
+            state = {
+                "next_height": 10, "anchor_hash": "cd" * 32,
+                "network": {**DEVNET_IDENTITY, "name": "devnet"},
+            }
+            btck_cli._save_sync_cache(wallet, state)
+            cache_path = Path(str(source) + ".sync.json")
+            encoded = cache_path.read_text(encoding="utf-8")
+            self.assertNotIn("ab" * 32, encoded)
+            self.assertEqual(cache_path.stat().st_mode & 0o777, 0o600)
+
+            restored = StealthWallet(wallet.keypair, "cache-test")
+            restored._source_path = source
+            restored._unlock_password = password
+            loaded = btck_cli._load_sync_cache(restored)
+            self.assertEqual(loaded["next_height"], 10)
+            self.assertEqual(restored.utxos[0].amount_satk, 123456)
 
     def test_cli_mnemonic_create_restore_verify_and_eco_output(self):
         mnemonic = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
@@ -240,21 +270,16 @@ class TestOfflineWalletFlow(unittest.TestCase):
 
     def test_wallet_scans_refuse_wrong_consensus_before_requesting_utxos(self):
         wallet = MagicMock()
-        calls = []
+        bad_page = {
+            "format": "btck-wallet-sync-v1",
+            "network": {**DEVNET_IDENTITY, "name": "devnet", "consensus_fingerprint": "00" * 32},
+            "from_height": 0, "next_height": 1, "anchor_hash": "11" * 32,
+            "tip_height": 0, "done": True, "blocks": [],
+        }
 
-        def fake_rpc(_args, method, _params=None):
-            calls.append(method)
-            if method == "getInfo":
-                return {"network": {
-                    **DEVNET_IDENTITY,
-                    "consensus_fingerprint": "00" * 32,
-                }}
-            raise AssertionError("wallet requested UTXOs before approving network identity")
-
-        with patch.object(btck_cli, "rpc_call", side_effect=fake_rpc):
+        with patch.object(btck_cli, "_fetch_sync_page", return_value=bad_page):
             with self.assertRaisesRegex(btck_cli.CLIError, "unknown|approved"):
                 btck_cli.scan_wallet(SimpleNamespace(), wallet)
-        self.assertEqual(calls, ["getInfo"])
         wallet.scan_chain_outputs.assert_not_called()
 
     def test_prepare_sign_broadcast_artifact_without_rpc_during_sign(self):
@@ -275,21 +300,25 @@ class TestOfflineWalletFlow(unittest.TestCase):
             common = {"password_file": str(password_path), "allow_legacy_plaintext": False}
             btck_cli.cmd_export_watch(SimpleNamespace(**common, wallet=str(wallet_path), out=str(watch_path)))
 
-            def fake_rpc(_args, method, _params=None):
-                if method == "getUTXOSet":
-                    return {"selected_height": 100, "outputs": [{
-                        "txid": "11" * 32, "vout": 0, "amount_satk": 500_000,
-                        "R_ephem_hex": R.hex(), "P_onetime_hex": P.hex(), "height": 50,
-                    }]}
-                if method == "getInfo":
-                    return {"network": DEVNET_IDENTITY}
-                raise AssertionError(method)
+            sync_blocks = [
+                {"height": height, "hash": f"{height + 1:064x}", "spent": [], "created": []}
+                for height in range(101)
+            ]
+            sync_blocks[50]["created"] = [{
+                "txid": "11" * 32, "vout": 0, "amount_satk": 500_000,
+                "R_ephem_hex": R.hex(), "P_onetime_hex": P.hex(), "height": 50,
+            }]
+            sync_page = {
+                "format": "btck-wallet-sync-v1", "network": {**DEVNET_IDENTITY, "name": "devnet"},
+                "from_height": 0, "next_height": 101, "anchor_hash": f"{101:064x}",
+                "tip_height": 100, "done": True, "blocks": sync_blocks,
+            }
 
             prepare_args = SimpleNamespace(
                 **common, watch_wallet=str(watch_path), to=recipient.address, amount="0.003",
                 fee="0.0001", out=str(unsigned_path), rpc_token=None,
             )
-            with patch.object(btck_cli, "rpc_call", side_effect=fake_rpc):
+            with patch.object(btck_cli, "_fetch_sync_page", return_value=sync_page):
                 btck_cli.cmd_prepare(prepare_args)
 
             package_id = json.loads(unsigned_path.read_text(encoding="utf-8"))["package_id"]
