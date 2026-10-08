@@ -58,7 +58,9 @@ def _node_info_updater():
                     _LAST_CACHE_TIME = time.time()
         except Exception:
             pass
-        time.sleep(5.0)
+        # The mainnet targets one blue block per second. A five-second cache
+        # made the explorer visibly trail the node by several ledger heights.
+        time.sleep(1.0)
 
 
 def _pool_status_updater():
@@ -73,7 +75,9 @@ def _pool_status_updater():
                     _LAST_POOL_CACHE_TIME = time.time()
         except Exception:
             pass
-        time.sleep(10.0)
+        # Keep the pool page close to the Stratum status window without
+        # placing its JSON endpoint on the public request path.
+        time.sleep(2.0)
 
 # Start background updater thread
 _updater_thread = threading.Thread(target=_node_info_updater, daemon=True)
@@ -214,9 +218,14 @@ def build_production_stats_payload() -> Dict[str, Any]:
         ts = float(block.get("timestamp", 0.0) or 0.0)
         display_blocks.append({
             "height": int(block.get("height", 0)),
+            "blue_score": int(block.get("blue_score", 0) or 0),
             "hash": block_hash[:16] + "...",
             "full_hash": block_hash,
             "reward": round(int(block.get("miner_base_sats", 0) or 0) / SATK_PER_COIN, 8),
+            "miner_base_btck": int(block.get("miner_base_sats", 0) or 0) / SATK_PER_COIN,
+            "combo_deposit_btck": int(block.get("pool_deposit_sats", 0) or 0) / SATK_PER_COIN,
+            "eco_deposit_btck": int(block.get("eco_deposit_sats", 0) or 0) / SATK_PER_COIN,
+            "fees_btck": int(block.get("fees_sats", 0) or 0) / SATK_PER_COIN,
             "combo": bool(block.get("is_combo_resolution", False)),
             "worker": attribution.get("finder_worker") or "unattributed",
             "address": attribution.get("finder_wallet") or "",
@@ -320,9 +329,13 @@ def build_production_stats_payload() -> Dict[str, Any]:
     node_age = now - _LAST_CACHE_TIME if _LAST_CACHE_TIME else None
     pool_age = now - _LAST_POOL_CACHE_TIME if _LAST_POOL_CACHE_TIME else None
     return {
+        "generated_at": now,
+        "ledger_height": ledger_height,
         "total_blocks": ledger_height,
         "total_dag_blocks": int(dag.get("total_dag_blocks", 0) or 0),
         "max_blue_score": int(dag.get("max_blue_score", 0) or 0),
+        "tips_count": int(dag.get("tips_count", 0) or 0),
+        "selected_tip": str(dag.get("selected_tip", "")),
         "total_combos": int(combo_state.get("resolved_count", 0) or 0),
         "current_era": stage_id,
         "era_name": stage_names.get(stage_id, f"Phase {stage_id}"),
@@ -442,8 +455,10 @@ class ExplorerHTTPHandler(BaseHTTPRequestHandler):
         parsed = urllib.parse.urlparse(self.path)
         path = parsed.path
 
-        if path in ("/", "/index.html", "/explorer", "/app", "/caas"):
+        if path in ("/", "/index.html", "/pool", "/app", "/caas"):
             self.serve_static_file("index.html", "text/html; charset=utf-8")
+        elif path in ("/explorer", "/explorer.html"):
+            self.serve_static_file("explorer.html", "text/html; charset=utf-8")
         elif path == "/style.css":
             self.serve_static_file("style.css", "text/css; charset=utf-8")
         elif path == "/app.js":

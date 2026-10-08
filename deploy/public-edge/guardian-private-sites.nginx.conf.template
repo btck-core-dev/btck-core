@@ -1,6 +1,11 @@
 limit_req_zone $binary_remote_addr zone=btck_private_web_per_ip:10m rate=20r/s;
 limit_conn_zone $binary_remote_addr zone=btck_private_web_connections:10m;
 
+upstream btck_private_mainnet_web {
+    server 127.0.0.1:18088;
+    keepalive 8;
+}
+
 server {
     listen 80;
     listen [::]:80;
@@ -21,37 +26,74 @@ server {
 server {
     listen 443 ssl http2;
     listen [::]:443 ssl http2;
-    server_name explorer.bitcoin-k.com pool.bitcoin-k.com;
+    server_name explorer.bitcoin-k.com;
 
     allow 51.195.136.143;
     deny all;
-
     ssl_certificate /etc/letsencrypt/live/explorer.bitcoin-k.com/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/explorer.bitcoin-k.com/privkey.pem;
     ssl_protocols TLSv1.2 TLSv1.3;
     ssl_session_tickets off;
-
     add_header Strict-Transport-Security "max-age=31536000" always;
     add_header X-Content-Type-Options "nosniff" always;
     add_header X-Frame-Options "DENY" always;
     add_header Referrer-Policy "no-referrer" always;
     add_header Content-Security-Policy "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'" always;
-
     limit_req zone=btck_private_web_per_ip burst=40 nodelay;
     limit_req_status 429;
     limit_conn btck_private_web_connections 8;
+    proxy_http_version 1.1;
+    proxy_set_header Connection "";
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto https;
+    proxy_connect_timeout 3s;
+    proxy_read_timeout 30s;
+    proxy_send_timeout 10s;
+
+    location = / {
+        limit_except GET HEAD { deny all; }
+        proxy_pass http://btck_private_mainnet_web/explorer;
+    }
 
     location / {
         limit_except GET HEAD { deny all; }
-        proxy_pass http://127.0.0.1:18088;
-        proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto https;
-        proxy_connect_timeout 3s;
-        proxy_read_timeout 30s;
-        proxy_send_timeout 10s;
-        proxy_buffering on;
+        proxy_pass http://btck_private_mainnet_web;
+    }
+}
+
+server {
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
+    server_name pool.bitcoin-k.com;
+
+    allow 51.195.136.143;
+    deny all;
+    ssl_certificate /etc/letsencrypt/live/explorer.bitcoin-k.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/explorer.bitcoin-k.com/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_session_tickets off;
+    add_header Strict-Transport-Security "max-age=31536000" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-Frame-Options "DENY" always;
+    add_header Referrer-Policy "no-referrer" always;
+    add_header Content-Security-Policy "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'" always;
+    limit_req zone=btck_private_web_per_ip burst=40 nodelay;
+    limit_req_status 429;
+    limit_conn btck_private_web_connections 8;
+    proxy_http_version 1.1;
+    proxy_set_header Connection "";
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto https;
+    proxy_connect_timeout 3s;
+    proxy_read_timeout 30s;
+    proxy_send_timeout 10s;
+
+    location / {
+        limit_except GET HEAD { deny all; }
+        proxy_pass http://btck_private_mainnet_web;
     }
 }

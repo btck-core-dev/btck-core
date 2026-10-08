@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>BTC-K BlockDAG Explorer</title>
+  <style>
+    :root { color-scheme: dark; --bg:#080c13; --panel:#111827; --line:#263244; --text:#e5edf7; --muted:#8da0b8; --cyan:#22d3ee; --green:#34d399; --gold:#fbbf24; --red:#fb7185; }
+    * { box-sizing:border-box; }
+    body { margin:0; background:radial-gradient(circle at 50% -20%,#16263d 0,#080c13 45%); color:var(--text); font:14px/1.5 Inter,ui-sans-serif,system-ui,-apple-system,sans-serif; }
+    header { border-bottom:1px solid var(--line); background:rgba(8,12,19,.92); position:sticky; top:0; z-index:2; backdrop-filter:blur(12px); }
+    .wrap { width:min(1180px,calc(100% - 32px)); margin:auto; }
+    .nav { min-height:72px; display:flex; align-items:center; justify-content:space-between; gap:20px; }
+    .brand { font-size:20px; font-weight:800; letter-spacing:.04em; }
+    .brand span { color:var(--cyan); }
+    .links { display:flex; gap:10px; align-items:center; }
+    .pill { border:1px solid var(--line); border-radius:999px; padding:7px 11px; color:var(--muted); text-decoration:none; }
+    .live { color:var(--green); }
+    main { padding:34px 0 56px; }
+    h1 { font-size:clamp(30px,5vw,52px); margin:0 0 8px; }
+    .lead { color:var(--muted); margin:0 0 26px; }
+    .grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:12px; }
+    .card { background:linear-gradient(180deg,rgba(17,24,39,.96),rgba(12,18,29,.96)); border:1px solid var(--line); border-radius:14px; padding:17px; min-width:0; }
+    .label { color:var(--muted); font-size:11px; font-weight:700; letter-spacing:.1em; text-transform:uppercase; }
+    .value { font-size:22px; font-weight:800; margin-top:6px; overflow-wrap:anywhere; }
+    .value.cyan { color:var(--cyan); } .value.green { color:var(--green); } .value.gold { color:var(--gold); }
+    .wide { grid-column:span 2; }
+    .section { margin-top:22px; }
+    .section-head { display:flex; justify-content:space-between; align-items:end; gap:14px; margin-bottom:10px; }
+    h2 { margin:0; font-size:20px; }
+    .source { color:var(--muted); font-size:12px; }
+    .search { display:flex; gap:8px; }
+    input { width:min(420px,58vw); border:1px solid var(--line); background:#0a101a; color:var(--text); padding:10px 12px; border-radius:9px; outline:none; }
+    button { border:0; border-radius:9px; padding:10px 15px; background:var(--cyan); color:#06202a; font-weight:800; cursor:pointer; }
+    #search-result { display:none; margin-top:10px; white-space:pre-wrap; overflow-wrap:anywhere; }
+    .table-wrap { overflow:auto; border:1px solid var(--line); border-radius:14px; background:rgba(12,18,29,.94); }
+    table { width:100%; border-collapse:collapse; min-width:960px; }
+    th,td { padding:12px 14px; border-bottom:1px solid var(--line); text-align:left; white-space:nowrap; }
+    th { color:var(--muted); font-size:11px; text-transform:uppercase; letter-spacing:.08em; }
+    td.num { text-align:right; font-variant-numeric:tabular-nums; }
+    code { color:#b8c8dc; }
+    .hash { max-width:250px; overflow:hidden; text-overflow:ellipsis; display:inline-block; vertical-align:bottom; }
+    .warning { color:var(--red); }
+    footer { color:var(--muted); padding-top:24px; text-align:center; }
+    @media (max-width:850px) { .grid { grid-template-columns:repeat(2,minmax(0,1fr)); } .wide { grid-column:span 2; } .nav { align-items:flex-start; padding:14px 0; flex-direction:column; } }
+  </style>
+</head>
+<body>
+  <header><div class="wrap nav"><div class="brand">BTC-K <span>BLOCKDAG EXPLORER</span></div><div class="links"><span id="live" class="pill">Connecting</span><a class="pill" href="https://pool.bitcoin-k.com/">Mining Pool</a></div></div></header>
+  <main class="wrap">
+    <h1>Canonical mainnet state</h1>
+    <p class="lead">Consensus data comes directly from the private guardian node. Values refresh every three seconds.</p>
+
+    <section class="grid">
+      <div class="card"><div class="label">Ledger height</div><div id="ledger-height" class="value cyan">—</div></div>
+      <div class="card"><div class="label">DAG blocks</div><div id="dag-blocks" class="value">—</div></div>
+      <div class="card"><div class="label">Blue score</div><div id="blue-score" class="value">—</div></div>
+      <div class="card"><div class="label">Active tips</div><div id="tips-count" class="value">—</div></div>
+      <div class="card"><div class="label">Issued supply</div><div id="issued" class="value gold">—</div></div>
+      <div class="card"><div class="label">Combo reserve</div><div id="combo" class="value gold">—</div></div>
+      <div class="card"><div class="label">Ecosystem reserve</div><div id="eco" class="value green">—</div></div>
+      <div class="card"><div class="label">Observed blue interval</div><div id="cadence" class="value">—</div></div>
+      <div class="card wide"><div class="label">Selected tip</div><div class="value"><code id="selected-tip">—</code></div></div>
+      <div class="card"><div class="label">DAA difficulty</div><div id="difficulty" class="value">—</div></div>
+      <div class="card"><div class="label">Next bits</div><div id="bits" class="value">—</div></div>
+    </section>
+
+    <section class="section card">
+      <div class="section-head"><div><h2>Search recent canonical window</h2><div class="source">Height or hash prefix, minimum eight hash characters</div></div><div class="search"><input id="query" autocomplete="off" placeholder="Height or block hash"><button id="search">Search</button></div></div>
+      <div id="search-result"></div>
+    </section>
+
+    <section class="section">
+      <div class="section-head"><div><h2>Recent blue-ledger blocks</h2><div class="source">Node-authoritative virtual blue order</div></div><div id="updated" class="source">—</div></div>
+      <div class="table-wrap"><table><thead><tr><th>Height</th><th>Blue score</th><th>Hash</th><th>Time (UTC)</th><th>Miner</th><th>Miner base</th><th>Combo deposit</th><th>Eco deposit</th></tr></thead><tbody id="blocks"><tr><td colspan="8">Loading live mainnet blocks…</td></tr></tbody></table></div>
+    </section>
+    <footer>BTC-K Mainnet · Read-only explorer · No wallet keys are accepted</footer>
+  </main>
+  <script>
+    const $ = id => document.getElementById(id);
+    const number = (value, digits = 0) => Number(value).toLocaleString(undefined,{minimumFractionDigits:digits,maximumFractionDigits:digits});
+    const btck = value => `${number(value, 8)} BTCK`;
+    const text = (id, value) => { $(id).textContent = value; };
+    const esc = value => String(value ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[c]);
+
+    function render(data) {
+      text("ledger-height", `#${number(data.ledger_height)}`);
+      text("dag-blocks", number(data.total_dag_blocks));
+      text("blue-score", number(data.max_blue_score));
+      text("tips-count", number(data.tips_count));
+      text("issued", btck(data.issued_supply_btck));
+      text("combo", btck(data.pool_balance_btck));
+      text("eco", btck(data.accumulated_eco_reserve_btck));
+      text("cadence", data.block_freq_sec ? `${data.block_freq_sec} s` : "Collecting");
+      text("selected-tip", data.selected_tip || "Unavailable");
+      text("difficulty", data.network_diff ? `${Number(data.network_diff).toFixed(6)}×` : "Unavailable");
+      text("bits", data.network_bits || "Unavailable");
+      const fresh = data.telemetry?.node_fresh;
+      text("live", fresh ? "● LIVE MAINNET" : "STALE");
+      $("live").className = fresh ? "pill live" : "pill warning";
+      text("updated", `Updated ${new Date(Number(data.generated_at) * 1000).toISOString()}`);
+      const rows = [...(data.blocks || [])].slice(-30).reverse().map(block => `<tr>
+        <td><strong>#${number(block.height)}</strong></td><td>${number(block.blue_score)}</td>
+        <td><code class="hash" title="${esc(block.full_hash)}">${esc(block.full_hash)}</code></td>
+        <td>${block.timestamp ? new Date(block.timestamp * 1000).toISOString() : "—"}</td>
+        <td>${esc(block.worker || "unattributed")}</td>
+        <td class="num">${btck(block.miner_base_btck)}</td><td class="num">${btck(block.combo_deposit_btck)}</td><td class="num">${btck(block.eco_deposit_btck)}</td>
+      </tr>`).join("");
+      $("blocks").innerHTML = rows || '<tr><td colspan="8">No canonical blocks available.</td></tr>';
+    }
+
+    async function refresh() {
+      try { const response = await fetch("/api/stats",{cache:"no-store"}); if (!response.ok) throw new Error(`HTTP ${response.status}`); render(await response.json()); }
+      catch (error) { text("live","OFFLINE"); $("live").className="pill warning"; }
+    }
+
+    async function search() {
+      const query = $("query").value.trim(); if (!query) return;
+      $("search-result").style.display="block"; text("search-result","Searching…");
+      try { const response=await fetch(`/api/search?q=${encodeURIComponent(query)}`,{cache:"no-store"}); const data=await response.json();
+        if (!response.ok || !data.found) { text("search-result",data.message || "Not found in the recent node window."); return; }
+        const b=data.block; text("search-result",`Height #${b.height}\nBlue score ${b.blue_score}\nHash ${b.full_hash}\nUTC ${new Date(b.timestamp*1000).toISOString()}\nMiner base ${btck(b.miner_base_btck)}\nCombo deposit ${btck(b.combo_deposit_btck)}\nEcosystem deposit ${btck(b.eco_deposit_btck)}`);
+      } catch (error) { text("search-result","Search is temporarily unavailable."); }
+    }
+    $("search").addEventListener("click",search); $("query").addEventListener("keydown",event=>{if(event.key==="Enter")search();});
+    refresh(); setInterval(refresh,3000);
+  </script>
+</body>
+</html>
