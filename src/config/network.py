@@ -65,6 +65,7 @@ class NetworkConfig:
     daa_target_interval_ms: int
     daa_median_time_blocks: int
     daa_max_adjustment_factor: int
+    daa_progress: str
     eco_fund_output: tuple[bytes, bytes]
     hard_checkpoints: Mapping[int, str]
     genesis: GenesisConfig
@@ -134,6 +135,7 @@ def _parse_manifest(path: Path, requested_name: str) -> NetworkConfig:
     daa_target_interval_ms = int(daa.get("target_interval_ms", 0))
     daa_median_time_blocks = int(daa.get("median_time_blocks", 0))
     daa_max_adjustment_factor = int(daa.get("max_adjustment_factor", 0))
+    daa_progress = str(daa.get("progress", "selected-chain-v1"))
     _require(block_version >= 2, "block_version must use the post-audit v2 header or later")
     _require(0 < pow_limit_bits <= 0xFFFFFFFF, "pow_limit_bits must be a uint32 compact target")
     _require(0 < max_future_seconds <= 7200, "max_future_seconds is outside the safe range")
@@ -145,6 +147,10 @@ def _parse_manifest(path: Path, requested_name: str) -> NetworkConfig:
     _require(100 <= daa_target_interval_ms <= 600_000, "DAA target interval is outside the safe range")
     _require(3 <= daa_median_time_blocks <= 101 and daa_median_time_blocks % 2 == 1, "DAA median window must be odd")
     _require(2 <= daa_max_adjustment_factor <= 16, "DAA adjustment factor is outside the safe range")
+    _require(
+        daa_progress in {"selected-chain-v1", "blue-score-v1"},
+        "DAA progress must be selected-chain-v1 or blue-score-v1",
+    )
     from consensus.pow import validate_compact_target
     try:
         validate_compact_target(daa_initial_bits, pow_limit_bits)
@@ -227,6 +233,7 @@ def _parse_manifest(path: Path, requested_name: str) -> NetworkConfig:
         daa_target_interval_ms=daa_target_interval_ms,
         daa_median_time_blocks=daa_median_time_blocks,
         daa_max_adjustment_factor=daa_max_adjustment_factor,
+        daa_progress=daa_progress,
         eco_fund_output=(bytes.fromhex(eco_output[0]), bytes.fromhex(eco_output[1])),
         hard_checkpoints=hard_checkpoints,
         genesis=genesis,

@@ -1,0 +1,9 @@
+[Unit]
+Description=Monitor BTC-K MAINNET guardian checkpoint height
+After=btck-mainnet-node.service btck-mainnet-stratum.service
+
+[Service]
+Type=oneshot
+User=root
+ExecStart=/usr/bin/python3 /home/ubuntu/btck-mainnet-guardian/deploy/guardian_checkpoint_watch.py
+UMask=0077

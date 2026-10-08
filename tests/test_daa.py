@@ -16,13 +16,15 @@ class TestDifficultyAdjustment(unittest.TestCase):
         )
         self.genesis = SimpleNamespace(timestamp=0.0, bits=self.network.genesis.bits)
 
-    def chain(self, spacing_seconds, bits=None):
+    def chain(self, spacing_seconds, bits=None, blue_score_step=1):
         blocks = [self.genesis]
         timestamp = 0.0
         block_bits = self.network.daa_initial_bits if bits is None else bits
+        blue_score = 0
         for _ in range(self.network.daa_window_blocks):
             timestamp += spacing_seconds
-            blocks.append(SimpleNamespace(timestamp=timestamp, bits=block_bits))
+            blue_score += blue_score_step
+            blocks.append(SimpleNamespace(timestamp=timestamp, bits=block_bits, blue_score=blue_score))
         return blocks
 
     def test_bootstrap_uses_manifest_initial_target(self):
@@ -47,6 +49,28 @@ class TestDifficultyAdjustment(unittest.TestCase):
             next_difficulty_bits(chain, self.network),
             next_difficulty_bits(list(chain), self.network),
         )
+
+    def test_blue_score_progress_targets_virtual_blue_rate(self):
+        network = replace(self.network, daa_progress="blue-score-v1")
+        # Five blue blocks per selected-parent step over five seconds is the
+        # desired one-blue-block-per-second issuance cadence.
+        chain = self.chain(5.0, blue_score_step=5)
+        bits = next_difficulty_bits(chain, network)
+        initial = compact_to_target(network.daa_initial_bits)
+        self.assertAlmostEqual(compact_to_target(bits) / initial, 1.0, places=5)
+
+    def test_blue_score_progress_does_not_treat_merge_blues_as_slow_chain(self):
+        hard_bits = 0x1F7FFFFF
+        selected_network = replace(
+            self.network, daa_initial_bits=hard_bits, daa_progress="selected-chain-v1"
+        )
+        blue_network = replace(
+            self.network, daa_initial_bits=hard_bits, daa_progress="blue-score-v1"
+        )
+        chain = self.chain(5.0, bits=hard_bits, blue_score_step=5)
+        selected_bits = next_difficulty_bits(chain, selected_network)
+        blue_bits = next_difficulty_bits(chain, blue_network)
+        self.assertGreater(compact_to_target(selected_bits), compact_to_target(blue_bits))
 
     def test_single_timestamp_outlier_is_absorbed_by_endpoint_median(self):
         baseline = self.chain(1.0)

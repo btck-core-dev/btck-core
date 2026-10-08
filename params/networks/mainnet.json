@@ -19,6 +19,7 @@
     "daa": {
       "window_blocks": 264,
       "initial_bits": "0x1c017668",
+      "progress": "blue-score-v1",
       "target_interval_ms": 1000,
       "median_time_blocks": 11,
       "max_adjustment_factor": 2

@@ -27,10 +27,17 @@ def next_difficulty_bits(selected_chain: list, network) -> int:
     first_time_ms = int(median([block.timestamp for block in window[:median_size]]) * 1000)
     last_time_ms = int(median([block.timestamp for block in window[-median_size:]]) * 1000)
     observed_ms = max(1, last_time_ms - first_time_ms)
-    expected_ms = max(
-        1,
-        (window_size - median_size) * network.daa_target_interval_ms,
-    )
+    if network.daa_progress == "blue-score-v1":
+        # A selected-parent step can merge several blue blocks. Issuance follows
+        # virtual blue order, so targeting one selected-parent step per second
+        # would accelerate issuance by the merge multiplicity. Blue score is
+        # deterministic and counts both the selected block and its merge blues.
+        first_score = int(median(block.blue_score for block in window[:median_size]))
+        last_score = int(median(block.blue_score for block in window[-median_size:]))
+        progress_blocks = max(1, last_score - first_score)
+    else:
+        progress_blocks = window_size - median_size
+    expected_ms = max(1, progress_blocks * network.daa_target_interval_ms)
 
     factor = network.daa_max_adjustment_factor
     observed_ms = min(expected_ms * factor, max(expected_ms // factor, observed_ms))

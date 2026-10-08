@@ -103,3 +103,20 @@ header 继续使用负责人冻结的 `15:00:00 +08:00` 时间戳，实际切换
 
 两台 KS0 已自动重连 MAINNET。主网 RPC/P2P 仅监听 VPS 回环地址，公网只允许已观察到的家庭公网
 IP 访问 Stratum 3333；Explorer 仍为旧 DEVNET 页面，没有把私有护网误报为公网发布。
+
+### 阶段 A DAA 启动审计与修正
+
+首批私有护网数据在蓝序高度 465 时暴露出一个公开前硬问题：蓝序实测约为 `0.746 bps`，
+而 selected-parent 链仅约为 `0.149 step/s`。旧 `selected-chain-v1` DAA 把一次可合并多个
+蓝块的 selected-parent 步骤误当成单个发行块，按该样本会在首次窗口后把目标放宽到上限
+`2.00x`，继而令蓝序发行快于白皮书的约 1 秒/块。
+
+处理决定：暂停 Stratum，保留旧数据库与矿池账本作为审计证据；DAA 冻结为
+`blue-score-v1`，以确定性的 blue-score 增量衡量窗口内实际发行进度。相同样本下预测首次
+调难为 `1.340685x`，即把约 `0.746 bps` 拉回约 `1 bps`。修正后全量回归 `194/194 PASS`。
+
+创世字段没有变化：timestamp、headline、bits、nonce 和 Genesis hash 均保持不变。由于 DAA
+属于共识规则，阶段 A 审批身份更新为 `BTCK-GUARDIAN-20261008-1500-CST-DAA2`，新
+consensus fingerprint 为 `209a94078fd965783c3e0162f9744b1ccefddae11149e5102200c0fce4e2865a`，
+manifest SHA-256 为 `a50680916aa7e4c121d5eb689fb8a24b6606daadc1088f31298ec96fcc51a681`。
+旧 fingerprint `0994cd...2e00` 及其高度 465 前链数据只作审计留存，不得作为公开网络身份。

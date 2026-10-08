@@ -6,6 +6,7 @@
       "initial_bits": "0x1c017668",
       "max_adjustment_factor": 2,
       "median_time_blocks": 11,
+      "progress": "blue-score-v1",
       "target_interval_ms": 1000,
       "window_blocks": 264
     },
@@ -45,7 +46,7 @@
   "network": "mainnet",
   "p2p_magic": "4254434d",
   "release": {
-    "approval_id": "BTCK-GUARDIAN-20261008-1500-CST",
+    "approval_id": "BTCK-GUARDIAN-20261008-1500-CST-DAA2",
     "approved": true,
     "note": "Approved only for the private 271,828-block guardian phase. Public release requires the independently replayed height-271828 checkpoint and a new approval."
   }
