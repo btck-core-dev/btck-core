@@ -6,7 +6,9 @@ node RPC remains host-loopback and Stratum/P2P remain separate TCP services.
 
 Prerequisites:
 
-1. Point the chosen DEVNET hostname to the server.
+1. Point the chosen hostname to the server. Until the purchased domain is
+   known, keep the reserved placeholders in `.env.public.example`; never issue
+   a certificate for or deploy those placeholder names.
 2. Obtain a certificate outside this Compose project and keep the private key
    root-readable only. Never copy it into the repository.
 3. Copy `.env.public.example` to an external permission-restricted env file
@@ -26,6 +28,11 @@ docker compose \
 Then start only after reviewing the rendered mounts, published ports and host.
 Container stdout/stderr contains JSON access logs and is bounded by Docker's
 `json-file` rotation (`25m`, ten files, compression enabled).
+
+The current read-only Explorer also displays pool statistics, so only
+`BTCK_PUBLIC_HOST` is active at first launch. `BTCK_POOL_PUBLIC_HOST` records
+the future pool alias/landing-page name; activating a second public hostname
+requires a certificate covering both names plus a reviewed Nginx server block.
 
 The image tag is version-pinned but not digest-pinned because manifests differ
 by architecture. Deployment approval must record `docker image inspect`'s

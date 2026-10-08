@@ -1,4 +1,4 @@
-BTC-K Wallet 3.2.0-rc1（macOS）
+BTC-K Wallet 3.2.0-rc2（macOS）
 ================================
 
 适用范围

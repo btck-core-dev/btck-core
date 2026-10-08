@@ -23,7 +23,7 @@ from urllib.request import Request, urlopen
 BASE_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(BASE_DIR / "src"))
 
-WALLET_VERSION = "3.2.0-rc1"
+WALLET_VERSION = "3.2.0-rc2"
 RECOVERY_SCHEME = "bip39-btck-dksap-v1"
 
 APPROVED_NETWORKS = {
