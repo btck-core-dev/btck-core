@@ -457,6 +457,10 @@ class ExplorerHTTPHandler(BaseHTTPRequestHandler):
 
         if path in ("/", "/index.html", "/pool", "/app", "/caas"):
             self.serve_static_file("index.html", "text/html; charset=utf-8")
+        elif path in ("/home", "/home.html"):
+            self.serve_static_file("home.html", "text/html; charset=utf-8")
+        elif path in ("/whitepaper", "/whitepaper.html"):
+            self.serve_static_file("whitepaper.html", "text/html; charset=utf-8")
         elif path in ("/explorer", "/explorer.html"):
             self.serve_static_file("explorer.html", "text/html; charset=utf-8")
         elif path == "/style.css":
