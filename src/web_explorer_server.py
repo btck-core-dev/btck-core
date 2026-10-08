@@ -12,6 +12,9 @@ import os
 import sys
 import json
 import time
+import hashlib
+import hmac
+import secrets
 import urllib.request
 import urllib.parse
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
@@ -37,6 +40,14 @@ NODE_INFO_URL = os.getenv("BTCK_NODE_INFO_URL", "http://127.0.0.1:16110/dashboar
 NODE_RPC_URL = os.getenv("BTCK_NODE_RPC_URL", "http://127.0.0.1:16110/rpc")
 STRATUM_STATUS_URL = os.getenv("BTCK_STRATUM_STATUS_URL", "http://127.0.0.1:3337/status")
 NETWORK = load_network()
+_PUBLIC_MINER_ID_KEY = os.getenv("BTCK_PUBLIC_MINER_ID_KEY", "").encode("utf-8") or secrets.token_bytes(32)
+
+
+def _public_miner_id(address: str, worker: str) -> str:
+    """Return a stable, non-reversible public label without exposing pool identity data."""
+    identity = f"{address}\x00{worker}".encode("utf-8")
+    digest = hmac.new(_PUBLIC_MINER_ID_KEY, identity, hashlib.sha256).hexdigest()[:12]
+    return f"miner-{digest}"
 
 
 import threading
@@ -227,8 +238,10 @@ def build_production_stats_payload() -> Dict[str, Any]:
             "eco_deposit_btck": int(block.get("eco_deposit_sats", 0) or 0) / SATK_PER_COIN,
             "fees_btck": int(block.get("fees_sats", 0) or 0) / SATK_PER_COIN,
             "combo": bool(block.get("is_combo_resolution", False)),
-            "worker": attribution.get("finder_worker") or "unattributed",
-            "address": attribution.get("finder_wallet") or "",
+            "worker": _public_miner_id(
+                str(attribution.get("finder_wallet") or ""),
+                str(attribution.get("finder_worker") or "unattributed"),
+            ) if attribution else "unattributed",
             "mode": attribution.get("mode") or "",
             "is_pool_fee": bool(attribution.get("is_pool_fee", False)),
             "time": "",
@@ -243,6 +256,7 @@ def build_production_stats_payload() -> Dict[str, Any]:
         attribution = pool_blocks.get(winner_hash, {})
         winner_worker = attribution.get("finder_worker") or "unattributed"
         winner_address = attribution.get("finder_wallet") or ""
+        public_miner_id = _public_miner_id(winner_address, winner_worker)
         worker_match = next(
             (
                 worker for worker in pool_snapshot.get("workers", [])
@@ -261,8 +275,8 @@ def build_production_stats_payload() -> Dict[str, Any]:
             "beacon_height": int(resolution.get("beacon_height", 0)),
             "beacon_hash_prefix": str(resolution.get("beacon_hash", ""))[:16],
             "winner_block_hash": winner_hash,
-            "winner_miner": winner_worker,
-            "winner_address": winner_address,
+            "winner_miner": public_miner_id,
+            "miner_id": public_miner_id,
             "winner_hashrate": _format_hashrate(float(worker_match.get("hashrate_hps", 0.0))) if worker_match else "N/A",
             "hardware_model": "kHeavyHash Stratum worker",
             "xor_distance_hex": str(resolution.get("winner_distance_hex", "")),
@@ -271,37 +285,19 @@ def build_production_stats_payload() -> Dict[str, Any]:
             "status": "RESOLVED_VERIFIED",
         })
 
-    combos_by_worker: Dict[tuple[str, str], int] = {}
-    for item in combo_hof:
-        key = (item["winner_address"], item["winner_miner"])
-        combos_by_worker[key] = combos_by_worker.get(key, 0) + 1
-
     miners_summary: Dict[str, Dict[str, Any]] = {}
-    name_counts: Dict[str, int] = {}
-    for worker in pool_snapshot.get("workers", []):
-        name = str(worker.get("worker_name") or "worker")
-        name_counts[name] = name_counts.get(name, 0) + 1
     for worker in pool_snapshot.get("workers", []):
         name = str(worker.get("worker_name") or "worker")
         address = str(worker.get("wallet_address") or "")
-        key = name if name_counts.get(name, 0) == 1 else f"{name}@{address[-8:]}"
-        miners_summary[key] = {
-            "worker": name,
-            "address": address,
+        miner_id = _public_miner_id(address, name)
+        miners_summary[miner_id] = {
+            "worker": miner_id,
+            "miner_id": miner_id,
             "hardware": "kHeavyHash Stratum worker",
             "mode": pool_snapshot.get("pool_mode", "UNKNOWN"),
             "hashrate_str": _format_hashrate(float(worker.get("hashrate_hps", 0.0))),
             "hashrate_hps": float(worker.get("hashrate_hps", 0.0)),
-            "shares": int(worker.get("shares_total", 0) or 0),
-            "shares_window": int(worker.get("shares_window", 0) or 0),
-            "blocks": int(worker.get("miner_blocks", 0) or 0),
-            "combos": combos_by_worker.get((address, name), 0),
-            "payout_btck": int(worker.get("miner_reward_satk", 0) or 0) / SATK_PER_COIN,
             "status": "ONLINE" if worker.get("online") else "OFFLINE",
-            "accepted_since_connect": int(worker.get("accepted_since_connect", 0) or 0),
-            "rejected_since_connect": int(worker.get("rejected_since_connect", 0) or 0),
-            "ports": worker.get("ports", []),
-            "last_share_timestamp": float(worker.get("last_share_timestamp", 0.0) or 0.0),
         }
 
     fee_policy = dict(pool_snapshot.get("fee_policy", {}))
@@ -529,7 +525,7 @@ class ExplorerHTTPHandler(BaseHTTPRequestHandler):
             miners = stats.get("miners_summary", {})
             match = None
             for k, v in miners.items():
-                if k.lower() == query or query in v.get("address", "").lower():
+                if hmac.compare_digest(k.lower(), query):
                     match = v
                     break
             if match:

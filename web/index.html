@@ -993,7 +993,7 @@
     </div>
 
     <!-- ==================================================================== -->
-    <!-- TRACK YOUR MINER (Address Lookup - K1Pool Style) -->
+    <!-- TRACK A PUBLIC MINER ID (payout addresses remain private) -->
     <!-- ==================================================================== -->
     <section class="lookup-card">
       <div class="section-title" style="margin-bottom: 4px;">
@@ -1001,12 +1001,12 @@
         <h2>Track Your Miner & Hashrate</h2>
       </div>
       <p style="font-size: 13px; color: var(--text-muted);">
-        Enter your dual-key stealth payout address (<code style="color: var(--gold-light);">btck1s...</code>) or worker name to inspect real-time hashrate, valid shares, and unpaid balances.
+        Enter the public Miner ID shown in the worker table. Payout addresses and balances are never exposed by the public pool API.
       </p>
 
       <div class="lookup-form">
         <div class="lookup-input-wrap">
-          <input type="text" id="miner-lookup-input" class="lookup-input" placeholder="Paste your BTC-K stealth address or worker name (e.g. rig01 or btck1s...)" onkeyup="handleLookupKeyup(event)">
+          <input type="text" id="miner-lookup-input" class="lookup-input" placeholder="Miner ID (for example miner-a1b2c3d4e5f6)" onkeyup="handleLookupKeyup(event)">
         </div>
         <button class="lookup-btn" onclick="executeMinerLookup()">Lookup Stats</button>
       </div>
@@ -1020,19 +1020,19 @@
 
         <div class="miner-personal-grid">
           <div style="background: var(--bg-surface); padding: 14px; border-radius: 8px; border: 1px solid var(--border-subtle);">
-            <div style="font-size: 11px; color: var(--text-muted); text-transform: uppercase;">Accepted Shares</div>
-            <div style="font-size: 22px; font-weight: 800; color: var(--emerald-primary);" id="mp-shares">0</div>
-            <div style="font-size: 11px; color: var(--text-muted);">Accepted shares reported by the live pool ledger</div>
+            <div style="font-size: 11px; color: var(--text-muted); text-transform: uppercase;">Share Ledger</div>
+            <div style="font-size: 22px; font-weight: 800; color: var(--emerald-primary);" id="mp-shares">Private</div>
+            <div style="font-size: 11px; color: var(--text-muted);">Available only to the authenticated miner</div>
           </div>
           <div style="background: var(--bg-surface); padding: 14px; border-radius: 8px; border: 1px solid var(--border-subtle);">
-            <div style="font-size: 11px; color: var(--text-muted); text-transform: uppercase;">Blocks Found</div>
-            <div style="font-size: 22px; font-weight: 800; color: var(--cyan-primary);" id="mp-blocks">0</div>
-            <div style="font-size: 11px; color: var(--text-muted);">Direct BlockDAG solutions</div>
+            <div style="font-size: 11px; color: var(--text-muted); text-transform: uppercase;">Reward History</div>
+            <div style="font-size: 22px; font-weight: 800; color: var(--cyan-primary);" id="mp-blocks">Private</div>
+            <div style="font-size: 11px; color: var(--text-muted);">Not exposed by the public API</div>
           </div>
           <div style="background: var(--bg-surface); padding: 14px; border-radius: 8px; border: 1px solid var(--border-subtle);">
-            <div style="font-size: 11px; color: var(--text-muted); text-transform: uppercase;">Total Earnings</div>
-            <div style="font-size: 22px; font-weight: 800; color: var(--gold-light);" id="mp-payout">0.00 BTCK</div>
-            <div style="font-size: 11px; color: var(--text-muted);">Credited to stealth address</div>
+            <div style="font-size: 11px; color: var(--text-muted); text-transform: uppercase;">Payout Privacy</div>
+            <div style="font-size: 22px; font-weight: 800; color: var(--gold-light);" id="mp-payout">Protected</div>
+            <div style="font-size: 11px; color: var(--text-muted);">Address and balance withheld</div>
           </div>
           <div style="background: var(--bg-surface); padding: 14px; border-radius: 8px; border: 1px solid var(--border-subtle);">
             <div style="font-size: 11px; color: var(--text-muted); text-transform: uppercase;">Payment Scheme</div>
@@ -1067,12 +1067,12 @@
             <thead>
               <tr>
                 <th>Status</th>
-                <th>Worker</th>
+                <th>Public Miner ID</th>
                 <th>Scheme</th>
                 <th style="text-align: right;">Hashrate</th>
-                <th style="text-align: right;">Accepted</th>
-                <th style="text-align: right;">Blocks</th>
-                <th style="text-align: right;">Paid (BTCK)</th>
+                <th style="text-align: right;">Shares</th>
+                <th style="text-align: right;">Rewards</th>
+                <th style="text-align: right;">Privacy</th>
               </tr>
             </thead>
             <tbody id="workers-table-tbody">
@@ -1275,7 +1275,7 @@
       let matchedData = null;
 
       for (const [k, v] of Object.entries(miners)) {
-        if (k.toLowerCase() === q || (v.address && v.address.toLowerCase().includes(q))) {
+        if (k.toLowerCase() === q) {
           matchedKey = k;
           matchedData = v;
           break;
@@ -1285,17 +1285,17 @@
       if (matchedData) {
         panel.style.display = "block";
         document.getElementById("mp-title").innerText = `Worker [${matchedKey}] Statistics`;
-        document.getElementById("mp-shares").innerText = (matchedData.shares || 0).toLocaleString();
-        document.getElementById("mp-blocks").innerText = (matchedData.blocks || 0).toLocaleString();
-        document.getElementById("mp-payout").innerText = (matchedData.payout_btck || 0).toFixed(2) + " BTCK";
+        document.getElementById("mp-shares").innerText = "Private";
+        document.getElementById("mp-blocks").innerText = "Private";
+        document.getElementById("mp-payout").innerText = "Protected";
         document.getElementById("mp-mode").innerText = matchedData.mode || "SOLO";
         showToast(`Found worker [${matchedKey}]`);
       } else {
         panel.style.display = "block";
         document.getElementById("mp-title").innerText = `Query: ${q}`;
-        document.getElementById("mp-shares").innerText = "0";
-        document.getElementById("mp-blocks").innerText = "0";
-        document.getElementById("mp-payout").innerText = "0.00 BTCK";
+        document.getElementById("mp-shares").innerText = "Private";
+        document.getElementById("mp-blocks").innerText = "Private";
+        document.getElementById("mp-payout").innerText = "Protected";
         document.getElementById("mp-mode").innerText = "Active";
         showToast("No historical shares found for this query yet.");
       }
@@ -1341,11 +1341,7 @@
 
         if (activeWorkerFilter !== "ALL" && mode !== activeWorkerFilter) continue;
 
-        const shares = v.shares || 0;
-        const blocks = v.blocks || 0;
-        const payout = (v.payout_btck || 0).toFixed(2);
         const isOnline = v.status === "ONLINE";
-        const addrTrunc = v.address ? `${v.address.slice(0, 10)}...${v.address.slice(-6)}` : "Default";
         const hr = v.hashrate_str || "N/A";
 
         rows.push(`
@@ -1356,15 +1352,15 @@
             </td>
             <td>
               <strong style="color: #fff;">${escapeHtml(k)}</strong>
-              <div style="font-size: 10px; color: var(--text-muted); cursor: pointer;" onclick="copyText('${v.address}')">${addrTrunc}</div>
+              <div style="font-size: 10px; color: var(--text-muted);">Payout identity withheld</div>
             </td>
             <td>
               <span class="badge-mode ${mode === 'SOLO' ? 'badge-solo' : 'badge-pplns'}">${mode}</span>
             </td>
             <td style="text-align: right; color: var(--cyan-primary); font-weight: 700;">${hr}</td>
-            <td style="text-align: right; color: var(--emerald-primary); font-weight: 700;">${shares.toLocaleString()}</td>
-            <td style="text-align: right; color: var(--gold-light); font-weight: 700;">${blocks.toLocaleString()}</td>
-            <td style="text-align: right; color: #fff; font-weight: 700;">${payout}</td>
+            <td style="text-align: right; color: var(--text-muted); font-weight: 700;">Private</td>
+            <td style="text-align: right; color: var(--text-muted); font-weight: 700;">Private</td>
+            <td style="text-align: right; color: var(--emerald-primary); font-weight: 700;">Protected</td>
           </tr>
         `);
       }
@@ -1422,15 +1418,14 @@
         const h = item.draw_height || item.height || 43200;
         const payout = Number(item.payout_btck || 0).toFixed(2);
         const worker = item.winner_miner || "unattributed";
-        const addr = item.winner_address || "";
-        const addrTrunc = addr ? `${addr.slice(0, 8)}...${addr.slice(-6)}` : "address unavailable";
+        const minerId = item.miner_id || worker;
 
         rows.push(`
           <tr>
             <td style="color: var(--cyan-primary); font-weight: 700;">#${h.toLocaleString()}</td>
             <td>
               <div class="winner-highlight">${escapeHtml(worker)}</div>
-              <div class="winner-addr" ${addr ? `onclick="copyText('${addr}')"` : ""}>${addrTrunc}</div>
+              <div class="winner-addr">${escapeHtml(minerId)} · payout address withheld</div>
             </td>
             <td style="text-align: right;" class="winner-highlight">${payout} BTCK</td>
           </tr>

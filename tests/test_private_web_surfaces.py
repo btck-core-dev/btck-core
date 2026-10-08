@@ -51,6 +51,13 @@ class TestPrivateWebSurfaces(unittest.TestCase):
         self.assertFalse(record["availability"]["public_mining"])
         self.assertFalse(record["availability"]["gpu_market"])
 
+    def test_pool_ui_never_copies_or_searches_payout_addresses(self):
+        pool = (ROOT / "web" / "index.html").read_text(encoding="utf-8")
+        self.assertNotIn("copyText('${v.address}')", pool)
+        self.assertNotIn("winner_address", pool)
+        self.assertNotIn("v.address.toLowerCase()", pool)
+        self.assertIn("Payout identity withheld", pool)
+
 
 if __name__ == "__main__":
     unittest.main()
