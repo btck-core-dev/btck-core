@@ -30,6 +30,16 @@ DEVNET_IDENTITY = {
 
 
 class TestWalletEncryption(unittest.TestCase):
+    def test_balance_display_unit_is_explicit_and_does_not_create_an_asset(self):
+        parser = btck_cli.build_parser()
+        default_args = parser.parse_args(["balance", "wallet.json"])
+        satk_args = parser.parse_args(["balance", "wallet.json", "--unit", "satk"])
+
+        self.assertEqual(default_args.unit, "btck")
+        self.assertEqual(satk_args.unit, "satk")
+        with self.assertRaises(SystemExit):
+            parser.parse_args(["balance", "wallet.json", "--unit", "l2-token"])
+
     def test_bip39_official_seed_vector(self):
         mnemonic = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
         expected = (

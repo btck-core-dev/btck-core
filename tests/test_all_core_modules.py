@@ -177,13 +177,14 @@ class TestAllCoreModules(unittest.TestCase):
         req1 = gw.handle_request(agent_key, "deepseek-r1", "Explain quantum computing in 5 words.")
         self.assertEqual(req1["status_code"], 402)
 
-        # Deposit 50 Sats
-        gw.ledger.deposit(agent_key, 50)
+        # Fund the quote produced by the KCU -> SatK value bridge.
+        required_satk = req1["invoice"]["amount_satk"]
+        gw.ledger.deposit(agent_key, required_satk)
         req2 = gw.handle_request(agent_key, "deepseek-r1", "Explain quantum computing in 5 words.")
         self.assertEqual(req2["status_code"], 200)
         cost = req2["usage"]["cost_sats"]
         rem = req2["usage"]["remaining_balance_sats"]
-        self.assertEqual(cost + rem, 50)
+        self.assertEqual(cost + rem, required_satk)
 
     def test_kheavyhash_consensus(self):
         test_hdr = b"BTC-K_BLOCK_00000001_KASPA_ASIC_HEADER_PAYLOAD"

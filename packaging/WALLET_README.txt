@@ -1,4 +1,4 @@
-BTC-K Wallet 3.2.2-guardian1 (macOS)
+BTC-K Wallet 3.2.3-guardian1 (macOS)
 =====================================
 
 Scope
@@ -33,8 +33,12 @@ resume setup.
 
 Balance sync
 ------------
+The launcher has one BTC-K/SatK display toggle. It changes only presentation:
+1 BTC-K is always exactly 100,000,000 SatK, and there is no separate L2 coin or wallet.
+
 Select option 3 in the launcher, or run:
-  ./btck-wallet balance ~/Documents/BTC-K-Mainnet-Wallets/personal_wallet.json
+  ./btck-wallet balance ~/Documents/BTC-K-Mainnet-Wallets/personal_wallet.json --unit btck
+  ./btck-wallet balance ~/Documents/BTC-K-Mainnet-Wallets/personal_wallet.json --unit satk
 
 The first scan shows height progress. Later scans download only new blocks. Deleting the encrypted
 .sync.json cache causes a full rescan but does not affect private keys or on-chain assets. The private

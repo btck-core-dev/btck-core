@@ -84,10 +84,10 @@ class TestLiveAIRPCServer(unittest.IsolatedAsyncioTestCase):
             status, d = await asyncio.to_thread(
                 sync_http_post,
                 f"{base_url}/v1/deposit",
-                {"agent_stealth_address": wallet.address, "amount_satk": 100}
+                {"agent_stealth_address": wallet.address, "amount_satk": 1_000_000}
             )
             self.assertEqual(status, 200)
-            self.assertEqual(d["new_balance_satk"], 100)
+            self.assertEqual(d["new_balance_satk"], 1_000_000)
 
             # Make completion request with funded balance
             status, comp = await asyncio.to_thread(
@@ -98,7 +98,7 @@ class TestLiveAIRPCServer(unittest.IsolatedAsyncioTestCase):
             )
             self.assertEqual(status, 200)
             self.assertGreater(comp["usage"]["cost_satk"], 0)
-            self.assertLess(comp["usage"]["remaining_balance_satk"], 100)
+            self.assertLess(comp["usage"]["remaining_balance_satk"], 1_000_000)
 
             # 4. End-to-End Client with btck-agent SDK
             client = BTCKAgentClient(wallet=wallet, gateway_url=base_url)

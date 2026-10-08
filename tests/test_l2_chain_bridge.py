@@ -68,7 +68,9 @@ class TestL2ChainBridge(unittest.IsolatedAsyncioTestCase):
     def make_ledger(self):
         temp = tempfile.TemporaryDirectory()
         self.addCleanup(temp.cleanup)
-        return AgentLedger(os.path.join(temp.name, "ledger.json"))
+        ledger = AgentLedger(os.path.join(temp.name, "ledger.json"))
+        ledger.deposit("btck:l2:fee-reserve", 1_000)
+        return ledger
 
     async def test_withdrawal_is_signed_broadcast_and_idempotent(self):
         wallet, output = funded_wallet()
@@ -82,12 +84,13 @@ class TestL2ChainBridge(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["status"], "BROADCAST")
         self.assertEqual(result["network_height"], 100)
         self.assertEqual(result["network_year"], 1)
-        self.assertEqual(ledger.get_balance("agent"), 9_000)
+        self.assertEqual(ledger.get_balance("agent"), 10_000)
+        self.assertEqual(ledger.get_balance("btck:l2:fee-reserve"), 0)
         self.assertEqual(node.submit_count, 1)
 
         replay = await bridge.withdraw("wd-1", "agent", destination, 20_000, 1_000)
         self.assertEqual(replay["txid"], result["txid"])
-        self.assertEqual(ledger.get_balance("agent"), 9_000)
+        self.assertEqual(ledger.get_balance("agent"), 10_000)
         self.assertEqual(node.submit_count, 1)
 
     async def test_prebroadcast_failure_refunds_paid_balance(self):
@@ -102,6 +105,21 @@ class TestL2ChainBridge(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["status"], "FAILED_REFUNDED")
         self.assertEqual(ledger.get_balance("agent"), 30_000)
         self.assertEqual(node.submit_count, 0)
+
+    async def test_withdrawal_below_10000_satk_is_rejected(self):
+        wallet, output = funded_wallet()
+        node = FakeBridgeNodeRPC([output])
+        ledger = self.make_ledger()
+        ledger.deposit("agent", 30_000)
+        bridge = L2ChainBridge(node, wallet, ledger, "btck-mainnet-v1", [(output["txid"], 0)])
+
+        with self.assertRaisesRegex(ValueError, "at least 10000 SatK"):
+            await bridge.withdraw(
+                "wd-dust", "agent", StealthWallet.generate("destination").address,
+                9_999, 1_000,
+            )
+        self.assertEqual(ledger.get_balance("agent"), 30_000)
+        self.assertEqual(ledger.get_balance("btck:l2:fee-reserve"), 1_000)
 
     async def test_uncredited_treasury_output_is_never_spent(self):
         wallet, output = funded_wallet(amount=100_000)
@@ -121,7 +139,6 @@ class TestL2ChainBridge(unittest.IsolatedAsyncioTestCase):
         node = FakeBridgeNodeRPC([output])
         ledger = self.make_ledger()
         ledger.l2_burned_satk = 20_000
-        ledger.deposit("btck:l2:fee-reserve", 1_000)
         bridge = L2ChainBridge(node, wallet, ledger, "btck-mainnet-v1", [(output["txid"], 0)])
 
         result = await bridge.broadcast_burn(
@@ -157,7 +174,6 @@ class TestL2ChainBridge(unittest.IsolatedAsyncioTestCase):
         node.fail_methods.add("getUTXOSet")
         ledger = self.make_ledger()
         ledger.l2_burned_satk = 20_000
-        ledger.deposit("btck:l2:fee-reserve", 1_000)
         bridge = L2ChainBridge(node, wallet, ledger, "btck-mainnet-v1", [(output["txid"], 0)])
 
         result = await bridge.broadcast_burn(
@@ -181,13 +197,13 @@ class TestL2ChainBridge(unittest.IsolatedAsyncioTestCase):
         signed = ledger.l2_withdrawals["wd-unknown"]
         self.assertEqual(signed["status"], "SIGNED")
         original_txid = signed["txid"]
-        self.assertEqual(ledger.get_balance("agent"), 9_000)
+        self.assertEqual(ledger.get_balance("agent"), 10_000)
 
         node.fail_methods.clear()
         retried = await bridge.withdraw("wd-unknown", "agent", destination, 20_000, 1_000)
         self.assertEqual(retried["status"], "BROADCAST")
         self.assertEqual(retried["txid"], original_txid)
-        self.assertEqual(ledger.get_balance("agent"), 9_000)
+        self.assertEqual(ledger.get_balance("agent"), 10_000)
 
     async def test_broadcast_record_reconciles_until_confirmation_threshold(self):
         wallet, output = funded_wallet()
@@ -229,7 +245,7 @@ class TestL2ChainBridge(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(replay["txid"], first["txid"])
         self.assertEqual(replay["transaction"], first["transaction"])
-        self.assertEqual(ledger.get_balance("agent"), 9_000)
+        self.assertEqual(ledger.get_balance("agent"), 10_000)
         self.assertEqual(node.submit_count, 2)
 
     async def test_wrong_chain_or_invalid_height_refunds_before_signing(self):

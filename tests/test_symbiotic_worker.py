@@ -60,10 +60,10 @@ class TestSymbioticWorkerSuite(unittest.TestCase):
             tier=ModelTier.TIER_1,
             variant=ModelVariant.STANDARD,
         )
-        # Expected: Prompt: 10 SatK, Completion: 500/1000 * 10 * 1.5 = 7.5 -> 8 SatK. Total: ~18 SatK
+        # 1.4 KCU at the $0.05 bootstrap reference = 280,000 SatK.
         self.assertEqual(cost_std.tier_multiplier, 1.0)
         self.assertEqual(cost_std.variant_multiplier, 1.0)
-        self.assertEqual(cost_std.total_satk, 18)
+        self.assertEqual(cost_std.total_satk, 280_000)
 
         # Tier 1, Uncensored Variant (3.5x premium)
         cost_uncensored = TieredPricingEngine.calculate_cost(
@@ -85,6 +85,18 @@ class TestSymbioticWorkerSuite(unittest.TestCase):
         )
         self.assertEqual(cost_t3.tier_multiplier, 18.0)
         self.assertGreater(cost_t3.total_satk, 1000)
+
+    def test_kcu_bridge_tracks_btck_reference_price(self):
+        baseline = TieredPricingEngine.quote_kcu_usage(1000, 0.8, 0.05)
+        appreciated = TieredPricingEngine.quote_kcu_usage(1000, 0.8, 0.50)
+        depreciated = TieredPricingEngine.quote_kcu_usage(1000, 0.8, 0.005)
+
+        self.assertEqual(baseline["task_kcu"], 0.8)
+        self.assertEqual(baseline["amount_msatk"], 160_000_000)
+        self.assertEqual(baseline["amount_satk"], 160_000)
+        self.assertEqual(appreciated["amount_satk"], 16_000)
+        self.assertEqual(depreciated["amount_satk"], 1_600_000)
+        self.assertEqual(baseline["kcu_usd_peg"], 0.0001)
 
     def test_pricing_engine_version_decay(self):
         """Test that old deprecated models suffer linear price decay down to 0.3x floor."""

@@ -19,6 +19,7 @@ Key Tokenomics Pillars:
 """
 
 from dataclasses import dataclass
+from decimal import Decimal, InvalidOperation, ROUND_CEILING, ROUND_HALF_UP
 from enum import Enum
 from math import gcd
 from typing import Dict, Tuple, Optional, Any
@@ -242,11 +243,14 @@ class TieredPricingEngine:
     Economic engine for pricing decentralized AI compute with KCU anchoring and dynamic oracle support.
     """
 
-    # 10 SatK per 1,000 tokens as base baseline (at $0.05 BTC-K anchor)
-    BASE_SATK_PER_1K = 10
-
-    # 1 KCU = 0.00010 USDT default reference
-    KCU_USD_PEG = 0.00010
+    # KCU is the stable compute-value bridge. SatK is derived at quote time
+    # from the reviewed BTC-K reference price; it is never the service anchor.
+    KCU_USD_PEG = Decimal("0.00010")
+    BOOTSTRAP_BTCK_PRICE_USD = Decimal("0.05")
+    MICRO_KCU_PER_KCU = 1_000_000
+    MSATK_PER_SATK = 1_000
+    MSATK_PER_BTCK = 100_000_000_000
+    BASE_KCU_PER_1K = Decimal("0.8")
 
     # 4-Year Progressive Revenue Schedule (Aligning with L1 BlockDAG Halving & Combo Stages):
     PROGRESSIVE_REVENUE_SCHEDULE = {
@@ -310,17 +314,16 @@ class TieredPricingEngine:
     @classmethod
     def kcu_to_satk(cls, task_kcu: float, btck_price_usd: float = 0.05) -> int:
         """
-        Convert KCU to SatK given secondary market BTC-K price:
-        SatK = round(task_kcu * 10,000 / btck_price_usd)
+        Convert KCU to whole on-chain SatK, rounding upward so a quote is
+        never underfunded. Sub-SatK L2 accounting uses kcu_to_msatk().
         """
-        price = max(0.000001, float(btck_price_usd))
-        return max(1, int(round((task_kcu * 10000.0) / price)))
+        msatk = cls.kcu_to_msatk(task_kcu, btck_price_usd)
+        return max(1, (msatk + cls.MSATK_PER_SATK - 1) // cls.MSATK_PER_SATK)
 
     @classmethod
     def satk_to_kcu(cls, satk: int, btck_price_usd: float = 0.05) -> float:
         """Convert SatK back to KCU"""
-        price = max(0.000001, float(btck_price_usd))
-        return (satk * price) / 10000.0
+        return cls.msatk_to_kcu(int(satk) * cls.MSATK_PER_SATK, btck_price_usd)
 
     @classmethod
     def kcu_to_msatk(cls, task_kcu: float, btck_price_usd: float = 0.05) -> int:
@@ -329,8 +332,64 @@ class TieredPricingEngine:
         Supports ultra-high coin prices ($10,000 ~ $1,000,000+ USDT) with sub-cent precision.
         mSatK = round(task_kcu * 10,000,000 / btck_price_usd)
         """
-        price = max(0.000001, float(btck_price_usd))
-        return max(1, int(round((task_kcu * 10000000.0) / price)))
+        try:
+            kcu = Decimal(str(task_kcu))
+            price = Decimal(str(btck_price_usd))
+        except (InvalidOperation, ValueError) as exc:
+            raise ValueError("KCU and BTC-K price must be decimal numbers") from exc
+        if not kcu.is_finite() or kcu <= 0:
+            raise ValueError("task_kcu must be positive and finite")
+        if not price.is_finite() or price <= 0:
+            raise ValueError("btck_price_usd must be positive and finite")
+        value = (kcu * cls.KCU_USD_PEG * cls.MSATK_PER_BTCK / price)
+        return max(1, int(value.to_integral_value(rounding=ROUND_HALF_UP)))
+
+    @classmethod
+    def msatk_to_kcu(cls, msatk: int, btck_price_usd: float = 0.05) -> float:
+        """Convert integer internal mSatK back to KCU for receipts."""
+        if not isinstance(msatk, int) or isinstance(msatk, bool) or msatk < 0:
+            raise ValueError("msatk must be a non-negative integer")
+        price = Decimal(str(btck_price_usd))
+        if not price.is_finite() or price <= 0:
+            raise ValueError("btck_price_usd must be positive and finite")
+        kcu = Decimal(msatk) * price / (cls.KCU_USD_PEG * cls.MSATK_PER_BTCK)
+        return float(kcu)
+
+    @classmethod
+    def quote_kcu_usage(
+        cls,
+        estimated_units: int,
+        rate_kcu_per_1k: float,
+        btck_price_usd: float = 0.05,
+    ) -> Dict[str, Any]:
+        """Return an integer-safe KCU -> mSatK -> SatK quote.
+
+        micro-KCU and mSatK are retained in receipts for deterministic quotes.
+        The current settlement ledger and L1 invoices use whole SatK, rounded
+        upward; sub-SatK accumulation is a separate, audit-gated upgrade.
+        """
+        if not isinstance(estimated_units, int) or isinstance(estimated_units, bool) or estimated_units <= 0:
+            raise ValueError("estimated_units must be a positive integer")
+        rate = Decimal(str(rate_kcu_per_1k))
+        if not rate.is_finite() or rate <= 0:
+            raise ValueError("rate_kcu_per_1k must be positive and finite")
+        task_kcu = rate * Decimal(estimated_units) / Decimal(1000)
+        micro_kcu = int(
+            (task_kcu * cls.MICRO_KCU_PER_KCU).to_integral_value(rounding=ROUND_CEILING)
+        )
+        normalized_kcu = Decimal(micro_kcu) / cls.MICRO_KCU_PER_KCU
+        amount_msatk = cls.kcu_to_msatk(normalized_kcu, btck_price_usd)
+        amount_satk = max(1, (amount_msatk + cls.MSATK_PER_SATK - 1) // cls.MSATK_PER_SATK)
+        return {
+            "rate_kcu_per_1k": float(rate),
+            "task_kcu_micros": micro_kcu,
+            "task_kcu": float(normalized_kcu),
+            "kcu_usd_peg": float(cls.KCU_USD_PEG),
+            "btck_reference_price_usd": float(Decimal(str(btck_price_usd))),
+            "amount_msatk": amount_msatk,
+            "amount_satk": amount_satk,
+            "onchain_rounding_msatk": amount_satk * cls.MSATK_PER_SATK - amount_msatk,
+        }
 
     @classmethod
     def msatk_to_satk(cls, msatk: int) -> Tuple[int, int]:
@@ -445,24 +504,30 @@ class TieredPricingEngine:
         decay = cls.calculate_decay_factor(is_flagship, deprecation_days)
 
         effective_multiplier = tier_mult * variant_mult * decay
-        effective_rate_per_1k = cls.BASE_SATK_PER_1K * effective_multiplier
-
-        prompt_cost = (prompt_tokens / 1000.0) * effective_rate_per_1k
-        completion_cost = (completion_tokens / 1000.0) * effective_rate_per_1k * cls.COMPLETION_PREMIUM
-
-        prompt_satk = max(1, int(round(prompt_cost))) if prompt_tokens > 0 else 0
-        completion_satk = max(1, int(round(completion_cost))) if completion_tokens > 0 else 0
-        total_satk = prompt_satk + completion_satk
-
-        task_kcu = cls.satk_to_kcu(total_satk, btck_price_usd)
-        usd_cost = task_kcu * cls.KCU_USD_PEG
+        effective_rate_per_1k = float(cls.BASE_KCU_PER_1K) * effective_multiplier
+        prompt_kcu = (prompt_tokens / 1000.0) * effective_rate_per_1k
+        completion_kcu = (
+            (completion_tokens / 1000.0)
+            * effective_rate_per_1k
+            * cls.COMPLETION_PREMIUM
+        )
+        task_kcu = prompt_kcu + completion_kcu
+        quote = cls.quote_kcu_usage(
+            max(1, int(prompt_tokens + cls.COMPLETION_PREMIUM * completion_tokens)),
+            effective_rate_per_1k,
+            btck_price_usd,
+        )
+        total_satk = int(quote["amount_satk"])
+        prompt_satk = cls.kcu_to_satk(prompt_kcu, btck_price_usd) if prompt_tokens > 0 else 0
+        completion_satk = cls.kcu_to_satk(completion_kcu, btck_price_usd) if completion_tokens > 0 else 0
+        usd_cost = float(Decimal(str(task_kcu)) * cls.KCU_USD_PEG)
         split = cls.calculate_revenue_split(total_satk, year=network_year)
 
         return CostBreakdown(
             total_satk=total_satk,
             prompt_satk=prompt_satk,
             completion_satk=completion_satk,
-            base_price_per_1k=cls.BASE_SATK_PER_1K,
+            base_price_per_1k=float(cls.BASE_KCU_PER_1K),
             tier_multiplier=tier_mult,
             variant_multiplier=variant_mult,
             decay_factor=decay,

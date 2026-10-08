@@ -10,6 +10,7 @@ from privacy.wallet_engine import (
     transaction_to_dict,
 )
 from worker.pricing_engine import TieredPricingEngine
+L2_FEE_RESERVE_ACCOUNT = "btck:l2:fee-reserve"
 
 
 class L2ChainBridge:
@@ -121,12 +122,14 @@ class L2ChainBridge:
         destination: str,
         amount_satk: int,
         fee_satk: int,
+        fee_payer_account: str = L2_FEE_RESERVE_ACCOUNT,
     ) -> Optional[Dict[str, Any]]:
         if not StealthKeyPair.validate_stealth_address(destination):
             raise ValueError("invalid BTC-K withdrawal destination")
         async with self._lock:
             record = self.ledger.reserve_withdrawal(
-                withdrawal_id, payer, destination, amount_satk, fee_satk
+                withdrawal_id, payer, destination, amount_satk, fee_satk,
+                fee_payer_account,
             )
             if record is None:
                 return None

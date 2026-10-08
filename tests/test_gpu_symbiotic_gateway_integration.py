@@ -71,6 +71,21 @@ class TestGPUSymbioticGatewayIntegration(unittest.IsolatedAsyncioTestCase):
         await self.gw.stop()
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
+    async def test_service_catalog_and_quote_are_kcu_denominated(self):
+        card = self.gw.service_cards["llama-3.1-8b"]
+        self.assertEqual(card["price_unit"], "kcu_per_1k_weighted_units")
+        self.assertEqual(card["rate_kcu_per_1k"], 0.8)
+        self.assertEqual(card["max_charge_kcu"], 10.0)
+        self.assertNotIn("price_satk_per_1k", card)
+        self.assertNotIn("price_kcu", card)
+        self.assertNotIn("max_charge_satk", card)
+
+        quote = self.gw.create_quote("llama-3.1-8b", 1000)
+        self.assertEqual(quote["task_kcu"], 0.8)
+        self.assertEqual(quote["amount_msatk"], 160_000_000)
+        self.assertEqual(quote["amount_satk"], 160_000)
+        self.assertEqual(quote["price_source"], "bootstrap-fixed-v1")
+
     async def test_worker_registration_and_cluster_status(self):
         """Test worker registration endpoint and cluster aggregation."""
         # 1. Initial check: 0 workers
@@ -135,14 +150,14 @@ class TestGPUSymbioticGatewayIntegration(unittest.IsolatedAsyncioTestCase):
         await prod.start()
         try:
             payer = "btck1s-production-agent"
-            prod.ledger.deposit(payer, 100)
+            prod.ledger.deposit(payer, 5_000_000)
             status, body = await asyncio.to_thread(sync_http_post_with_error, "http://127.0.0.1:8200/v1/chat/completions", {
                 "model": "deepseek-r1",
                 "messages": [{"role": "user", "content": "must use a real provider"}],
             }, {"x-agent-stealth-address": payer})
             self.assertEqual(status, 503)
             self.assertIn("gpu_provider_unavailable", json.dumps(body))
-            self.assertEqual(prod.ledger.get_balance(payer), 100)
+            self.assertEqual(prod.ledger.get_balance(payer), 5_000_000)
         finally:
             await prod.stop()
 
@@ -241,10 +256,11 @@ class TestGPUSymbioticGatewayIntegration(unittest.IsolatedAsyncioTestCase):
         status, _ = await asyncio.to_thread(sync_http_post, f"{self.base_url}/v1/workers/register", reg_payload)
         self.assertEqual(status, 200)
 
-        # 2. Setup Client Agent with 100 SatK
+        # 2. Setup Client Agent with enough bootstrap-reference SatK credit.
         client_addr = "btck1sqqclientagentstealthaddress1122334455"
-        await asyncio.to_thread(sync_http_post, f"{self.base_url}/v1/deposit", {"agent_stealth_address": client_addr, "amount_satk": 100})
-        self.assertEqual(self.gw.ledger.get_balance(client_addr), 100)
+        initial_balance = 1_000_000
+        await asyncio.to_thread(sync_http_post, f"{self.base_url}/v1/deposit", {"agent_stealth_address": client_addr, "amount_satk": initial_balance})
+        self.assertEqual(self.gw.ledger.get_balance(client_addr), initial_balance)
         self.assertEqual(self.gw.ledger.get_balance(worker_addr), 0)
 
         # 3. Spawn background worker polling daemon
@@ -323,8 +339,8 @@ class TestGPUSymbioticGatewayIntegration(unittest.IsolatedAsyncioTestCase):
             worker_bal = self.gw.ledger.get_balance(worker_addr)
 
             # Client balance should have decreased
-            self.assertLess(client_bal, 100)
-            spent = 100 - client_bal
+            self.assertLess(client_bal, initial_balance)
+            spent = initial_balance - client_bal
 
             settlement = chat_res["usage"]["l2_settlement"]
             self.assertEqual(settlement["network_year"], 1)

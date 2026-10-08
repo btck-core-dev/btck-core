@@ -46,11 +46,10 @@ DEFAULT_SERVICE_CARDS = {
         "service_id": "deepseek-r1.v1",
         "capability": "chat_completion",
         "service_version": "1.0.0",
-        "price_unit": "token",
-        "price_kcu": 10.0,
-        "price_satk_per_1k": 10.0,
+        "price_unit": "kcu_per_1k_weighted_units",
+        "rate_kcu_per_1k": 10.0,
         "quote_expires_in": 30,
-        "max_charge_satk": 50.0,
+        "max_charge_kcu": 50.0,
         "success_criteria": {"min_tokens": 1, "max_latency_ms": 15000},
         "retry_policy": "idempotent_same_quote",
         "refund_policy": "refund_on_timeout_or_empty",
@@ -61,11 +60,10 @@ DEFAULT_SERVICE_CARDS = {
         "service_id": "deepseek-v3.v1",
         "capability": "chat_completion",
         "service_version": "1.0.0",
-        "price_unit": "token",
-        "price_kcu": 4.0,
-        "price_satk_per_1k": 4.0,
+        "price_unit": "kcu_per_1k_weighted_units",
+        "rate_kcu_per_1k": 4.0,
         "quote_expires_in": 30,
-        "max_charge_satk": 25.0,
+        "max_charge_kcu": 25.0,
         "success_criteria": {"min_tokens": 1, "max_latency_ms": 10000},
         "retry_policy": "idempotent_same_quote",
         "refund_policy": "refund_on_timeout_or_empty",
@@ -76,11 +74,10 @@ DEFAULT_SERVICE_CARDS = {
         "service_id": "gpt-4o.v1",
         "capability": "chat_completion",
         "service_version": "1.0.0",
-        "price_unit": "token",
-        "price_kcu": 25.0,
-        "price_satk_per_1k": 25.0,
+        "price_unit": "kcu_per_1k_weighted_units",
+        "rate_kcu_per_1k": 25.0,
         "quote_expires_in": 30,
-        "max_charge_satk": 100.0,
+        "max_charge_kcu": 100.0,
         "success_criteria": {"min_tokens": 1, "max_latency_ms": 20000},
         "retry_policy": "idempotent_same_quote",
         "refund_policy": "refund_on_timeout_or_empty",
@@ -91,11 +88,10 @@ DEFAULT_SERVICE_CARDS = {
         "service_id": "code-audit.v1",
         "capability": "security_audit",
         "service_version": "1.0.0",
-        "price_unit": "task",
-        "price_kcu": 20.0,
-        "price_satk_per_1k": 20.0,
+        "price_unit": "kcu_per_1k_weighted_units",
+        "rate_kcu_per_1k": 20.0,
         "quote_expires_in": 60,
-        "max_charge_satk": 80.0,
+        "max_charge_kcu": 80.0,
         "success_criteria": {"format": "json_report"},
         "retry_policy": "idempotent_same_quote",
         "refund_policy": "refund_on_failure",
@@ -106,11 +102,10 @@ DEFAULT_SERVICE_CARDS = {
         "service_id": "llama-3.1-8b.v1",
         "capability": "chat_completion",
         "service_version": "1.0.0",
-        "price_unit": "task",
-        "price_kcu": 0.8,
-        "price_satk_per_1k": 0.8,
+        "price_unit": "kcu_per_1k_weighted_units",
+        "rate_kcu_per_1k": 0.8,
         "quote_expires_in": 30,
-        "max_charge_satk": 10.0,
+        "max_charge_kcu": 10.0,
         "success_criteria": {"min_tokens": 1, "max_latency_ms": 5000},
         "retry_policy": "idempotent_same_quote",
         "refund_policy": "refund_on_timeout_or_empty",
@@ -121,11 +116,10 @@ DEFAULT_SERVICE_CARDS = {
         "service_id": "llama-3.1-8b-uncensored.v1",
         "capability": "chat_completion",
         "service_version": "1.0.0",
-        "price_unit": "task",
-        "price_kcu": 1.6,
-        "price_satk_per_1k": 1.6,
+        "price_unit": "kcu_per_1k_weighted_units",
+        "rate_kcu_per_1k": 1.6,
         "quote_expires_in": 30,
-        "max_charge_satk": 15.0,
+        "max_charge_kcu": 15.0,
         "success_criteria": {"min_tokens": 1, "max_latency_ms": 5000},
         "retry_policy": "idempotent_same_quote",
         "refund_policy": "refund_on_timeout_or_empty",
@@ -136,11 +130,10 @@ DEFAULT_SERVICE_CARDS = {
         "service_id": "qwen2.5-32b.v1",
         "capability": "chat_completion",
         "service_version": "1.0.0",
-        "price_unit": "task",
-        "price_kcu": 12.5,
-        "price_satk_per_1k": 12.5,
+        "price_unit": "kcu_per_1k_weighted_units",
+        "rate_kcu_per_1k": 12.5,
         "quote_expires_in": 30,
-        "max_charge_satk": 50.0,
+        "max_charge_kcu": 50.0,
         "success_criteria": {"min_tokens": 1, "max_latency_ms": 10000},
         "retry_policy": "idempotent_same_quote",
         "refund_policy": "refund_on_timeout_or_empty",
@@ -151,11 +144,10 @@ DEFAULT_SERVICE_CARDS = {
         "service_id": "qwen2.5-32b-uncensored.v1",
         "capability": "chat_completion",
         "service_version": "1.0.0",
-        "price_unit": "task",
-        "price_kcu": 28.0,
-        "price_satk_per_1k": 28.0,
+        "price_unit": "kcu_per_1k_weighted_units",
+        "rate_kcu_per_1k": 28.0,
         "quote_expires_in": 30,
-        "max_charge_satk": 100.0,
+        "max_charge_kcu": 100.0,
         "success_criteria": {"min_tokens": 1, "max_latency_ms": 10000},
         "retry_policy": "idempotent_same_quote",
         "refund_policy": "refund_on_timeout_or_empty",
@@ -166,11 +158,10 @@ DEFAULT_SERVICE_CARDS = {
         "service_id": "qwen2.5-72b.v1",
         "capability": "chat_completion",
         "service_version": "1.0.0",
-        "price_unit": "task",
-        "price_kcu": 18.0,
-        "price_satk_per_1k": 18.0,
+        "price_unit": "kcu_per_1k_weighted_units",
+        "rate_kcu_per_1k": 18.0,
         "quote_expires_in": 30,
-        "max_charge_satk": 80.0,
+        "max_charge_kcu": 80.0,
         "success_criteria": {"min_tokens": 1, "max_latency_ms": 15000},
         "retry_policy": "idempotent_same_quote",
         "refund_policy": "refund_on_timeout_or_empty",
@@ -181,11 +172,10 @@ DEFAULT_SERVICE_CARDS = {
         "service_id": "qwen2.5-72b-uncensored.v1",
         "capability": "chat_completion",
         "service_version": "1.0.0",
-        "price_unit": "task",
-        "price_kcu": 38.0,
-        "price_satk_per_1k": 38.0,
+        "price_unit": "kcu_per_1k_weighted_units",
+        "rate_kcu_per_1k": 38.0,
         "quote_expires_in": 30,
-        "max_charge_satk": 150.0,
+        "max_charge_kcu": 150.0,
         "success_criteria": {"min_tokens": 1, "max_latency_ms": 15000},
         "retry_policy": "idempotent_same_quote",
         "refund_policy": "refund_on_timeout_or_empty",
@@ -244,6 +234,8 @@ class TaskCostLedger:
 FAUCET_VOUCHER_GRANT_SATK = 2500       # Fixed 2,500 SatK Sandbox Grant
 FAUCET_VOUCHER_TTL_SECONDS = 14 * 86400 # 14-Day Auto-Expiry (TTL)
 FAUCET_COOLDOWN_SECONDS = 86400        # 24-Hour Cooldown per IP and per Agent
+MIN_L2_WITHDRAWAL_SATK = 10_000       # 0.0001 BTC-K; smaller earnings keep accumulating
+L2_FEE_RESERVE_ACCOUNT = "btck:l2:fee-reserve"
 
 class AgentLedger:
     """Consensus-aligned uint64 SatK ledger with persistent storage, sandbox vouchers, and strict validation"""
@@ -587,10 +579,13 @@ class AgentLedger:
         destination: str,
         amount_satk: int,
         fee_satk: int,
+        fee_payer_account: str = L2_FEE_RESERVE_ACCOUNT,
     ) -> Optional[Dict[str, Any]]:
         """Reserve paid balance for an idempotent on-chain withdrawal."""
-        if not withdrawal_id or amount_satk <= 0 or fee_satk < 0:
-            raise ValueError("valid withdrawal id, amount, and fee are required")
+        if not withdrawal_id or amount_satk < MIN_L2_WITHDRAWAL_SATK or fee_satk < 0:
+            raise ValueError(
+                f"withdrawal amount must be at least {MIN_L2_WITHDRAWAL_SATK} SatK"
+            )
         with self._lock:
             prior = self.l2_withdrawals.get(withdrawal_id)
             identity = {
@@ -598,20 +593,23 @@ class AgentLedger:
                 "destination": destination,
                 "amount_satk": amount_satk,
                 "fee_satk": fee_satk,
+                "fee_payer_account": fee_payer_account,
             }
             if prior is not None:
                 if any(prior.get(key) != value for key, value in identity.items()):
                     raise ValueError("withdrawal id was already used for different details")
                 return dict(prior)
-            total = amount_satk + fee_satk
             balance = int(self.balances.get(payer, 0))
-            if balance < total:
+            fee_balance = int(self.balances.get(fee_payer_account, 0))
+            if balance < amount_satk or fee_balance < fee_satk:
                 return None
-            self.balances[payer] = balance - total
+            self.balances[payer] = balance - amount_satk
+            self.balances[fee_payer_account] = fee_balance - fee_satk
             record = {
                 "withdrawal_id": withdrawal_id,
                 **identity,
-                "debited_satk": total,
+                "debited_satk": amount_satk,
+                "fee_debited_satk": fee_satk,
                 "status": "RESERVED",
                 "created_at": int(time.time()),
             }
@@ -638,6 +636,10 @@ class AgentLedger:
                 raise ValueError("broadcast or confirmed withdrawal cannot be refunded automatically")
             payer = record["payer"]
             self.balances[payer] = self.balances.get(payer, 0) + int(record["debited_satk"])
+            fee_account = record.get("fee_payer_account", L2_FEE_RESERVE_ACCOUNT)
+            self.balances[fee_account] = (
+                self.balances.get(fee_account, 0) + int(record.get("fee_debited_satk", 0))
+            )
             record.update({"status": "FAILED_REFUNDED", "failure_reason": reason})
             self._save()
             return dict(record)
@@ -718,6 +720,8 @@ class AIRPCGateway:
         expected_chain_id: str = "btck-mainnet-v1",
         deposit_confirmations: int = 10,
         treasury_wallet: Optional[StealthWallet] = None,
+        btck_reference_price_usd: float = 0.05,
+        price_source: str = "bootstrap-fixed-v1",
     ):
         self.host = host
         self.port = port
@@ -743,6 +747,12 @@ class AIRPCGateway:
         self.deposit_confirmations = int(deposit_confirmations)
         if self.deposit_confirmations < 1:
             raise ValueError("deposit_confirmations must be at least 1")
+        self.btck_reference_price_usd = float(btck_reference_price_usd)
+        if not 0 < self.btck_reference_price_usd < 1_000_000_000:
+            raise ValueError("btck_reference_price_usd must be positive and bounded")
+        self.price_source = str(price_source).strip()
+        if not self.price_source:
+            raise ValueError("price_source is required")
         self.l2_standby_account = "btck:l2:standby"
         self.l2_combo_account = "btck:l2:ai-combo"
         self.l2_ecosystem_account = "btck:l2:ecosystem"
@@ -805,6 +815,21 @@ class AIRPCGateway:
             raise RuntimeError("L1 node did not return a valid canonical virtual-blue height")
         height = order_length - 1
         return height, TieredPricingEngine.network_year_for_height(height)
+
+    def quote_kcu_usage(self, service_id: str, units: int) -> Dict[str, Any]:
+        """Quote service work through the frozen KCU value bridge."""
+        card = self.service_cards.get(service_id.lower(), self.service_cards["deepseek-r1"])
+        quote = TieredPricingEngine.quote_kcu_usage(
+            max(1, int(units)),
+            card["rate_kcu_per_1k"],
+            self.btck_reference_price_usd,
+        )
+        quote.update({
+            "pricing_mode": "bootstrap_fixed_reference",
+            "price_source": self.price_source,
+            "service_catalog_version": "kcu-v1",
+        })
+        return quote
 
     def register_worker(self, data: dict) -> Tuple[bool, str, dict]:
         """Register a symbiotic GPU worker node (Zero-Key public stealth address)."""
@@ -1043,9 +1068,9 @@ class AIRPCGateway:
         """Programmatic interface matching HTTP 402 flow for testing and direct embedding"""
         model = model.lower()
         card = self.service_cards.get(model, self.service_cards.get("deepseek-r1"))
-        rate_per_1k = int(card.get("price_satk_per_1k", 10))
         est_tokens = len(prompt.split()) + 150
-        est_cost = max(1, (est_tokens * rate_per_1k + 999) // 1000)
+        price_quote = self.quote_kcu_usage(model, est_tokens)
+        est_cost = int(price_quote["amount_satk"])
         quote_id = f"quote_{int(time.time()*1000)%1000000:06x}"
         max_total_satk = int(est_cost * 1.15)
         
@@ -1059,7 +1084,9 @@ class AIRPCGateway:
                     "model": model,
                     "quantity": est_tokens,
                     "unit": "input_token",
-                    "price_kcu": est_cost,
+                    "task_kcu": price_quote["task_kcu"],
+                    "task_kcu_micros": price_quote["task_kcu_micros"],
+                    "amount_msatk": price_quote["amount_msatk"],
                     "price_satk": est_cost,
                     "amount_satk": est_cost,
                     "max_total_satk": max_total_satk,
@@ -1090,15 +1117,13 @@ class AIRPCGateway:
     def create_quote(self, service_id: str, estimated_units: int = 1000) -> Dict[str, Any]:
         """Generate structured machine service quote (Doc 27 Section 5)"""
         card = self.service_cards.get(service_id.lower())
-        if not card:
-            rate_per_1k = 10.0
-            max_charge = 50.0
-        else:
-            rate_per_1k = card["price_satk_per_1k"]
-            max_charge = card["max_charge_satk"]
-
-        rate_per_unit = rate_per_1k / 1000.0
-        est_cost = max(1.0, round(estimated_units * rate_per_unit, 4))
+        price_quote = self.quote_kcu_usage(service_id, estimated_units)
+        est_cost = int(price_quote["amount_satk"])
+        max_charge_kcu = card["max_charge_kcu"] if card else 50.0
+        max_charge_satk = TieredPricingEngine.kcu_to_satk(
+            max_charge_kcu,
+            self.btck_reference_price_usd,
+        )
         quote_id = f"quote_{uuid.uuid4().hex[:12]}"
         now = int(time.time())
         expires_at = now + 30
@@ -1107,9 +1132,12 @@ class AIRPCGateway:
             "quote_id": quote_id,
             "service_id": service_id,
             "estimated_units": estimated_units,
-            "rate_satk_per_unit": rate_per_unit,
+            **price_quote,
             "amount_satk": est_cost,
-            "max_total_satk": min(max_charge, round(est_cost * 1.2, 4)),
+            "max_total_satk": max(
+                est_cost,
+                min(max_charge_satk, (est_cost * 12 + 9) // 10),
+            ),
             "created_at": now,
             "expires_at": expires_at,
             "payment_address": self.treasury_addr,
@@ -1250,7 +1278,14 @@ class AIRPCGateway:
             # Models List (OpenAI format)
             if method == "GET" and path == "/v1/models":
                 models = [
-                    {"id": m, "object": "model", "rate_satk_per_1k_tokens": c["price_satk_per_1k"]}
+                    {
+                        "id": m,
+                        "object": "model",
+                        "rate_kcu_per_1k_tokens": c["rate_kcu_per_1k"],
+                        "kcu_usd_peg": float(TieredPricingEngine.KCU_USD_PEG),
+                        "btck_reference_price_usd": self.btck_reference_price_usd,
+                        "price_source": self.price_source,
+                    }
                     for m, c in self.service_cards.items()
                 ]
                 await self._send_response(writer, 200, json.dumps({"object": "list", "data": models}).encode())
@@ -1557,11 +1592,11 @@ class AIRPCGateway:
             if "payer_stealth_address" in receipt_to_verify:
                 agent_stealth_addr = receipt_to_verify["payer_stealth_address"]
 
-        # 3. Compute cost from Service Machine Card (Integer SatK, Fixes H-06)
+        # 3. Compute KCU cost, then convert through the reviewed BTC-K price.
         card = self.service_cards.get(model, self.service_cards.get("deepseek-r1"))
-        rate_per_1k = int(card.get("price_satk_per_1k", 10))
         est_tokens = len(prompt.split()) * 2 + 150
-        est_cost_satk = max(1, (est_tokens * rate_per_1k + 999) // 1000)
+        estimated_quote = self.quote_kcu_usage(model, est_tokens)
+        est_cost_satk = int(estimated_quote["amount_satk"])
 
         # 4. Delegation Receipt Check if provided (Doc 27 Section 3)
         delegation_id = None
@@ -1602,6 +1637,12 @@ class AIRPCGateway:
                 "quote_id": quote["quote_id"],
                 "model": model,
                 "amount_satk": est_cost_satk,
+                "amount_msatk": estimated_quote["amount_msatk"],
+                "task_kcu": estimated_quote["task_kcu"],
+                "task_kcu_micros": estimated_quote["task_kcu_micros"],
+                "kcu_usd_peg": estimated_quote["kcu_usd_peg"],
+                "btck_reference_price_usd": self.btck_reference_price_usd,
+                "price_source": self.price_source,
                 "payment_address": self.treasury_addr,
                 "payment_R_ephem_hex": payment_R.hex(),
                 "payment_P_onetime_hex": payment_P.hex(),
@@ -1716,7 +1757,12 @@ class AIRPCGateway:
             input_tokens = len(prompt.split())
             output_tokens = len(actual_output_text.split())
             actual_tokens = input_tokens + output_tokens
-            actual_cost_satk = max(1, (actual_tokens * rate_per_1k + 999) // 1000)
+            # Canonical KCU metering weights generated output at 1.5x because
+            # decoding consumes serial GPU time. Keep user-facing token counts
+            # unchanged and expose the separate weighted pricing units.
+            pricing_units = input_tokens + (output_tokens * 3 + 1) // 2
+            actual_quote = self.quote_kcu_usage(model, pricing_units)
+            actual_cost_satk = int(actual_quote["amount_satk"])
             
             provider_address = worker_used["worker_address"] if worker_used else self.treasury_addr
             network_height, network_year = await self._resolve_l2_network_context(sandbox=is_trial)
@@ -1784,7 +1830,13 @@ class AIRPCGateway:
                 "attempt": 1,
                 "input_units": input_tokens,
                 "output_units": output_tokens,
+                "pricing_units": pricing_units,
                 "amount_satk": actual_cost_satk,
+                "amount_msatk": actual_quote["amount_msatk"],
+                "task_kcu": actual_quote["task_kcu"],
+                "task_kcu_micros": actual_quote["task_kcu_micros"],
+                "btck_reference_price_usd": self.btck_reference_price_usd,
+                "price_source": self.price_source,
                 "status": "settled",
                 "result_hash": result_hash,
                 "receipt_hash": f"sha256:{receipt_digest}",
@@ -1810,7 +1862,13 @@ class AIRPCGateway:
                     "prompt_tokens": input_tokens,
                     "completion_tokens": output_tokens,
                     "total_tokens": actual_tokens,
+                    "pricing_units": pricing_units,
                     "cost_satk": actual_cost_satk,
+                    "cost_msatk": actual_quote["amount_msatk"],
+                    "task_kcu": actual_quote["task_kcu"],
+                    "task_kcu_micros": actual_quote["task_kcu_micros"],
+                    "btck_reference_price_usd": self.btck_reference_price_usd,
+                    "price_source": self.price_source,
                     "remaining_balance_satk": rem_bal,
                     "l2_settlement": settlement,
                     "l1_settlement_height": network_height,

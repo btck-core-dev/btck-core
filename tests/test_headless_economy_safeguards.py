@@ -131,17 +131,17 @@ class TestHeadlessEconomySafeguards(unittest.IsolatedAsyncioTestCase):
         delegation = DelegationReceipt.issue(
             principal_keypair=human_principal_wallet.keypair,
             agent_id="agent_worker_77",
-            max_amount_satk=15,  # Strict 15 SatK cap
+            max_amount_satk=2_000_000,
             allowed_services=["deepseek-r1", "deepseek-r1.v1"],
             duration_seconds=3600
         )
         self.assertTrue(delegation.verify())
         self.assertEqual(delegation.agent_id, "agent_worker_77")
-        self.assertEqual(delegation.max_amount_satk, 15)
+        self.assertEqual(delegation.max_amount_satk, 2_000_000)
 
         # Anti-Tampering test
         tampered_delegation = DelegationReceipt.from_dict(delegation.to_dict())
-        tampered_delegation.max_amount_satk = 999999.0
+        tampered_delegation.max_amount_satk = 9_999_999.0
         self.assertFalse(tampered_delegation.verify())
 
         # Bind delegation to agent client
@@ -156,10 +156,10 @@ class TestHeadlessEconomySafeguards(unittest.IsolatedAsyncioTestCase):
         status, dep_res = await asyncio.to_thread(
             sync_post,
             f"{BASE_URL}/v1/deposit",
-            {"agent_stealth_address": agent_wallet.address, "amount_satk": 100}
+            {"agent_stealth_address": agent_wallet.address, "amount_satk": 1_000_000}
         )
         self.assertEqual(status, 200)
-        self.assertEqual(dep_res["new_balance_satk"], 100)
+        self.assertEqual(dep_res["new_balance_satk"], 1_000_000)
 
         # Execute completion request
         idem_1 = f"idem_test_task_{int(time.time()*1000)}"
@@ -170,7 +170,10 @@ class TestHeadlessEconomySafeguards(unittest.IsolatedAsyncioTestCase):
             idempotency_key=idem_1
         )
         self.assertIn("choices", res1)
-        self.assertEqual(res1["usage"]["cost_satk"], 1)
+        charged_satk = res1["usage"]["cost_satk"]
+        self.assertGreater(charged_satk, 0)
+        self.assertEqual(res1["usage"]["price_source"], "bootstrap-fixed-v1")
+        self.assertGreater(res1["usage"]["task_kcu"], 0)
 
         # Verify Proof of Delivery
         pod = res1["delivery_receipt"]
@@ -179,8 +182,8 @@ class TestHeadlessEconomySafeguards(unittest.IsolatedAsyncioTestCase):
 
         # Check EnforceableBudgetTracker state
         budget = client.budget_tracker
-        self.assertEqual(budget.total_spent_satk, 1)
-        self.assertEqual(budget.get_remaining_budget(), 14)
+        self.assertEqual(budget.total_spent_satk, charged_satk)
+        self.assertEqual(budget.get_remaining_budget(), 2_000_000 - charged_satk)
 
         # -------------------------------------------------------------
         # 5. Idempotency & Replay Defense (Doc 27 Section 6)
@@ -192,13 +195,13 @@ class TestHeadlessEconomySafeguards(unittest.IsolatedAsyncioTestCase):
             idempotency_key=idem_1
         )
         self.assertEqual(res1_replay["choices"][0]["message"]["content"], res1["choices"][0]["message"]["content"])
-        self.assertEqual(gw.ledger.get_balance(agent_wallet.address), 99)
+        self.assertEqual(gw.ledger.get_balance(agent_wallet.address), 1_000_000 - charged_satk)
 
         # -------------------------------------------------------------
         # 6. Hard Spending Cap Enforcement (Budget Exhaustion)
         # -------------------------------------------------------------
         with self.assertRaises(BudgetExceededError):
-            budget.check_authorization("deepseek-r1", 50)
+            budget.check_authorization("deepseek-r1", 5_000_000)
 
         # -------------------------------------------------------------
         # 7. Task-Level Cost Ledger & Audit Query

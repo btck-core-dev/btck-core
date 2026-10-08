@@ -345,17 +345,28 @@ $$\text{Daily Standby Payout} = \max \left( \text{Consensus\_Eco\_Stream}, \; \t
 
 ---
 
-### 8.5 毫聪（mSatK）超高精度微支付结算与极端币价抗穿仓体系
+### 8.5 KCU 价值桥、毫聪（mSatK）精度与统一钱包显示
 
-为确保 BTC-K 币价在未来达到 $1,000 ~ $100,000+ USDT 极端高度时依然保持亚分级（sub-cent）微支付精度，协议引入毫聪（mSatK）结算拓展：
+L2 服务不得把某个固定 SatK 数字永久当作模型价格。协议使用 **KCU（Knowledge Compute Unit）** 作为模型工作量与商业价值之间的中间计价单位：
+
+$$1 \text{ KCU} = \$0.00010 \text{ 的默认参考服务价值}$$
+
+模型、Token 数、输出计算权重、量化方式和服务等级先决定 Task KCU，再使用公开的 BTC-K 参考价格换算：
+
+$$\text{Task mSatK} = \left\lfloor \frac{\text{Task KCU} \times 10,000,000}{P_{BTCK}} + 0.5 \right\rfloor$$
+
+因此，同一任务在 BTC-K 升值时消耗更少 SatK，在 BTC-K 贬值时消耗更多 SatK；Task KCU 本身不随币价改变。启动期没有足够市场深度时，`bootstrap-fixed-v1` 固定使用 `$0.05/BTC-K` 参考价，不得伪称为市场现价。只有在多市场流动性成熟、TWAP、中位数、过期保护、单日变动上限和异常停机经过审计后，才允许通过新的版本切换动态价格源。
+
+为描述 BTC-K 在极端高币价下的亚 SatK 报价精度，协议定义毫聪（mSatK）扩展单位：
 
 $$1 \text{ BTC-K} = 10^8 \text{ SatK} = 10^{11} \text{ mSatK (毫聪)}$$
 
-* **价格与单位转换公式**：
-  $$\text{Task mSatK} = \left\lfloor \frac{\text{Task KCU} \times 10,000,000}{P_{BTCK}} + 0.5 \right\rfloor$$
-* **精度抗穿仓证明**：
+* **精度边界**：
   - 当 $P_{BTCK} = \$100,000$ 时，单次 8B 推理（0.8 KCU = $0.000080）对应 **80 mSatK**（0.08 SatK）；
-  - 无论币价飙升至何种天文数字，结算截断误差恒定控制在 **$0.0000\%$**，彻底消灭舍入截断与精度干涸风险。
+  - 当前 L1 与 L2 原型账本只结算整数 SatK，网关会保存 mSatK 报价并把发票向上取整到整数 SatK；因此不能宣称当前已经实现零舍入误差；
+  - 真正的 sub-SatK 累计结算必须先完成持久化账本、并发一致性、提现换算与独立安全审计，未通过前不得在生产环境启用。
+
+钱包没有 L1/L2 两种资产：用户、Agent 和 GPU 服务方始终使用同一种 `btck1s...` 钱包与 BTC-K。界面可在 BTC-K 与 SatK 两种显示之间切换；该按钮只改变显示单位。L2 收益不足 `10,000 SatK`（`0.0001 BTC-K`）时继续累计，达到门槛后才可上链，网络费由独立系统费用储备承担。
 
 ---
 

@@ -26,7 +26,7 @@ from urllib.request import Request, urlopen
 BASE_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(BASE_DIR / "src"))
 
-WALLET_VERSION = "3.2.2-guardian1"
+WALLET_VERSION = "3.2.3-guardian1"
 RECOVERY_SCHEME = "bip39-btck-dksap-v1"
 DEFAULT_SYNC_URL = "https://wallet.bitcoin-k.com/api/wallet/sync"
 
@@ -569,8 +569,14 @@ def cmd_balance(args):
     height = int(snapshot["selected_height"])
     spendable_satk = wallet.get_spendable_balance_satk(height)
     print(f"Tracked outputs: {len(wallet.utxos)}")
-    print(f"Tracked balance: {wallet.get_balance_satk()} SatK ({wallet.get_balance_btck():.8f} BTC-K)")
-    print(f"Spendable balance: {spendable_satk} SatK ({spendable_satk / SATK_PER_COIN:.8f} BTC-K)")
+    tracked_satk = wallet.get_balance_satk()
+    if args.unit == "satk":
+        print(f"Tracked balance: {tracked_satk:,} SatK")
+        print(f"Spendable balance: {spendable_satk:,} SatK")
+    else:
+        print(f"Tracked balance: {tracked_satk / SATK_PER_COIN:.8f} BTC-K")
+        print(f"Spendable balance: {spendable_satk / SATK_PER_COIN:.8f} BTC-K")
+    print("Display unit only; 1 BTC-K = 100,000,000 SatK.")
 
 
 def cmd_transfer(args):
@@ -832,6 +838,7 @@ def build_parser():
 
     balance = commands.add_parser("balance", help="Scan the node UTXO set locally")
     balance.add_argument("wallet")
+    balance.add_argument("--unit", choices=("btck", "satk"), default="btck")
     balance.set_defaults(func=cmd_balance)
 
     transfer = commands.add_parser("transfer", help="Create, sign and submit a transfer")

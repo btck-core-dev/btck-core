@@ -183,7 +183,12 @@ class TestAIRPCGatewayFaucetIntegration(unittest.IsolatedAsyncioTestCase):
             host="127.0.0.1",
             port=self.port,
             allow_test_faucet=False,
-            data_dir=self.temp_dir
+            data_dir=self.temp_dir,
+            # A deliberately high sandbox reference keeps the fixed 2,500-SatK
+            # voucher usable for repeated rate-limit tests. It is not a market
+            # price and this gateway never performs real-value settlement.
+            btck_reference_price_usd=1000.0,
+            price_source="sandbox-faucet-test",
         )
         await self.gw.start()
         self.base_url = f"http://127.0.0.1:{self.port}"
