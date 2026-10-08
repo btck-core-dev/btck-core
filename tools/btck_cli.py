@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""Minimal node-backed BTC-K wallet CLI for devnet/testnet."""
+"""Fail-closed node-backed BTC-K wallet CLI.
+
+MAINNET is deliberately absent from ``APPROVED_NETWORKS`` until the immutable
+genesis hash and consensus fingerprint exist.  A wallet release must never
+learn its MAINNET identity from the node it is about to trust.
+"""
 
 from __future__ import annotations
 
@@ -26,11 +31,13 @@ APPROVED_NETWORKS = {
         "name": "devnet",
         "chain_id": "btck-devnet-v3",
         "genesis_hash": "00afe7ba34ab52100a7e086f8bf16cee97dfaa80eaf7bc157a8d933d6ed6fa2a",
+        "consensus_fingerprint": "68766c59bc22f49956588e2f8a53d6670caa9e8b2801aa6bbb517beb394ddcab",
     },
     "testnet": {
         "name": "testnet",
         "chain_id": "btck-testnet-v3",
         "genesis_hash": "773ef89465a3f3e9eafa7a759740f7ee9f9046039b351af80f54518296f5b747",
+        "consensus_fingerprint": "69d8e3337eba35f0ff5ff921a66b0b2506c0d38f4acc6c900de3276846972a97",
     },
 }
 
@@ -75,7 +82,10 @@ def amount_to_satk(value: str) -> int:
 def validate_network_identity(network: dict) -> dict:
     if not isinstance(network, dict):
         raise CLIError("Network identity must be an object")
-    actual = {key: network.get(key) for key in ("name", "chain_id", "genesis_hash")}
+    actual = {
+        key: network.get(key)
+        for key in ("name", "chain_id", "genesis_hash", "consensus_fingerprint")
+    }
     expected = APPROVED_NETWORKS.get(str(actual["name"]))
     if expected is None or actual != expected:
         raise CLIError("Network identity is unknown or not approved by this wallet release")
@@ -225,10 +235,21 @@ def load_wallet(path: str, args) -> StealthWallet:
     return StealthWallet.load_from_json(str(wallet_path), password=password)
 
 
+def get_approved_node_identity(args) -> dict:
+    dag = rpc_call(args, "getBlockDagInfo")
+    return validate_network_identity({
+        "name": dag.get("network"),
+        "chain_id": dag.get("chain_id"),
+        "genesis_hash": dag.get("genesis_hash"),
+        "consensus_fingerprint": dag.get("consensus_fingerprint"),
+    })
+
+
 def scan_wallet(args, wallet: StealthWallet):
+    network = get_approved_node_identity(args)
     snapshot = rpc_call(args, "getUTXOSet")
     wallet.scan_chain_outputs(snapshot["outputs"])
-    return snapshot
+    return snapshot, network
 
 
 def cmd_new(args):
@@ -396,7 +417,7 @@ def cmd_info(args):
 
 def cmd_balance(args):
     wallet = load_wallet(args.wallet, args)
-    snapshot = scan_wallet(args, wallet)
+    snapshot, _network = scan_wallet(args, wallet)
     print(f"Network height: {snapshot['selected_height']}")
     print(f"Address: {wallet.address}")
     height = int(snapshot["selected_height"])
@@ -410,7 +431,7 @@ def cmd_transfer(args):
     if args.offline:
         raise CLIError("Legacy --offline is disabled; use export-watch, prepare, sign and broadcast")
     wallet = load_wallet(args.wallet, args)
-    snapshot = scan_wallet(args, wallet)
+    snapshot, _network = scan_wallet(args, wallet)
     tx = wallet.create_and_sign_transfer(
         recipient_stealth_addr=args.to,
         amount_satk=amount_to_satk(args.amount),
@@ -476,7 +497,7 @@ def _package_id(payload: dict) -> str:
 
 def cmd_prepare(args):
     wallet = _load_watch_wallet(args.watch_wallet)
-    snapshot = scan_wallet(args, wallet)
+    snapshot, network = scan_wallet(args, wallet)
     amount_satk = amount_to_satk(args.amount)
     fee_satk = amount_to_satk(args.fee)
     needed = amount_satk + fee_satk
@@ -501,12 +522,6 @@ def cmd_prepare(args):
             break
     if selected_total < needed:
         raise CLIError(f"Insufficient balance: have {selected_total} SatK, need {needed} SatK")
-    dag = rpc_call(args, "getBlockDagInfo")
-    network = validate_network_identity({
-        "name": dag.get("network"),
-        "chain_id": dag.get("chain_id"),
-        "genesis_hash": dag.get("genesis_hash"),
-    })
     package = {
         "format": "btck-unsigned-transfer-v1",
         "created_at": int(time.time()),
@@ -582,18 +597,14 @@ def cmd_sign(args):
 
 def cmd_broadcast(args):
     payload = read_json(args.transaction, "signed transaction")
-    if payload.get("format") == "btck-signed-transfer-v1":
-        network = rpc_call(args, "getBlockDagInfo")
-        expected = validate_network_identity(payload.get("network", {}))
-        actual = validate_network_identity(
-            {key: network.get(key) for key in ("name", "chain_id", "genesis_hash")}
-        )
-        if expected != actual:
-            raise CLIError("Signed transaction package is bound to a different network")
-        tx = transaction_from_dict(payload["transaction"])
-        raw = transaction_to_dict(tx)
-    else:
-        raw = transaction_to_dict(transaction_from_dict(payload))
+    if payload.get("format") != "btck-signed-transfer-v1":
+        raise CLIError("Unbound raw transaction refused; broadcast a signed transfer package")
+    expected = validate_network_identity(payload.get("network", {}))
+    actual = get_approved_node_identity(args)
+    if expected != actual:
+        raise CLIError("Signed transaction package is bound to a different network")
+    tx = transaction_from_dict(payload["transaction"])
+    raw = transaction_to_dict(tx)
     result = rpc_call(args, "submitTransaction", {"transaction": raw})
     print(json.dumps(result, indent=2))
 

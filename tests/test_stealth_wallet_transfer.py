@@ -16,6 +16,15 @@ from privacy.stealth_address import StealthKeyPair
 
 
 class TestStealthWalletTransfer(unittest.TestCase):
+    def test_address_validation_checks_checksum_and_curve_points(self):
+        wallet = StealthWallet.generate("validator")
+        self.assertTrue(StealthKeyPair.validate_stealth_address(wallet.address))
+        replacement = "1" if wallet.address[-1] != "1" else "2"
+        self.assertFalse(
+            StealthKeyPair.validate_stealth_address(wallet.address[:-1] + replacement)
+        )
+        self.assertFalse(StealthKeyPair.validate_stealth_address("btck1s-invalid"))
+
     def test_full_stealth_transfer_lifecycle(self):
         founder = StealthWallet.generate("Founder")
         alice = StealthWallet.generate("Alice")

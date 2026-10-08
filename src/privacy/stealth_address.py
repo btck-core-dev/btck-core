@@ -200,7 +200,25 @@ class StealthKeyPair:
             raise ValueError("Invalid checksum in stealth address")
         spend_bytes = payload[0:33]
         view_bytes = payload[33:66]
-        return _bytes_to_pubkey(spend_bytes), _bytes_to_pubkey(view_bytes)
+        spend_point = _bytes_to_pubkey(spend_bytes)
+        view_point = _bytes_to_pubkey(view_bytes)
+        if spend_point is None or view_point is None:
+            raise ValueError("Stealth address contains an invalid secp256k1 public key")
+        return spend_point, view_point
+
+    @staticmethod
+    def validate_stealth_address(address_str: str) -> bool:
+        """Validate prefix, encoding, checksum and both curve points cheaply.
+
+        Address authorization must not generate a disposable stealth output:
+        doing so performs three unnecessary scalar multiplications and makes a
+        reconnect storm block the Stratum event loop.
+        """
+        try:
+            StealthKeyPair.parse_stealth_address(address_str)
+            return True
+        except (TypeError, ValueError):
+            return False
 
     @staticmethod
     def generate_one_time_stealth_output(recipient_public_stealth_addr: str) -> Tuple[bytes, bytes]:

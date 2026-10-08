@@ -7,7 +7,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
@@ -25,6 +25,7 @@ DEVNET_IDENTITY = {
     "network": "devnet",
     "chain_id": "btck-devnet-v3",
     "genesis_hash": "00afe7ba34ab52100a7e086f8bf16cee97dfaa80eaf7bc157a8d933d6ed6fa2a",
+    "consensus_fingerprint": "68766c59bc22f49956588e2f8a53d6670caa9e8b2801aa6bbb517beb394ddcab",
 }
 
 
@@ -226,6 +227,36 @@ class TestWalletEncryption(unittest.TestCase):
 
 
 class TestOfflineWalletFlow(unittest.TestCase):
+    def test_broadcast_refuses_unbound_raw_transaction_without_rpc(self):
+        with tempfile.TemporaryDirectory() as root:
+            path = Path(root) / "raw.json"
+            path.write_text(json.dumps({"transaction": "unbound"}), encoding="utf-8")
+            args = SimpleNamespace(transaction=str(path))
+            with patch.object(
+                btck_cli, "rpc_call", side_effect=AssertionError("unbound payload used RPC"),
+            ):
+                with self.assertRaisesRegex(btck_cli.CLIError, "Unbound raw transaction"):
+                    btck_cli.cmd_broadcast(args)
+
+    def test_wallet_scans_refuse_wrong_consensus_before_requesting_utxos(self):
+        wallet = MagicMock()
+        calls = []
+
+        def fake_rpc(_args, method, _params=None):
+            calls.append(method)
+            if method == "getBlockDagInfo":
+                return {
+                    **DEVNET_IDENTITY,
+                    "consensus_fingerprint": "00" * 32,
+                }
+            raise AssertionError("wallet requested UTXOs before approving network identity")
+
+        with patch.object(btck_cli, "rpc_call", side_effect=fake_rpc):
+            with self.assertRaisesRegex(btck_cli.CLIError, "unknown|approved"):
+                btck_cli.scan_wallet(SimpleNamespace(), wallet)
+        self.assertEqual(calls, ["getBlockDagInfo"])
+        wallet.scan_chain_outputs.assert_not_called()
+
     def test_prepare_sign_broadcast_artifact_without_rpc_during_sign(self):
         sender = StealthWallet.generate("sender")
         recipient = StealthWallet.generate("recipient")

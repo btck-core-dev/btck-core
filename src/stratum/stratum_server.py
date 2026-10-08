@@ -734,19 +734,13 @@ class BTCKStratumServer:
 
             payout_address = None
             for candidate in (address, full_user):
-                try:
-                    StealthKeyPair.generate_one_time_stealth_output(candidate)
+                if StealthKeyPair.validate_stealth_address(candidate):
                     payout_address = candidate
                     break
-                except Exception:
-                    pass
 
             if payout_address is None and self.default_payout_address:
-                try:
-                    StealthKeyPair.generate_one_time_stealth_output(self.default_payout_address)
+                if StealthKeyPair.validate_stealth_address(self.default_payout_address):
                     payout_address = self.default_payout_address
-                except Exception:
-                    pass
 
             if payout_address is None:
                 await client.send_json({"id": msg_id, "result": False, "error": [24, "Invalid BTC-K payout address and no default configured", None]})
