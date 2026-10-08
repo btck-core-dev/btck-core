@@ -17,6 +17,7 @@ ROOT = Path(__file__).resolve().parents[1]
 EXACT_FILES = {
     "docs/45_BTCK_L2_CHAIN_SETTLEMENT_AND_GPU_HARDENING_2026-10-09.md",
     "docs/46_BTCK_L2_PRODUCTION_CEREMONY_AND_AUDIT_HANDOFF_2026-10-09.md",
+    "docs/tokenomics_v2_canonical.md",
     "src/gateway/ai_rpc_gateway.py",
     "src/gateway/l2_chain_bridge.py",
     "src/node/daemon.py",
