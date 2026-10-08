@@ -7,6 +7,7 @@ import time
 import unittest
 import json
 from pathlib import Path
+from unittest.mock import patch
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../src")))
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../sdk")))
@@ -146,6 +147,20 @@ class TestL2V24Settlement(unittest.TestCase):
                 json.dump({"balances": {"agent": -1}}, handle)
             with self.assertRaisesRegex(RuntimeError, "negative paid balance"):
                 AgentLedger(path)
+
+    def test_failed_atomic_replace_preserves_last_durable_ledger(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path = os.path.join(temp, "ledger.json")
+            ledger = AgentLedger(path)
+            ledger.deposit("payer", 100)
+
+            with patch("gateway.ai_rpc_gateway.os.replace", side_effect=OSError("disk full")):
+                with self.assertRaisesRegex(RuntimeError, "durably save"):
+                    ledger.deposit("payer", 50)
+
+            reloaded = AgentLedger(path)
+            self.assertEqual(reloaded.get_balance("payer"), 100)
+            self.assertEqual(list(Path(temp).glob(".ai-rpc-ledger-*.tmp")), [])
 
 
 if __name__ == "__main__":

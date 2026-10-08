@@ -177,6 +177,25 @@ class TestX402SignatureEnforcement(unittest.IsolatedAsyncioTestCase):
         self.assertIn("error", resp)
         self.assertIn("Insufficient exchange balance", resp["error"])
 
+    def test_public_gateway_needs_only_explicit_treasury_address(self):
+        public_only = AIRPCGateway(
+            data_dir=tempfile.mkdtemp(),
+            node_rpc=self.node_rpc,
+            treasury_addr=StealthKeyPair().get_public_stealth_address(),
+        )
+        self.addCleanup(shutil.rmtree, public_only.data_dir, True)
+        self.assertTrue(public_only.treasury_addr_is_explicit)
+        self.assertIsNone(public_only.treasury_wallet)
+        self.assertIsNone(public_only.chain_bridge)
+
+    def test_invalid_explicit_treasury_address_fails_closed(self):
+        with self.assertRaisesRegex(ValueError, "valid BTC-K stealth address"):
+            AIRPCGateway(
+                data_dir=tempfile.mkdtemp(),
+                node_rpc=self.node_rpc,
+                treasury_addr="btck1s-invalid",
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

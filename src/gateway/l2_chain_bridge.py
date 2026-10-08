@@ -22,6 +22,7 @@ class L2ChainBridge:
         ledger,
         expected_chain_id: str,
         trusted_funding_outpoints=(),
+        settlement_confirmations: int = 10,
     ):
         if node_rpc is None or treasury_wallet is None:
             raise ValueError("node RPC and an explicit persistent treasury wallet are required")
@@ -29,6 +30,9 @@ class L2ChainBridge:
         self.treasury_wallet = treasury_wallet
         self.ledger = ledger
         self.expected_chain_id = expected_chain_id
+        self.settlement_confirmations = int(settlement_confirmations)
+        if self.settlement_confirmations < 1:
+            raise ValueError("settlement_confirmations must be at least 1")
         self.trusted_funding_outpoints = {
             (str(txid), int(vout)) for txid, vout in trusted_funding_outpoints
         }
@@ -91,11 +95,20 @@ class L2ChainBridge:
     async def _broadcast_record(self, record: Dict[str, Any], update):
         tx = transaction_from_dict(record["transaction"])
         status = await self.node_rpc.call("getTransaction", {"txid": tx.txid})
-        if status.get("status") in {"mempool", "confirmed"}:
+        if status.get("status") == "confirmed":
+            confirmations = int(status.get("confirmations", 0))
             return update(
-                status="CONFIRMED" if status["status"] == "confirmed" else "BROADCAST",
+                status=(
+                    "CONFIRMED"
+                    if confirmations >= self.settlement_confirmations
+                    else "BROADCAST"
+                ),
                 txid=tx.txid,
+                confirmations=confirmations,
+                block_hash=status.get("block_hash"),
             )
+        if status.get("status") == "mempool":
+            return update(status="BROADCAST", txid=tx.txid, confirmations=0)
         result = await self.node_rpc.call("submitTransaction", {"transaction": transaction_to_dict(tx)})
         if not result.get("accepted"):
             raise RuntimeError(f"node rejected transaction: {result}")
@@ -117,9 +130,9 @@ class L2ChainBridge:
             )
             if record is None:
                 return None
-            if record.get("status") in {"BROADCAST", "CONFIRMED", "FAILED_REFUNDED"}:
+            if record.get("status") in {"CONFIRMED", "FAILED_REFUNDED"}:
                 return record
-            if record.get("status") == "SIGNED":
+            if record.get("status") in {"SIGNED", "BROADCAST"}:
                 try:
                     return await self._broadcast_record(
                         record,
@@ -130,9 +143,9 @@ class L2ChainBridge:
                     # deterministic reconciliation; never guess and refund.
                     raise
 
-            height, network_year = await self.chain_context()
-            await self._sync_treasury(height)
             try:
+                height, network_year = await self.chain_context()
+                await self._sync_treasury(height)
                 tx = self.treasury_wallet.create_and_sign_transfer(
                     destination,
                     amount_satk,
@@ -167,16 +180,16 @@ class L2ChainBridge:
             )
             if record is None:
                 return None
-            if record.get("status") in {"BROADCAST", "CONFIRMED"}:
+            if record.get("status") == "CONFIRMED":
                 return record
-            if record.get("status") == "SIGNED":
+            if record.get("status") in {"SIGNED", "BROADCAST"}:
                 return await self._broadcast_record(
                     record,
                     lambda **updates: self.ledger.update_burn(burn_id, **updates),
                 )
-            height, network_year = await self.chain_context()
-            await self._sync_treasury(height)
             try:
+                height, network_year = await self.chain_context()
+                await self._sync_treasury(height)
                 tx = self.treasury_wallet.create_and_sign_provable_burn(
                     amount_satk,
                     fee_satk=fee_satk,

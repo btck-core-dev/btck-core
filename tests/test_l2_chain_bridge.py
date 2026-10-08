@@ -20,18 +20,26 @@ class FakeBridgeNodeRPC:
         self.outputs = outputs
         self.transactions = {}
         self.submit_count = 0
+        self.fail_methods = set()
+        self.chain_id = "btck-mainnet-v1"
+        self.virtual_blue_order_length = 101
 
     async def call(self, method, params=None):
+        if method in self.fail_methods:
+            raise TimeoutError(f"injected {method} timeout")
         if method == "getInfo":
             return {
-                "network": {"chain_id": "btck-mainnet-v1"},
-                "dag": {"virtual_blue_order_length": 101},
+                "network": {"chain_id": self.chain_id},
+                "dag": {"virtual_blue_order_length": self.virtual_blue_order_length},
             }
         if method == "getUTXOSet":
             return {"selected_height": 100, "outputs": self.outputs}
         if method == "getTransaction":
             txid = params["txid"]
-            return {"txid": txid, "status": self.transactions.get(txid, "unknown")}
+            value = self.transactions.get(txid, "unknown")
+            if isinstance(value, dict):
+                return {"txid": txid, **value}
+            return {"txid": txid, "status": value}
         if method == "submitTransaction":
             tx = params["transaction"]
             self.submit_count += 1
@@ -126,6 +134,125 @@ class TestL2ChainBridge(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(is_provable_burn_output(
             burn_output["R_ephem_hex"], burn_output["P_onetime_hex"]
         ))
+
+    async def test_presign_rpc_failure_refunds_withdrawal(self):
+        wallet, output = funded_wallet()
+        node = FakeBridgeNodeRPC([output])
+        node.fail_methods.add("getInfo")
+        ledger = self.make_ledger()
+        ledger.deposit("agent", 30_000)
+        bridge = L2ChainBridge(node, wallet, ledger, "btck-mainnet-v1", [(output["txid"], 0)])
+
+        result = await bridge.withdraw(
+            "wd-rpc-down", "agent", StealthWallet.generate("destination").address,
+            20_000, 1_000,
+        )
+        self.assertEqual(result["status"], "FAILED_REFUNDED")
+        self.assertEqual(ledger.get_balance("agent"), 30_000)
+        self.assertEqual(node.submit_count, 0)
+
+    async def test_presign_rpc_failure_refunds_burn_and_fee(self):
+        wallet, output = funded_wallet()
+        node = FakeBridgeNodeRPC([output])
+        node.fail_methods.add("getUTXOSet")
+        ledger = self.make_ledger()
+        ledger.l2_burned_satk = 20_000
+        ledger.deposit("btck:l2:fee-reserve", 1_000)
+        bridge = L2ChainBridge(node, wallet, ledger, "btck-mainnet-v1", [(output["txid"], 0)])
+
+        result = await bridge.broadcast_burn(
+            "burn-rpc-down", 20_000, 1_000, "btck:l2:fee-reserve"
+        )
+        self.assertEqual(result["status"], "FAILED_REFUNDED")
+        self.assertEqual(ledger.l2_burn_committed_satk, 0)
+        self.assertEqual(ledger.get_balance("btck:l2:fee-reserve"), 1_000)
+
+    async def test_unknown_submit_effect_retains_signed_transaction_and_retries_same_tx(self):
+        wallet, output = funded_wallet()
+        node = FakeBridgeNodeRPC([output])
+        node.fail_methods.add("submitTransaction")
+        ledger = self.make_ledger()
+        ledger.deposit("agent", 30_000)
+        bridge = L2ChainBridge(node, wallet, ledger, "btck-mainnet-v1", [(output["txid"], 0)])
+        destination = StealthWallet.generate("destination").address
+
+        with self.assertRaises(TimeoutError):
+            await bridge.withdraw("wd-unknown", "agent", destination, 20_000, 1_000)
+        signed = ledger.l2_withdrawals["wd-unknown"]
+        self.assertEqual(signed["status"], "SIGNED")
+        original_txid = signed["txid"]
+        self.assertEqual(ledger.get_balance("agent"), 9_000)
+
+        node.fail_methods.clear()
+        retried = await bridge.withdraw("wd-unknown", "agent", destination, 20_000, 1_000)
+        self.assertEqual(retried["status"], "BROADCAST")
+        self.assertEqual(retried["txid"], original_txid)
+        self.assertEqual(ledger.get_balance("agent"), 9_000)
+
+    async def test_broadcast_record_reconciles_until_confirmation_threshold(self):
+        wallet, output = funded_wallet()
+        node = FakeBridgeNodeRPC([output])
+        ledger = self.make_ledger()
+        ledger.deposit("agent", 30_000)
+        bridge = L2ChainBridge(
+            node, wallet, ledger, "btck-mainnet-v1", [(output["txid"], 0)],
+            settlement_confirmations=3,
+        )
+        destination = StealthWallet.generate("destination").address
+
+        first = await bridge.withdraw("wd-confirm", "agent", destination, 20_000, 1_000)
+        txid = first["txid"]
+        node.transactions[txid] = {
+            "status": "confirmed", "confirmations": 2, "block_hash": "aa" * 32,
+        }
+        shallow = await bridge.withdraw("wd-confirm", "agent", destination, 20_000, 1_000)
+        self.assertEqual(shallow["status"], "BROADCAST")
+        self.assertEqual(shallow["confirmations"], 2)
+
+        node.transactions[txid]["confirmations"] = 3
+        confirmed = await bridge.withdraw("wd-confirm", "agent", destination, 20_000, 1_000)
+        self.assertEqual(confirmed["status"], "CONFIRMED")
+        self.assertEqual(confirmed["confirmations"], 3)
+        self.assertEqual(node.submit_count, 1)
+
+    async def test_reorg_or_mempool_eviction_rebroadcasts_identical_transaction(self):
+        wallet, output = funded_wallet()
+        node = FakeBridgeNodeRPC([output])
+        ledger = self.make_ledger()
+        ledger.deposit("agent", 30_000)
+        bridge = L2ChainBridge(node, wallet, ledger, "btck-mainnet-v1", [(output["txid"], 0)])
+        destination = StealthWallet.generate("destination").address
+
+        first = await bridge.withdraw("wd-reorg", "agent", destination, 20_000, 1_000)
+        node.transactions[first["txid"]] = "unknown"
+        replay = await bridge.withdraw("wd-reorg", "agent", destination, 20_000, 1_000)
+
+        self.assertEqual(replay["txid"], first["txid"])
+        self.assertEqual(replay["transaction"], first["transaction"])
+        self.assertEqual(ledger.get_balance("agent"), 9_000)
+        self.assertEqual(node.submit_count, 2)
+
+    async def test_wrong_chain_or_invalid_height_refunds_before_signing(self):
+        for label, mutate in (
+            ("wrong-chain", lambda node: setattr(node, "chain_id", "btck-simnet-v3")),
+            ("bad-height", lambda node: setattr(node, "virtual_blue_order_length", 0)),
+        ):
+            with self.subTest(label=label):
+                wallet, output = funded_wallet()
+                node = FakeBridgeNodeRPC([output])
+                mutate(node)
+                ledger = self.make_ledger()
+                ledger.deposit("agent", 30_000)
+                bridge = L2ChainBridge(
+                    node, wallet, ledger, "btck-mainnet-v1", [(output["txid"], 0)]
+                )
+                result = await bridge.withdraw(
+                    f"wd-{label}", "agent", StealthWallet.generate("destination").address,
+                    20_000, 1_000,
+                )
+                self.assertEqual(result["status"], "FAILED_REFUNDED")
+                self.assertEqual(ledger.get_balance("agent"), 30_000)
+                self.assertEqual(node.submit_count, 0)
 
 
 if __name__ == "__main__":

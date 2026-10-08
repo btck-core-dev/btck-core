@@ -61,6 +61,8 @@ class TestNodeTransactionRPC(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(result["accepted"])
         status = await self.rpc.call("getTransaction", {"txid": tx.txid})
         self.assertEqual(status["status"], "confirmed")
+        self.assertEqual(status["height"], 1)
+        self.assertEqual(status["confirmations"], 1)
         self.assertNotIn(tx.txid, self.daemon.mempool)
 
     async def test_conflicting_mempool_spend_is_rejected(self):

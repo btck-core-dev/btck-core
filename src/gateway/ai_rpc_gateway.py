@@ -725,6 +725,7 @@ class AIRPCGateway:
         self.data_dir = data_dir or os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "..", "data")
         self.gateway_keypair = StealthKeyPair()
         self.treasury_wallet = treasury_wallet
+        self.treasury_addr_is_explicit = treasury_wallet is not None or treasury_addr is not None
         if treasury_wallet is not None and treasury_addr not in (None, treasury_wallet.address):
             raise ValueError("treasury_addr does not match the supplied persistent treasury wallet")
         self.treasury_addr = (
@@ -732,6 +733,8 @@ class AIRPCGateway:
             if treasury_wallet is not None
             else treasury_addr or self.gateway_keypair.get_public_stealth_address()
         )
+        if self.treasury_addr_is_explicit and not StealthKeyPair.validate_stealth_address(self.treasury_addr):
+            raise ValueError("treasury_addr must be a valid BTC-K stealth address")
         self.network_year_override = int(network_year) if network_year is not None else None
         if self.network_year_override not in (None, 1, 2, 3, 4):
             raise ValueError("network_year test override must be in the canonical range 1..4")
@@ -773,6 +776,7 @@ class AIRPCGateway:
                 self.treasury_wallet,
                 self.ledger,
                 self.expected_chain_id,
+                settlement_confirmations=self.deposit_confirmations,
             )
 
     async def _resolve_l2_network_context(self, sandbox: bool = False) -> Tuple[Optional[int], int]:
@@ -1579,13 +1583,13 @@ class AIRPCGateway:
         current_bal = self.ledger.get_balance(agent_stealth_addr)
         if current_bal < est_cost_satk:
             if not self.allow_test_faucet and (
-                self.node_rpc is None or self.treasury_wallet is None
+                self.node_rpc is None or not self.treasury_addr_is_explicit
             ):
                 await self._send_response(writer, 503, json.dumps({
                     "error": {
                         "code": 503,
                         "type": "l2_chain_settlement_unavailable",
-                        "message": "L2 payment intake is disabled until an authoritative L1 RPC and persistent treasury wallet are configured."
+                        "message": "L2 payment intake is disabled until an authoritative L1 RPC and explicit treasury public address are configured."
                     }
                 }).encode())
                 return

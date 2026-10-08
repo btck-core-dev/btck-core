@@ -552,12 +552,21 @@ class BTCKDaemon:
             txid = str(params.get("txid", ""))
             if txid in self.mempool:
                 return {"jsonrpc": "2.0", "result": {"txid": txid, "status": "mempool"}, "id": req_id}
-            for block_hash in self.dag.virtual_selected_parent_chain:
+            order = self.dag.virtual_blue_order
+            tip_height = len(order) - 1
+            for height, block_hash in enumerate(order):
                 block = self.dag.blocks[block_hash]
                 if any(tx.txid == txid for tx in block.transactions):
                     return {
                         "jsonrpc": "2.0",
-                        "result": {"txid": txid, "status": "confirmed", "block_hash": block_hash, "blue_score": block.blue_score},
+                        "result": {
+                            "txid": txid,
+                            "status": "confirmed",
+                            "block_hash": block_hash,
+                            "blue_score": block.blue_score,
+                            "height": height,
+                            "confirmations": tip_height - height + 1,
+                        },
                         "id": req_id,
                     }
             return {"jsonrpc": "2.0", "result": {"txid": txid, "status": "unknown"}, "id": req_id}
