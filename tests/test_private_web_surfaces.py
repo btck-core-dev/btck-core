@@ -19,9 +19,11 @@ class TestPrivateWebSurfaces(unittest.TestCase):
         config = (ROOT / "deploy" / "public-edge" / "guardian-private-sites.nginx.conf.template").read_text(encoding="utf-8")
         self.assertIn("server_name explorer.bitcoin-k.com;", config)
         self.assertIn("server_name pool.bitcoin-k.com;", config)
+        self.assertIn("server_name bitcoin-k.com;", config)
+        self.assertIn("proxy_pass http://btck_private_mainnet_web/home;", config)
         self.assertIn("proxy_pass http://btck_private_mainnet_web/explorer;", config)
-        self.assertGreaterEqual(config.count("allow 51.195.136.143;"), 3)
-        self.assertGreaterEqual(config.count("deny all;"), 3)
+        self.assertGreaterEqual(config.count("allow 51.195.136.143;"), 4)
+        self.assertGreaterEqual(config.count("deny all;"), 4)
 
     def test_home_and_whitepaper_are_english_and_honest_about_status(self):
         home = (ROOT / "web" / "home.html").read_text(encoding="utf-8")
@@ -29,6 +31,7 @@ class TestPrivateWebSurfaces(unittest.TestCase):
         self.assertIn("THE AGENT", home)
         self.assertIn("21,000,000 BTCK", home + paper)
         self.assertIn("PLANNED", home)
+        self.assertIn("id=\"participate\"", home)
         self.assertIn("not live products", paper)
         self.assertIsNone(re.search(r"[\u3400-\u9fff]", home + paper))
 

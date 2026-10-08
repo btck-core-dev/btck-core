@@ -1,0 +1,16 @@
+# Temporary HTTP-only virtual host used to issue or renew the root-domain
+# certificate without exposing any application route.
+server {
+    listen 80;
+    listen [::]:80;
+    server_name bitcoin-k.com;
+
+    location /.well-known/acme-challenge/ {
+        root /var/www/html;
+        default_type text/plain;
+    }
+
+    location / {
+        return 404;
+    }
+}
