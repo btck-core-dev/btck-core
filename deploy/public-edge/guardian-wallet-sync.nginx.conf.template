@@ -28,6 +28,11 @@ server {
     add_header X-Frame-Options "DENY" always;
     add_header Referrer-Policy "no-referrer" always;
 
+    location = / {
+        default_type text/html;
+        return 200 '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>BTC-K Wallet Service</title></head><body style="margin:3rem auto;max-width:44rem;padding:0 1.25rem;background:#0d1117;color:#e6edf3;font:16px/1.6 system-ui"><h1>BTC-K Wallet Service</h1><p>The private mainnet synchronization service is online.</p><p>Use the signed desktop wallet to view balances and sign transactions. Private keys and recovery words must never be entered into a website.</p></body></html>';
+    }
+
     location = /edge-health {
         access_log off;
         default_type text/plain;

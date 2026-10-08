@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>BTC-K Mining Pool | ASIC kHeavyHash BlockDAG & 12h Euler Combo Jackpot</title>
+  <title>BTC-K Network Explorer & Mining Pool</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -829,7 +829,7 @@
       <a href="/" class="brand">
         <div class="brand-icon">⚡</div>
         <div class="brand-text">
-          <h1>BTC-K <span>POOL</span></h1>
+          <h1>BTC-K <span>NETWORK</span></h1>
           <p>ASIC kHeavyHash BlockDAG</p>
         </div>
       </a>
@@ -837,8 +837,8 @@
       <!-- Quick Stratum Copy -->
       <div class="header-stratum">
         <span class="stratum-tag"><span class="dot"></span> STRATUM</span>
-        <span id="header-stratum-url">185.130.45.240:3333</span>
-        <button class="copy-btn" onclick="copyText('stratum+tcp://185.130.45.240:3333')">Copy</button>
+        <span id="header-stratum-url">pool.bitcoin-k.com:3333</span>
+        <button class="copy-btn" onclick="copyText('stratum+tcp://pool.bitcoin-k.com:3333')">Copy</button>
       </div>
 
       <!-- Links -->
@@ -847,7 +847,7 @@
         <a href="#section-miners" class="nav-btn">Workers</a>
         <a href="#section-blocks" class="nav-btn">Blocks</a>
         <a href="#section-setup" class="nav-btn">Setup</a>
-        <span class="nav-btn wallet-btn" title="The browser wallet is excluded from the public beta">Wallet: desktop/CLI beta</span>
+        <span class="nav-btn wallet-btn" title="Private keys never enter a browser">Wallet: desktop/CLI only</span>
       </div>
     </div>
   </header>
@@ -1136,7 +1136,7 @@
       <div id="tab-iceriver" class="setup-tab-content">
         <div class="config-box">
           <div class="comment"># In your IceRiver Miner WebUI (http://&lt;MINER_IP&gt; -> Mining Settings):</div>
-          <div><span class="key">Pool 1 Address:</span>  <span class="val">stratum+tcp://185.130.45.240:3333</span>  <button class="copy-btn" onclick="copyText('stratum+tcp://185.130.45.240:3333')" style="margin-left: 8px;">Copy</button></div>
+          <div><span class="key">Pool 1 Address:</span>  <span class="val">stratum+tcp://pool.bitcoin-k.com:3333</span>  <button class="copy-btn" onclick="copyText('stratum+tcp://pool.bitcoin-k.com:3333')" style="margin-left: 8px;">Copy</button></div>
           <div><span class="key">Pool 1 Worker:</span>   <span class="val">&lt;YOUR_STEALTH_ADDRESS&gt;.&lt;WORKER_NAME&gt;</span></div>
           <div><span class="key">Pool 1 Password:</span> <span class="val">x</span></div>
           <div class="comment" style="margin-top: 8px;"># Example Worker Username:</div>
@@ -1148,7 +1148,7 @@
       <div id="tab-antminer" class="setup-tab-content" style="display: none;">
         <div class="config-box">
           <div class="comment"># In Antminer Dashboard (KS3 / KS5 / KS5 Pro):</div>
-          <div><span class="key">URL:</span>      <span class="val">stratum+tcp://185.130.45.240:3333</span></div>
+          <div><span class="key">URL:</span>      <span class="val">stratum+tcp://pool.bitcoin-k.com:3333</span></div>
           <div><span class="key">Worker:</span>   <span class="val">&lt;YOUR_STEALTH_ADDRESS&gt;.antminer01</span></div>
           <div><span class="key">Password:</span> <span class="val">x</span></div>
         </div>
@@ -1159,7 +1159,7 @@
     <!-- Footer -->
     <footer>
       <div>
-        <strong>Bitcoin K (BTCK) Official Mining Pool</strong> — Pure Proof-of-Work • Zero Premine • Deterministic 21M Scarcity
+        <strong>Bitcoin K (BTCK) Network Explorer & Official Mining Pool</strong> — Pure Proof-of-Work • Zero Premine • Deterministic 21M Scarcity
       </div>
       <div class="footer-links">
         <span>Source, checksums and official channels will be linked at public beta release.</span>

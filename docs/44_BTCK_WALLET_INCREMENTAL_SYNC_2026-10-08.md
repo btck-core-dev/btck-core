@@ -22,7 +22,8 @@
 ## 私有 HTTPS 状态
 
 - `wallet.bitcoin-k.com` 已指向 `185.130.45.240`，Let's Encrypt 证书已签发，有效期至 `2027-01-06`。
-- Nginx 仅代理 `GET /api/wallet/sync`，后端仍只监听 `127.0.0.1:18088`。
+- `explorer.bitcoin-k.com` 和 `pool.bitcoin-k.com` 已取得同一张受信任 SAN 证书，有效期至 `2027-01-06`；两个域名均接入主网英文实时浏览器/矿池界面。
+- 钱包域名仅代理 `GET /api/wallet/sync`；浏览器/矿池域名只允许 `GET/HEAD`；后端仍只监听 `127.0.0.1:18088`。
 - VPS 防火墙和 Nginx 双层白名单仅放行当前管理出口 `51.195.136.143/32`；其他来源不能访问 80/443。
 - 遗留 Docker 看板端口 `8088` 已改为只绑定 `127.0.0.1`，不存在绕过普通 `INPUT` 链的公开入口。
 - 钱包 `3.2.2-guardian1` 默认同步地址冻结为 `https://wallet.bitcoin-k.com/api/wallet/sync`。
