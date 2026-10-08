@@ -244,17 +244,17 @@ class TestOfflineWalletFlow(unittest.TestCase):
 
         def fake_rpc(_args, method, _params=None):
             calls.append(method)
-            if method == "getBlockDagInfo":
-                return {
+            if method == "getInfo":
+                return {"network": {
                     **DEVNET_IDENTITY,
                     "consensus_fingerprint": "00" * 32,
-                }
+                }}
             raise AssertionError("wallet requested UTXOs before approving network identity")
 
         with patch.object(btck_cli, "rpc_call", side_effect=fake_rpc):
             with self.assertRaisesRegex(btck_cli.CLIError, "unknown|approved"):
                 btck_cli.scan_wallet(SimpleNamespace(), wallet)
-        self.assertEqual(calls, ["getBlockDagInfo"])
+        self.assertEqual(calls, ["getInfo"])
         wallet.scan_chain_outputs.assert_not_called()
 
     def test_prepare_sign_broadcast_artifact_without_rpc_during_sign(self):
@@ -281,8 +281,8 @@ class TestOfflineWalletFlow(unittest.TestCase):
                         "txid": "11" * 32, "vout": 0, "amount_satk": 500_000,
                         "R_ephem_hex": R.hex(), "P_onetime_hex": P.hex(), "height": 50,
                     }]}
-                if method == "getBlockDagInfo":
-                    return DEVNET_IDENTITY
+                if method == "getInfo":
+                    return {"network": DEVNET_IDENTITY}
                 raise AssertionError(method)
 
             prepare_args = SimpleNamespace(

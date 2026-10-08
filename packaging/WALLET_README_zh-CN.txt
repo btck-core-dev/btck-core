@@ -89,6 +89,6 @@ SHA-256，再在“系统设置 → 隐私与安全性”中允许。菜单可�
 5. 本包尚未做 Apple Developer ID 签名/公证，也没有第三方密码学与共识审计。
 6. 旧版 transfer --offline 已禁用；必须使用 prepare/sign/broadcast，离线 sign 子命令不会调用节点 RPC。
 7. 发布前请用同目录 .sha256 文件核验压缩包。
-8. 钱包只允许为本版本内置批准的 DEVNET/TESTNET 链身份签名；未知网络或未发布 MAINNET 会被拒绝。
+8. guardian1 钱包内置批准当前私有 MAINNET 护网身份；任何不同 genesis 或共识指纹都会被拒绝。
 9. 余额会分别显示 tracked 与 spendable；转账只选择已成熟、已解锁的输出。
-10. 当前 RC 仍不批准 MAINNET 转账；最终 genesis hash 冻结后必须重新构建主网正式钱包制品。
+10. 高度 271,828 写入公开 checkpoint 后共识指纹会改变，必须使用届时重新构建的公开版钱包；guardian1 会拒绝连接该新身份。

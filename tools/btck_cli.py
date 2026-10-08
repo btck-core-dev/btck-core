@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Fail-closed node-backed BTC-K wallet CLI.
 
-MAINNET is deliberately absent from ``APPROVED_NETWORKS`` until the immutable
-genesis hash and consensus fingerprint exist.  A wallet release must never
-learn its MAINNET identity from the node it is about to trust.
+Every usable network identity is embedded at build time.  The private guardian
+MAINNET identity is intentionally versioned separately from the future public
+checkpoint identity, so this wallet will reject that later identity until a
+new public wallet release is built.
 """
 
 from __future__ import annotations
@@ -23,10 +24,16 @@ from urllib.request import Request, urlopen
 BASE_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(BASE_DIR / "src"))
 
-WALLET_VERSION = "3.2.0-rc2"
+WALLET_VERSION = "3.2.0-guardian1"
 RECOVERY_SCHEME = "bip39-btck-dksap-v1"
 
 APPROVED_NETWORKS = {
+    "mainnet": {
+        "name": "mainnet",
+        "chain_id": "btck-mainnet-v1",
+        "genesis_hash": "b9249be0f1b57021a9cfef8241a499c6e975a91e24d6a3fc22ce850000000000",
+        "consensus_fingerprint": "209a94078fd965783c3e0162f9744b1ccefddae11149e5102200c0fce4e2865a",
+    },
     "devnet": {
         "name": "devnet",
         "chain_id": "btck-devnet-v3",
@@ -236,12 +243,13 @@ def load_wallet(path: str, args) -> StealthWallet:
 
 
 def get_approved_node_identity(args) -> dict:
-    dag = rpc_call(args, "getBlockDagInfo")
+    info = rpc_call(args, "getInfo")
+    network = info.get("network", {})
     return validate_network_identity({
-        "name": dag.get("network"),
-        "chain_id": dag.get("chain_id"),
-        "genesis_hash": dag.get("genesis_hash"),
-        "consensus_fingerprint": dag.get("consensus_fingerprint"),
+        "name": network.get("name", network.get("network")),
+        "chain_id": network.get("chain_id"),
+        "genesis_hash": network.get("genesis_hash"),
+        "consensus_fingerprint": network.get("consensus_fingerprint"),
     })
 
 

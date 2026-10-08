@@ -480,7 +480,10 @@ class BTCKDaemon:
                 })
             return {
                 "jsonrpc": "2.0",
-                "result": {"selected_height": len(self.dag.virtual_selected_parent_chain) - 1, "outputs": outputs},
+                # UTXO block heights and coinbase maturity are defined by the
+                # canonical virtual blue ledger order, not selected-parent
+                # steps. Keep the legacy field name for wallet compatibility.
+                "result": {"selected_height": len(self.dag.virtual_blue_order) - 1, "outputs": outputs},
                 "id": req_id,
             }
 
