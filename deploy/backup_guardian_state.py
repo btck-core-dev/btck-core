@@ -11,6 +11,7 @@ import sqlite3
 import tempfile
 import time
 from pathlib import Path
+from urllib.error import URLError
 from urllib.request import urlopen
 
 
@@ -30,6 +31,13 @@ def sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def fetch_json_or_status(url: str) -> dict:
+    try:
+        return json.load(urlopen(url, timeout=3))
+    except (OSError, URLError) as exc:
+        return {"status": "unavailable", "url": url, "error": type(exc).__name__}
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, default=Path("/home/ubuntu/btck-mainnet-guardian"))
@@ -47,7 +55,7 @@ def main() -> None:
         manifest = args.root / "params/networks/mainnet.guardian.json"
         (temporary / "mainnet.guardian.json").write_bytes(manifest.read_bytes())
         node_info = json.load(urlopen("http://127.0.0.1:17110/info", timeout=3))
-        pool_status = json.load(urlopen("http://127.0.0.1:3337/status", timeout=3))
+        pool_status = fetch_json_or_status("http://127.0.0.1:3337/status")
         (temporary / "node-info.json").write_text(json.dumps(node_info, indent=2, sort_keys=True) + "\n")
         (temporary / "pool-status.json").write_text(json.dumps(pool_status, indent=2, sort_keys=True) + "\n")
         files = sorted(path for path in temporary.iterdir() if path.is_file())
