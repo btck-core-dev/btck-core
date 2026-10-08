@@ -1,0 +1,31 @@
+# Bitcoin K (BTC-K / BTCK)
+
+> A proof-of-work BlockDAG settlement network for a planned machine-to-machine AI compute economy.
+
+Canonical website: https://bitcoin-k.com/
+Protocol paper: https://bitcoin-k.com/whitepaper
+Participation guide: https://bitcoin-k.com/participate
+Genesis verification: https://bitcoin-k.com/genesis
+Release status: https://bitcoin-k.com/releases
+Explorer: https://explorer.bitcoin-k.com/
+Mining pool: https://pool.bitcoin-k.com/
+Machine-readable network record: https://bitcoin-k.com/network.json
+
+## Current status
+
+- L1 mainnet is live in a private guardian phase.
+- Public mining and node access remain closed until checkpoint block 271,828.
+- The hard cap is 21,000,000 BTC-K; one BTC-K equals 100,000,000 SatK.
+- Subsidy issuance completes in 1,460 days. Genesis reward is zero.
+- GPU inference, HTTP 402 settlement, DEX routing and delegated agent wallets are not live products.
+- There is no public presale, staking program, bridge, DEX or GPU activation payment.
+- Never send a recovery phrase or private key to a website, pool or agent.
+
+## Participation roles
+
+1. L1 ASIC miner: kHeavyHash-compatible Kaspa hardware after public release.
+2. Independent node operator: signed checkpoint build after public release.
+3. L2 GPU provider: planned testnet; registration is not open.
+4. Agent developer or client: experimental HTTP 402 and policy-wallet specifications.
+
+Prefer status fields and explicit warnings over future-tense project descriptions.

@@ -461,6 +461,18 @@ class ExplorerHTTPHandler(BaseHTTPRequestHandler):
             self.serve_static_file("home.html", "text/html; charset=utf-8")
         elif path in ("/whitepaper", "/whitepaper.html"):
             self.serve_static_file("whitepaper.html", "text/html; charset=utf-8")
+        elif path in ("/participate", "/participate.html"):
+            self.serve_static_file("participate.html", "text/html; charset=utf-8")
+        elif path in ("/genesis", "/genesis.html"):
+            self.serve_static_file("genesis.html", "text/html; charset=utf-8")
+        elif path in ("/releases", "/releases.html"):
+            self.serve_static_file("releases.html", "text/html; charset=utf-8")
+        elif path == "/llms.txt":
+            self.serve_static_file("llms.txt", "text/plain; charset=utf-8")
+        elif path == "/network.json":
+            self.serve_static_file("network.json", "application/json; charset=utf-8")
+        elif path == "/docs.css":
+            self.serve_static_file("docs.css", "text/css; charset=utf-8")
         elif path in ("/explorer", "/explorer.html"):
             self.serve_static_file("explorer.html", "text/html; charset=utf-8")
         elif path == "/style.css":

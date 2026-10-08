@@ -35,6 +35,22 @@ class TestPrivateWebSurfaces(unittest.TestCase):
         self.assertIn("not live products", paper)
         self.assertIsNone(re.search(r"[\u3400-\u9fff]", home + paper))
 
+    def test_public_document_set_is_english_and_status_safe(self):
+        names = ("participate.html", "genesis.html", "releases.html", "llms.txt")
+        docs = "\n".join((ROOT / "web" / name).read_text(encoding="utf-8") for name in names)
+        self.assertIsNone(re.search(r"[\u3400-\u9fff]", docs))
+        self.assertIn("PUBLIC PORT CLOSED", docs)
+        self.assertIn("NO PUBLIC RELEASE YET", docs)
+        self.assertIn("PENDING", docs)
+
+    def test_machine_network_record_is_valid_and_conservative(self):
+        import json
+        record = json.loads((ROOT / "web" / "network.json").read_text(encoding="utf-8"))
+        self.assertEqual(record["network"]["chain_id"], "btck-mainnet-v1")
+        self.assertEqual(record["genesis"]["hash"], "b9249be0f1b57021a9cfef8241a499c6e975a91e24d6a3fc22ce850000000000")
+        self.assertFalse(record["availability"]["public_mining"])
+        self.assertFalse(record["availability"]["gpu_market"])
+
 
 if __name__ == "__main__":
     unittest.main()
