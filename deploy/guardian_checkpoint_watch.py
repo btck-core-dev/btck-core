@@ -17,6 +17,7 @@ from urllib.request import urlopen
 ROOT = Path("/home/ubuntu/btck-mainnet-guardian")
 TARGET_HEIGHT = 271_828
 EXPECTED_GENESIS = "b9249be0f1b57021a9cfef8241a499c6e975a91e24d6a3fc22ce850000000000"
+EXPECTED_CONSENSUS_FINGERPRINT = "209a94078fd965783c3e0162f9744b1ccefddae11149e5102200c0fce4e2865a"
 
 
 def atomic_json(path: Path, payload: dict) -> None:
@@ -46,9 +47,12 @@ def main() -> None:
     info = json.load(urlopen("http://127.0.0.1:17110/info", timeout=4))
     if info["network"]["genesis_hash"] != EXPECTED_GENESIS:
         raise SystemExit("guardian monitor connected to the wrong genesis")
+    if info["network"]["consensus_fingerprint"] != EXPECTED_CONSENSUS_FINGERPRINT:
+        raise SystemExit("guardian monitor connected to the wrong consensus fingerprint")
     heartbeat = {
         "captured_at": int(time.time()),
         "target_height": args.target_height,
+        "consensus_fingerprint": info["network"]["consensus_fingerprint"],
         "max_blue_score": int(info["dag"]["max_blue_score"]),
         "virtual_blue_order_length": int(info["dag"]["virtual_blue_order_length"]),
         "total_blocks": int(info["dag"]["total_blocks"]),
