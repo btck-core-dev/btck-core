@@ -23,8 +23,13 @@ class TestPublicEdgeConfig(unittest.TestCase):
     def test_env_parser_and_hostname_policy(self):
         with tempfile.TemporaryDirectory() as root:
             path = Path(root) / "edge.env"
-            path.write_text("BTCK_PUBLIC_HOST=explorer.devnet.example.org\n", encoding="utf-8")
+            path.write_text(
+                "BTCK_PUBLIC_HOST=explorer.devnet.example.org\n"
+                "BTCK_POOL_PUBLIC_HOST=pool.devnet.example.org\n",
+                encoding="utf-8",
+            )
             self.assertEqual(module.load_env(path)["BTCK_PUBLIC_HOST"], "explorer.devnet.example.org")
+            self.assertEqual(module.load_env(path)["BTCK_POOL_PUBLIC_HOST"], "pool.devnet.example.org")
         self.assertIsNotNone(module.HOST_RE.fullmatch("explorer.devnet.example.org"))
         self.assertIsNone(module.HOST_RE.fullmatch("UPPER.example.org"))
         self.assertIsNone(module.HOST_RE.fullmatch("localhost"))

@@ -58,7 +58,7 @@ python3 scripts/mainnet_genesis_rehearsal.py --output build/rehearsal/report.jso
 - `explorer.btck-project.example`；
 - `pool.btck-project.example`。
 
-当前 Explorer 页面同时提供链与矿池统计，首次上线只激活一个 HTTPS hostname；第二个 pool hostname 只是待购买域名后的预留值。正式上线只替换 DNS、hostname 和仓库外 TLS 路径，RPC 继续仅绑定本机回环地址。
+当前 Explorer 页面同时提供链与矿池统计，两个 HTTPS hostname 都已配置为同一只读服务的别名。正式上线只替换 DNS、两个 hostname 和覆盖两者的仓库外 TLS 证书路径，RPC 继续仅绑定本机回环地址。
 
 ## 正式点火仍需人工输入的唯一链身份步骤
 

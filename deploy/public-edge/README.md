@@ -29,10 +29,10 @@ Then start only after reviewing the rendered mounts, published ports and host.
 Container stdout/stderr contains JSON access logs and is bounded by Docker's
 `json-file` rotation (`25m`, ten files, compression enabled).
 
-The current read-only Explorer also displays pool statistics, so only
-`BTCK_PUBLIC_HOST` is active at first launch. `BTCK_POOL_PUBLIC_HOST` records
-the future pool alias/landing-page name; activating a second public hostname
-requires a certificate covering both names plus a reviewed Nginx server block.
+The current read-only Explorer also displays pool statistics. Both
+`BTCK_PUBLIC_HOST` and `BTCK_POOL_PUBLIC_HOST` are active aliases to that same
+read-only service; the production certificate must cover both names. This lets
+the purchased domains replace only DNS, the two host values and TLS files.
 
 The image tag is version-pinned but not digest-pinned because manifests differ
 by architecture. Deployment approval must record `docker image inspect`'s

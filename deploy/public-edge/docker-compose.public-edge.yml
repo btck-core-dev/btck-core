@@ -6,6 +6,7 @@ services:
     restart: unless-stopped
     environment:
       BTCK_PUBLIC_HOST: "${BTCK_PUBLIC_HOST:?BTCK_PUBLIC_HOST is required}"
+      BTCK_POOL_PUBLIC_HOST: "${BTCK_POOL_PUBLIC_HOST:?BTCK_POOL_PUBLIC_HOST is required}"
     ports:
       - "80:80"
       - "443:443"

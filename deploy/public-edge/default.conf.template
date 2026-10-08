@@ -7,20 +7,26 @@ log_format btck_json escape=json
 limit_req_zone $binary_remote_addr zone=btck_per_ip:10m rate=20r/s;
 limit_conn_zone $binary_remote_addr zone=btck_connections:10m;
 
+map $host $btck_valid_host {
+    default 0;
+    ${BTCK_PUBLIC_HOST} 1;
+    ${BTCK_POOL_PUBLIC_HOST} 1;
+}
+
 server {
     listen 80 default_server;
     listen [::]:80 default_server;
-    server_name ${BTCK_PUBLIC_HOST};
-    if ($host != "${BTCK_PUBLIC_HOST}") { return 444; }
+    server_name ${BTCK_PUBLIC_HOST} ${BTCK_POOL_PUBLIC_HOST};
+    if ($btck_valid_host = 0) { return 444; }
     return 308 https://$server_name$request_uri;
 }
 
 server {
     listen 443 ssl default_server;
     listen [::]:443 ssl default_server;
-    server_name ${BTCK_PUBLIC_HOST};
+    server_name ${BTCK_PUBLIC_HOST} ${BTCK_POOL_PUBLIC_HOST};
 
-    if ($host != "${BTCK_PUBLIC_HOST}") { return 444; }
+    if ($btck_valid_host = 0) { return 444; }
 
     ssl_certificate /etc/nginx/certs/fullchain.pem;
     ssl_certificate_key /etc/nginx/certs/privkey.pem;
