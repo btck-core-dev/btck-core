@@ -24,6 +24,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../s
 
 from gateway.ai_rpc_gateway import AIRPCGateway
 from privacy.stealth_address import StealthKeyPair
+from privacy.wallet_engine import schnorr_sign
 from worker.process_preemptor import ProcessPreemptor, MinerState
 from worker.tui_console import TUIConsole
 
@@ -42,6 +43,13 @@ def sync_http_post(url: str, payload: dict, headers: dict = None):
     req = urllib.request.Request(url, data=data, headers=h, method="POST")
     with urllib.request.urlopen(req, timeout=5) as resp:
         return resp.status, json.loads(resp.read().decode())
+
+
+def sync_http_post_with_error(url: str, payload: dict, headers: dict = None):
+    try:
+        return sync_http_post(url, payload, headers)
+    except urllib.error.HTTPError as exc:
+        return exc.code, json.loads(exc.read().decode())
 
 
 class TestGPUSymbioticGatewayIntegration(unittest.IsolatedAsyncioTestCase):
@@ -73,7 +81,7 @@ class TestGPUSymbioticGatewayIntegration(unittest.IsolatedAsyncioTestCase):
         # 2. Register a 4070 Ti Super Symbiotic Worker
         worker_payload = {
             "worker_id": "worker-4070ti-rig-alpha",
-            "worker_address": "btck1sqqsymbioticmineraddressforpayouts1234567890",
+            "worker_address": StealthKeyPair().get_public_stealth_address(),
             "tier_level": 1,
             "model_name": "deepseek-r1",
             "supported_models": ["deepseek-r1", "deepseek-r1-distill-qwen-8b"],
@@ -92,12 +100,132 @@ class TestGPUSymbioticGatewayIntegration(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(res2["active_online"], 1)
         self.assertEqual(res2["cluster_vram_gb"], 16.0)
 
+    async def test_only_assigned_worker_can_complete_task(self):
+        for worker_id in ("worker-owner", "worker-attacker"):
+            worker_address = StealthKeyPair().get_public_stealth_address()
+            status, _ = await asyncio.to_thread(sync_http_post, f"{self.base_url}/v1/workers/register", {
+                "worker_id": worker_id,
+                "worker_address": worker_address,
+                "model_name": "deepseek-r1",
+            })
+            self.assertEqual(status, 200)
+
+        dispatch = asyncio.create_task(self.gw._dispatch_task_to_worker(
+            "worker-owner", {"task_id": "bound-task", "prompt": "x", "model": "deepseek-r1"}, timeout_sec=1
+        ))
+        await asyncio.sleep(0)
+        status, _ = await asyncio.to_thread(sync_http_post_with_error, f"{self.base_url}/v1/workers/complete", {
+            "worker_id": "worker-attacker",
+            "task_id": "bound-task",
+            "output_text": "forged",
+        })
+        self.assertEqual(status, 403)
+        status, _ = await asyncio.to_thread(sync_http_post, f"{self.base_url}/v1/workers/complete", {
+            "worker_id": "worker-owner",
+            "task_id": "bound-task",
+            "output_text": "authentic",
+        })
+        self.assertEqual(status, 200)
+        self.assertEqual((await dispatch)["output_text"], "authentic")
+
+    async def test_production_does_not_charge_without_real_gpu_result(self):
+        prod_dir = tempfile.mkdtemp()
+        self.addAsyncCleanup(asyncio.to_thread, shutil.rmtree, prod_dir, True)
+        prod = AIRPCGateway(host=self.host, port=8200, allow_test_faucet=False, data_dir=prod_dir)
+        await prod.start()
+        try:
+            payer = "btck1s-production-agent"
+            prod.ledger.deposit(payer, 100)
+            status, body = await asyncio.to_thread(sync_http_post_with_error, "http://127.0.0.1:8200/v1/chat/completions", {
+                "model": "deepseek-r1",
+                "messages": [{"role": "user", "content": "must use a real provider"}],
+            }, {"x-agent-stealth-address": payer})
+            self.assertEqual(status, 503)
+            self.assertIn("gpu_provider_unavailable", json.dumps(body))
+            self.assertEqual(prod.ledger.get_balance(payer), 100)
+        finally:
+            await prod.stop()
+
+    async def test_production_worker_registration_and_result_are_signed(self):
+        prod_dir = tempfile.mkdtemp()
+        self.addAsyncCleanup(asyncio.to_thread, shutil.rmtree, prod_dir, True)
+        prod = AIRPCGateway(host=self.host, port=8201, allow_test_faucet=False, data_dir=prod_dir)
+        await prod.start()
+        worker_keys = StealthKeyPair()
+        worker_id = "signed-worker"
+        registration = {
+            "worker_id": worker_id,
+            "worker_address": worker_keys.get_public_stealth_address(),
+            "worker_spend_pub_hex": worker_keys.spend_pub_bytes.hex(),
+            "tier_level": 1,
+            "model_name": "deepseek-r1",
+            "supported_models": ["deepseek-r1"],
+            "vram_gb": 16.0,
+            "registration_timestamp": int(time.time()),
+        }
+        try:
+            rejected, _, _ = prod.register_worker(dict(registration))
+            self.assertFalse(rejected)
+            registration["registration_signature"] = schnorr_sign(
+                worker_keys.spend_priv,
+                prod.worker_registration_digest(registration),
+            ).hex()
+            accepted, _, _ = prod.register_worker(registration)
+            self.assertTrue(accepted)
+
+            heartbeat = {
+                "worker_id": worker_id,
+                "pearl_hashrate": "549.5 TH/s",
+                "status": "MINING_PEARL",
+                "heartbeat_timestamp": int(time.time()),
+            }
+            rejected_status, _ = await asyncio.to_thread(
+                sync_http_post_with_error,
+                "http://127.0.0.1:8201/v1/workers/heartbeat",
+                heartbeat,
+            )
+            self.assertEqual(rejected_status, 403)
+            heartbeat["heartbeat_signature"] = schnorr_sign(
+                worker_keys.spend_priv,
+                prod.worker_heartbeat_digest(heartbeat),
+            ).hex()
+            accepted_status, _ = await asyncio.to_thread(
+                sync_http_post,
+                "http://127.0.0.1:8201/v1/workers/heartbeat",
+                heartbeat,
+            )
+            self.assertEqual(accepted_status, 200)
+
+            dispatch = asyncio.create_task(prod._dispatch_task_to_worker(
+                worker_id,
+                {"task_id": "signed-task", "prompt": "x", "model": "deepseek-r1"},
+                timeout_sec=1,
+            ))
+            task = await prod.worker_queues[worker_id].get()
+            output = "signed provider result"
+            signature = schnorr_sign(
+                worker_keys.spend_priv,
+                prod.worker_result_digest("signed-task", task["challenge_nonce"], output),
+            ).hex()
+            status, _ = await asyncio.to_thread(sync_http_post, "http://127.0.0.1:8201/v1/workers/complete", {
+                "worker_id": worker_id,
+                "task_id": "signed-task",
+                "output_text": output,
+                "provider_signature": signature,
+            })
+            self.assertEqual(status, 200)
+            result = await dispatch
+            self.assertEqual(result["output_text"], output)
+            self.assertEqual(result["provider_signature"], signature)
+        finally:
+            await prod.stop()
+
     async def test_end_to_end_inference_and_worker_payout(self):
         """
         Test end-to-end flow:
         User deposits SatK -> asks question -> Worker polls & executes -> v2.4 settlement.
         """
-        worker_addr = "btck1sqqsymbioticworkeraddress998877665544332211"
+        worker_addr = StealthKeyPair().get_public_stealth_address()
         worker_id = "worker-symbiotic-node-42"
 
         # 1. Register Worker

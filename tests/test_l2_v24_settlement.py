@@ -5,6 +5,7 @@ import sys
 import tempfile
 import time
 import unittest
+import json
 from pathlib import Path
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../src")))
@@ -12,6 +13,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../s
 
 from gateway.ai_rpc_gateway import AgentLedger
 from worker.pricing_engine import TieredPricingEngine
+from tokenomics.emission_schedule import BLOCKS_PER_YEAR
 
 
 class TestL2V24Settlement(unittest.TestCase):
@@ -49,11 +51,34 @@ class TestL2V24Settlement(unittest.TestCase):
                 self.assertEqual(actual, expected)
                 self.assertEqual(sum(actual), 100)
 
+    def test_network_year_is_derived_from_canonical_l1_height(self):
+        cases = {
+            0: 1,
+            1: 1,
+            BLOCKS_PER_YEAR: 1,
+            BLOCKS_PER_YEAR + 1: 2,
+            2 * BLOCKS_PER_YEAR: 2,
+            2 * BLOCKS_PER_YEAR + 1: 3,
+            3 * BLOCKS_PER_YEAR: 3,
+            3 * BLOCKS_PER_YEAR + 1: 4,
+            4 * BLOCKS_PER_YEAR: 4,
+            4 * BLOCKS_PER_YEAR + 1: 4,
+        }
+        for height, expected_year in cases.items():
+            with self.subTest(height=height):
+                self.assertEqual(TieredPricingEngine.network_year_for_height(height), expected_year)
+        for invalid in (-1, 1.5, True):
+            with self.subTest(invalid=invalid):
+                with self.assertRaises(ValueError):
+                    TieredPricingEngine.network_year_for_height(invalid)
+
     def test_live_gpu_demo_uses_canonical_split_without_legacy_85_percent(self):
         source = (Path(__file__).resolve().parents[1] / "scripts" / "chat_live_gpu.py").read_text(
             encoding="utf-8"
         )
         self.assertIn("TieredPricingEngine.calculate_revenue_split", source)
+        self.assertIn("TieredPricingEngine.network_year_for_height", source)
+        self.assertNotIn("BTCK_L2_NETWORK_YEAR", source)
         self.assertNotIn("total_satk * 0.85", source)
         self.assertNotIn("实收 (85%)", source)
 
@@ -108,6 +133,19 @@ class TestL2V24Settlement(unittest.TestCase):
 
             with self.assertRaisesRegex(ValueError, "different payment details"):
                 self.settle(reloaded, "same-job", cost=99)
+
+    def test_corrupt_or_negative_persistent_ledger_fails_closed(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path = os.path.join(temp, "ledger.json")
+            with open(path, "w", encoding="utf-8") as handle:
+                handle.write("{torn")
+            with self.assertRaisesRegex(RuntimeError, "Refusing to start"):
+                AgentLedger(path)
+
+            with open(path, "w", encoding="utf-8") as handle:
+                json.dump({"balances": {"agent": -1}}, handle)
+            with self.assertRaisesRegex(RuntimeError, "negative paid balance"):
+                AgentLedger(path)
 
 
 if __name__ == "__main__":

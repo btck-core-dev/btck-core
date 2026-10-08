@@ -339,6 +339,75 @@ class StealthWallet:
         4. Derives one-time private key p_i = s + c_i mod N for each input.
         5. Signs sighash with Schnorr signature.
         """
+        R_recip, P_recip = StealthKeyPair.generate_one_time_stealth_output(recipient_stealth_addr)
+        return self.create_and_sign_transfer_to_output(
+            R_ephem_hex=R_recip.hex(),
+            P_onetime_hex=P_recip.hex(),
+            amount_satk=amount_satk,
+            fee_satk=fee_satk,
+            current_height=current_height,
+            recipient_tag="Recipient Payment",
+        )
+
+    def create_and_sign_invoice_payment(
+        self,
+        invoice: dict,
+        fee_satk: int = 10_000,
+        current_height: Optional[int] = None,
+    ) -> StealthTransaction:
+        """Pay the exact unique one-time output supplied by an L2 invoice."""
+        if not isinstance(invoice, dict):
+            raise ValueError("invoice must be an object")
+        return self.create_and_sign_transfer_to_output(
+            R_ephem_hex=str(invoice.get("payment_R_ephem_hex", "")),
+            P_onetime_hex=str(invoice.get("payment_P_onetime_hex", "")),
+            amount_satk=int(invoice.get("amount_satk", 0)),
+            fee_satk=fee_satk,
+            current_height=current_height,
+            recipient_tag=f"L2 Invoice {invoice.get('invoice_id', '')}",
+        )
+
+    def create_and_sign_provable_burn(
+        self,
+        amount_satk: int,
+        fee_satk: int = 10_000,
+        current_height: Optional[int] = None,
+    ) -> StealthTransaction:
+        """Send SatK to the canonical v2.4 NUMS burn output."""
+        from tokenomics.provable_burn import burn_output_hex
+
+        burn_r, burn_p = burn_output_hex()
+        return self.create_and_sign_transfer_to_output(
+            R_ephem_hex=burn_r,
+            P_onetime_hex=burn_p,
+            amount_satk=amount_satk,
+            fee_satk=fee_satk,
+            current_height=current_height,
+            recipient_tag="BTC-K v2.4 L2 Provable Burn",
+        )
+
+    def create_and_sign_transfer_to_output(
+        self,
+        R_ephem_hex: str,
+        P_onetime_hex: str,
+        amount_satk: int,
+        fee_satk: int = 10_000,
+        current_height: Optional[int] = None,
+        recipient_tag: str = "Recipient Payment",
+    ) -> StealthTransaction:
+        """Sign a transfer to an already-derived one-time stealth output."""
+        if not isinstance(amount_satk, int) or isinstance(amount_satk, bool) or amount_satk <= 0:
+            raise ValueError("amount_satk must be a positive integer")
+        if not isinstance(fee_satk, int) or isinstance(fee_satk, bool) or fee_satk < 0:
+            raise ValueError("fee_satk must be a non-negative integer")
+        try:
+            r_bytes = bytes.fromhex(R_ephem_hex)
+            p_bytes = bytes.fromhex(P_onetime_hex)
+        except ValueError as exc:
+            raise ValueError("invoice output keys must be hexadecimal") from exc
+        if _bytes_to_pubkey(r_bytes) is None or _bytes_to_pubkey(p_bytes) is None:
+            raise ValueError("invoice output keys must be valid compressed secp256k1 points")
+
         available_utxos = [
             utxo for utxo in self.utxos
             if (
@@ -374,13 +443,12 @@ class StealthWallet:
         ]
 
         # 2. Recipient Output
-        R_recip, P_recip = StealthKeyPair.generate_one_time_stealth_output(recipient_stealth_addr)
         tx_outputs = [
             TxOutput(
                 amount_satk=amount_satk,
-                R_ephem_hex=R_recip.hex(),
-                P_onetime_hex=P_recip.hex(),
-                recipient_tag="Recipient Payment"
+                R_ephem_hex=R_ephem_hex,
+                P_onetime_hex=P_onetime_hex,
+                recipient_tag=recipient_tag,
             )
         ]
 

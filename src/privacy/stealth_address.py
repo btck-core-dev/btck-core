@@ -269,6 +269,15 @@ class StealthKeyPair:
             return False
 
     @staticmethod
+    def address_public_keys(address_str: str) -> Tuple[bytes, bytes]:
+        """Return the canonical compressed spend/view public keys in an address."""
+        spend_point, view_point = StealthKeyPair.parse_stealth_address(address_str)
+        return (
+            _pubkey_to_bytes(spend_point, compressed=True),
+            _pubkey_to_bytes(view_point, compressed=True),
+        )
+
+    @staticmethod
     def generate_one_time_stealth_output(recipient_public_stealth_addr: str) -> Tuple[bytes, bytes]:
         """
         Sender generates an ephemeral keypair (r, R = r * G) and derives a one-time public key P:

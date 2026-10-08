@@ -37,7 +37,7 @@ C_RESET = "\033[0m"
 GPU_CLUSTER_URL = os.getenv("BTCK_AI_CLUSTER_URL", "http://100.73.134.73:8000/v1/chat/completions")
 MODEL_NAME = os.getenv("BTCK_MODEL_NAME", "qwen3.6-35b")
 MINER_STEALTH_ADDR = os.getenv("BTCK_MINER_ADDR", "btck1sqqfounderstealthwallet4070cluster98234")
-NETWORK_YEAR = int(os.getenv("BTCK_L2_NETWORK_YEAR", "1"))
+NETWORK_HEIGHT = int(os.getenv("BTCK_L1_HEIGHT", "0"))
 
 
 def print_banner():
@@ -129,7 +129,8 @@ def render_economic_receipt(prompt_tokens: int, completion_tokens: int, elapsed_
         variant=ModelVariant.STANDARD
     )
     total_satk = cost.total_satk
-    split = TieredPricingEngine.calculate_revenue_split(total_satk, year=NETWORK_YEAR)
+    network_year = TieredPricingEngine.network_year_for_height(NETWORK_HEIGHT)
+    split = TieredPricingEngine.calculate_revenue_split(total_satk, year=network_year)
     tps = completion_tokens / elapsed_sec if elapsed_sec > 0 else 0
     
     proof_hash = hashlib.sha256(answer.encode("utf-8")).hexdigest()
@@ -138,7 +139,7 @@ def render_economic_receipt(prompt_tokens: int, completion_tokens: int, elapsed_
     print(f"  {C_BOLD}生成耗时:{C_RESET} {C_GREEN}{elapsed_sec:.2f}s{C_RESET} ({tps:.1f} tokens/s)  │  {C_BOLD}首字延迟:{C_RESET} {C_CYAN}{ttft:.2f}s{C_RESET}  │  {C_BOLD}抢占开销:{C_RESET} {C_GREEN}0.010ms{C_RESET}")
     print(f"  {C_BOLD}Token统计:{C_RESET} 输入 {prompt_tokens} + 输出 {completion_tokens} = {prompt_tokens + completion_tokens} Tokens")
     print(f"  {C_BOLD}总计扣费:{C_RESET} {C_YELLOW}{C_BOLD}{total_satk:,} SatK{C_RESET} (≈ {total_satk / 100_000_000:.6f} BTC-K)")
-    print(f"  ├─ {C_GREEN}💎 GPU 服务方 (Year {NETWORK_YEAR}):{C_RESET} {C_GREEN}{C_BOLD}{split['miner_satk']:,} SatK{C_RESET}")
+    print(f"  ├─ {C_GREEN}💎 GPU 服务方 (Year {network_year}, L1 #{NETWORK_HEIGHT:,}):{C_RESET} {C_GREEN}{C_BOLD}{split['miner_satk']:,} SatK{C_RESET}")
     print(f"  ├─ {C_CYAN}⚡ 待命保障池:{C_RESET} {split['standby_satk']:,} SatK")
     print(f"  ├─ {C_MAGENTA}🎰 AI Combo:{C_RESET} {split['combo_satk']:,} SatK")
     print(f"  ├─ {C_RED}🔥 黑洞销毁:{C_RESET} {C_RED}{split['burn_satk']:,} SatK{C_RESET}")

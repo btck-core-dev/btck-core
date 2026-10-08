@@ -23,6 +23,8 @@ from enum import Enum
 from math import gcd
 from typing import Dict, Tuple, Optional, Any
 
+from tokenomics.emission_schedule import BLOCKS_PER_YEAR
+
 
 class ModelTier(int, Enum):
     TIER_0 = 0  # 1.5B ~ 3B / Embedding (Anti-spam penalized 0.1x~0.25x)
@@ -256,6 +258,22 @@ class TieredPricingEngine:
 
     # Default Year 1 Allocation (for backward compatibility)
     REVENUE_SPLIT = PROGRESSIVE_REVENUE_SCHEDULE[1]
+
+    @classmethod
+    def network_year_for_height(cls, virtual_blue_height: int) -> int:
+        """Derive the frozen L2 allocation year from canonical L1 height.
+
+        Genesis is height 0. Heights 1..BLOCKS_PER_YEAR are year one and
+        subsequent complete 365-day height windows select years two to four.
+        The year-four L2 schedule remains in force after L1 issuance ends.
+        """
+        if not isinstance(virtual_blue_height, int) or isinstance(virtual_blue_height, bool):
+            raise ValueError("virtual_blue_height must be a non-negative integer")
+        if virtual_blue_height < 0:
+            raise ValueError("virtual_blue_height must be a non-negative integer")
+        if virtual_blue_height == 0:
+            return 1
+        return min(4, ((virtual_blue_height - 1) // BLOCKS_PER_YEAR) + 1)
 
     TIER_MULTIPLIERS = {
         ModelTier.TIER_0: 0.5,

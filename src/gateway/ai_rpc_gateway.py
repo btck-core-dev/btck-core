@@ -15,6 +15,7 @@ import hashlib
 import json
 import logging
 import os
+import tempfile
 import threading
 import time
 import uuid
@@ -29,7 +30,7 @@ _ROOT_DIR = os.path.dirname(_SRC_DIR)
 sys.path.insert(0, _SRC_DIR)
 sys.path.insert(0, os.path.join(_ROOT_DIR, "sdk"))
 from privacy.stealth_address import StealthKeyPair, sha256
-from privacy.wallet_engine import schnorr_sign, schnorr_verify
+from privacy.wallet_engine import StealthWallet, schnorr_sign, schnorr_verify
 from btck_agent.delegation import DelegationReceipt
 from worker.pricing_engine import TieredPricingEngine
 
@@ -256,6 +257,10 @@ class AgentLedger:
         self.l2_burned_satk: int = 0
         self.l2_settlements: Dict[str, Dict[str, Any]] = {}
         self.l2_year_accounting: Dict[str, Dict[str, int]] = {}
+        self.l2_invoices: Dict[str, Dict[str, Any]] = {}
+        self.l2_withdrawals: Dict[str, Dict[str, Any]] = {}
+        self.l2_burn_records: Dict[str, Dict[str, Any]] = {}
+        self.l2_burn_committed_satk: int = 0
         self._lock = threading.RLock()
         self._load()
 
@@ -272,14 +277,41 @@ class AgentLedger:
                     self.l2_burned_satk = int(data.get("l2_burned_satk", 0))
                     self.l2_settlements = data.get("l2_settlements", {})
                     self.l2_year_accounting = data.get("l2_year_accounting", {})
+                    self.l2_invoices = data.get("l2_invoices", {})
+                    self.l2_withdrawals = data.get("l2_withdrawals", {})
+                    self.l2_burn_records = data.get("l2_burn_records", {})
+                    self.l2_burn_committed_satk = int(data.get("l2_burn_committed_satk", 0))
+                    if any(value < 0 for value in self.balances.values()):
+                        raise ValueError("ledger contains a negative paid balance")
+                    if self.l2_burned_satk < 0 or not 0 <= self.l2_burn_committed_satk <= self.l2_burned_satk:
+                        raise ValueError("ledger contains invalid burn accounting")
+                    for name, value in (
+                        ("settlements", self.l2_settlements),
+                        ("year accounting", self.l2_year_accounting),
+                        ("invoices", self.l2_invoices),
+                        ("withdrawals", self.l2_withdrawals),
+                        ("burn records", self.l2_burn_records),
+                    ):
+                        if not isinstance(value, dict):
+                            raise ValueError(f"ledger {name} must be an object")
             except Exception as e:
-                logger.warning(f"Failed to load agent ledger from {self.persist_path}: {e}")
+                raise RuntimeError(f"Refusing to start with unreadable agent ledger {self.persist_path}: {e}") from e
 
     def _save(self):
         if self.persist_path:
+            temporary_path = None
             try:
                 os.makedirs(os.path.dirname(os.path.abspath(self.persist_path)), exist_ok=True)
-                with open(self.persist_path, "w", encoding="utf-8") as f:
+                directory = os.path.dirname(os.path.abspath(self.persist_path))
+                with tempfile.NamedTemporaryFile(
+                    mode="w",
+                    encoding="utf-8",
+                    dir=directory,
+                    prefix=".ai-rpc-ledger-",
+                    suffix=".tmp",
+                    delete=False,
+                ) as f:
+                    temporary_path = f.name
                     json.dump({
                         "balances": self.balances,
                         "vouchers": self.vouchers,
@@ -289,9 +321,32 @@ class AgentLedger:
                         "l2_burned_satk": self.l2_burned_satk,
                         "l2_settlements": self.l2_settlements,
                         "l2_year_accounting": self.l2_year_accounting,
+                        "l2_invoices": self.l2_invoices,
+                        "l2_withdrawals": self.l2_withdrawals,
+                        "l2_burn_records": self.l2_burn_records,
+                        "l2_burn_committed_satk": self.l2_burn_committed_satk,
                     }, f, indent=2)
+                    f.flush()
+                    os.fsync(f.fileno())
+                os.replace(temporary_path, self.persist_path)
+                temporary_path = None
+                try:
+                    directory_fd = os.open(directory, os.O_RDONLY)
+                    try:
+                        os.fsync(directory_fd)
+                    finally:
+                        os.close(directory_fd)
+                except OSError:
+                    # Some filesystems do not support directory fsync. The
+                    # atomic replace still prevents a torn JSON ledger.
+                    pass
             except Exception as e:
-                logger.warning(f"Failed to save agent ledger to {self.persist_path}: {e}")
+                if temporary_path:
+                    try:
+                        os.unlink(temporary_path)
+                    except OSError:
+                        pass
+                raise RuntimeError(f"Failed to durably save agent ledger to {self.persist_path}: {e}") from e
 
     def get_voucher_balance(self, agent_id: str) -> int:
         """Returns active, unexpired voucher balance for agent."""
@@ -525,6 +580,131 @@ class AgentLedger:
         self._save()
         return True, "Transfer completed"
 
+    def reserve_withdrawal(
+        self,
+        withdrawal_id: str,
+        payer: str,
+        destination: str,
+        amount_satk: int,
+        fee_satk: int,
+    ) -> Optional[Dict[str, Any]]:
+        """Reserve paid balance for an idempotent on-chain withdrawal."""
+        if not withdrawal_id or amount_satk <= 0 or fee_satk < 0:
+            raise ValueError("valid withdrawal id, amount, and fee are required")
+        with self._lock:
+            prior = self.l2_withdrawals.get(withdrawal_id)
+            identity = {
+                "payer": payer,
+                "destination": destination,
+                "amount_satk": amount_satk,
+                "fee_satk": fee_satk,
+            }
+            if prior is not None:
+                if any(prior.get(key) != value for key, value in identity.items()):
+                    raise ValueError("withdrawal id was already used for different details")
+                return dict(prior)
+            total = amount_satk + fee_satk
+            balance = int(self.balances.get(payer, 0))
+            if balance < total:
+                return None
+            self.balances[payer] = balance - total
+            record = {
+                "withdrawal_id": withdrawal_id,
+                **identity,
+                "debited_satk": total,
+                "status": "RESERVED",
+                "created_at": int(time.time()),
+            }
+            self.l2_withdrawals[withdrawal_id] = record
+            self._save()
+            return dict(record)
+
+    def update_withdrawal(self, withdrawal_id: str, **updates) -> Dict[str, Any]:
+        with self._lock:
+            if withdrawal_id not in self.l2_withdrawals:
+                raise ValueError("unknown withdrawal id")
+            self.l2_withdrawals[withdrawal_id].update(updates)
+            self._save()
+            return dict(self.l2_withdrawals[withdrawal_id])
+
+    def refund_withdrawal(self, withdrawal_id: str, reason: str) -> Dict[str, Any]:
+        with self._lock:
+            record = self.l2_withdrawals.get(withdrawal_id)
+            if record is None:
+                raise ValueError("unknown withdrawal id")
+            if record.get("status") == "FAILED_REFUNDED":
+                return dict(record)
+            if record.get("status") not in {"RESERVED", "SIGNED"}:
+                raise ValueError("broadcast or confirmed withdrawal cannot be refunded automatically")
+            payer = record["payer"]
+            self.balances[payer] = self.balances.get(payer, 0) + int(record["debited_satk"])
+            record.update({"status": "FAILED_REFUNDED", "failure_reason": reason})
+            self._save()
+            return dict(record)
+
+    def reserve_burn(
+        self,
+        burn_id: str,
+        amount_satk: int,
+        fee_satk: int,
+        fee_payer_account: str,
+    ) -> Optional[Dict[str, Any]]:
+        """Reserve accounted burn plus an independently funded L1 fee."""
+        if not burn_id or amount_satk <= 0 or fee_satk < 0:
+            raise ValueError("valid burn id, amount, and fee are required")
+        with self._lock:
+            prior = self.l2_burn_records.get(burn_id)
+            identity = {
+                "amount_satk": amount_satk,
+                "fee_satk": fee_satk,
+                "fee_payer_account": fee_payer_account,
+            }
+            if prior is not None:
+                if any(prior.get(key) != value for key, value in identity.items()):
+                    raise ValueError("burn id was already used for different details")
+                return dict(prior)
+            available_burn = self.l2_burned_satk - self.l2_burn_committed_satk
+            fee_balance = int(self.balances.get(fee_payer_account, 0))
+            if available_burn < amount_satk or fee_balance < fee_satk:
+                return None
+            self.l2_burn_committed_satk += amount_satk
+            self.balances[fee_payer_account] = fee_balance - fee_satk
+            record = {
+                "burn_id": burn_id,
+                **identity,
+                "status": "RESERVED",
+                "created_at": int(time.time()),
+            }
+            self.l2_burn_records[burn_id] = record
+            self._save()
+            return dict(record)
+
+    def update_burn(self, burn_id: str, **updates) -> Dict[str, Any]:
+        with self._lock:
+            if burn_id not in self.l2_burn_records:
+                raise ValueError("unknown burn id")
+            self.l2_burn_records[burn_id].update(updates)
+            self._save()
+            return dict(self.l2_burn_records[burn_id])
+
+    def refund_burn(self, burn_id: str, reason: str) -> Dict[str, Any]:
+        with self._lock:
+            record = self.l2_burn_records.get(burn_id)
+            if record is None:
+                raise ValueError("unknown burn id")
+            if record.get("status") == "FAILED_REFUNDED":
+                return dict(record)
+            if record.get("status") not in {"RESERVED", "SIGNED"}:
+                raise ValueError("broadcast or confirmed burn cannot be refunded automatically")
+            amount = int(record["amount_satk"])
+            fee = int(record["fee_satk"])
+            fee_account = record["fee_payer_account"]
+            self.l2_burn_committed_satk -= amount
+            self.balances[fee_account] = self.balances.get(fee_account, 0) + fee
+            record.update({"status": "FAILED_REFUNDED", "failure_reason": reason})
+            self._save()
+            return dict(record)
+
 class AIRPCGateway:
     def __init__(
         self,
@@ -534,16 +714,32 @@ class AIRPCGateway:
         allow_test_faucet: bool = False,
         data_dir: Optional[str] = None,
         network_year: Optional[int] = None,
+        node_rpc=None,
+        expected_chain_id: str = "btck-mainnet-v1",
+        deposit_confirmations: int = 10,
+        treasury_wallet: Optional[StealthWallet] = None,
     ):
         self.host = host
         self.port = port
         self.allow_test_faucet = allow_test_faucet
         self.data_dir = data_dir or os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "..", "data")
         self.gateway_keypair = StealthKeyPair()
-        self.treasury_addr = treasury_addr or self.gateway_keypair.get_public_stealth_address()
-        self.network_year = int(network_year if network_year is not None else os.getenv("BTCK_L2_NETWORK_YEAR", "1"))
-        if self.network_year not in TieredPricingEngine.PROGRESSIVE_REVENUE_SCHEDULE:
-            raise ValueError("BTCK_L2_NETWORK_YEAR must be in the canonical range 1..4")
+        self.treasury_wallet = treasury_wallet
+        if treasury_wallet is not None and treasury_addr not in (None, treasury_wallet.address):
+            raise ValueError("treasury_addr does not match the supplied persistent treasury wallet")
+        self.treasury_addr = (
+            treasury_wallet.address
+            if treasury_wallet is not None
+            else treasury_addr or self.gateway_keypair.get_public_stealth_address()
+        )
+        self.network_year_override = int(network_year) if network_year is not None else None
+        if self.network_year_override not in (None, 1, 2, 3, 4):
+            raise ValueError("network_year test override must be in the canonical range 1..4")
+        self.node_rpc = node_rpc
+        self.expected_chain_id = expected_chain_id
+        self.deposit_confirmations = int(deposit_confirmations)
+        if self.deposit_confirmations < 1:
+            raise ValueError("deposit_confirmations must be at least 1")
         self.l2_standby_account = "btck:l2:standby"
         self.l2_combo_account = "btck:l2:ai-combo"
         self.l2_ecosystem_account = "btck:l2:ecosystem"
@@ -556,28 +752,82 @@ class AIRPCGateway:
         self.task_ledger = TaskCostLedger(persist_path=task_ledger_file)
         self.service_cards = dict(DEFAULT_SERVICE_CARDS)
         self.cached_quotes: Dict[str, Dict[str, Any]] = {}
-        self.invoices: Dict[str, Dict[str, Any]] = {}  # invoice_id -> invoice_metadata
+        self.invoices = self.ledger.l2_invoices  # persisted invoice_id -> metadata
         self.idempotency_cache: Dict[str, Dict[str, Any]] = {}  # composite_key -> completion_resp
         self.delegation_spent: Dict[str, int] = {}  # delegation_id -> cumulative_spent_satk
         self.in_flight_locks: set = set()
         self.registered_workers: Dict[str, Dict[str, Any]] = {}
         self.worker_queues: Dict[str, asyncio.Queue] = {}
         self.worker_pending_tasks: Dict[str, asyncio.Future] = {}
+        self.worker_pending_owners: Dict[str, str] = {}
+        self.worker_pending_challenges: Dict[str, str] = {}
         self.trial_active_concurrency: Dict[str, int] = {}
         self.trial_request_timestamps: Dict[str, List[float]] = {}
         self.server: Optional[asyncio.Server] = None
         self.running = False
+        self.chain_bridge = None
+        if self.node_rpc is not None and self.treasury_wallet is not None:
+            from gateway.l2_chain_bridge import L2ChainBridge
+            self.chain_bridge = L2ChainBridge(
+                self.node_rpc,
+                self.treasury_wallet,
+                self.ledger,
+                self.expected_chain_id,
+            )
+
+    async def _resolve_l2_network_context(self, sandbox: bool = False) -> Tuple[Optional[int], int]:
+        """Return (canonical height, allocation year), failing closed in production.
+
+        A manual year is an explicit test-only override. Real-value settlement
+        must obtain height and chain identity from the configured L1 node.
+        """
+        if self.network_year_override is not None:
+            return None, self.network_year_override
+        if (self.allow_test_faucet or sandbox) and self.node_rpc is None:
+            return None, 1
+        if self.node_rpc is None:
+            raise RuntimeError("L2 settlement requires an authoritative L1 node RPC")
+
+        info = await self.node_rpc.call("getInfo")
+        network = info.get("network", {})
+        chain_id = str(network.get("chain_id", ""))
+        if chain_id != self.expected_chain_id:
+            raise RuntimeError(
+                f"L2 settlement chain mismatch: expected {self.expected_chain_id}, got {chain_id or 'missing'}"
+            )
+        dag = info.get("dag", {})
+        order_length = dag.get("virtual_blue_order_length")
+        if not isinstance(order_length, int) or isinstance(order_length, bool) or order_length < 1:
+            raise RuntimeError("L1 node did not return a valid canonical virtual-blue height")
+        height = order_length - 1
+        return height, TieredPricingEngine.network_year_for_height(height)
 
     def register_worker(self, data: dict) -> Tuple[bool, str, dict]:
         """Register a symbiotic GPU worker node (Zero-Key public stealth address)."""
         worker_id = data.get("worker_id") or f"worker_{uuid.uuid4().hex[:8]}"
         address = data.get("worker_address", "")
-        if not address.startswith("btck1s"):
-            return False, "Invalid worker address: must be a BTC-K stealth address starting with 'btck1s'", {}
+        if not StealthKeyPair.validate_stealth_address(address):
+            return False, "Invalid BTC-K worker stealth address", {}
+        worker_spend_pub_hex = str(data.get("worker_spend_pub_hex", ""))
+        if not self.allow_test_faucet:
+            try:
+                registered_at = int(data.get("registration_timestamp"))
+                if abs(int(time.time()) - registered_at) > 300:
+                    raise ValueError("registration timestamp is outside the 5-minute window")
+                spend_pub, _ = StealthKeyPair.address_public_keys(address)
+                if bytes.fromhex(worker_spend_pub_hex) != spend_pub:
+                    raise ValueError("worker signing key does not match payout address")
+                digest = self.worker_registration_digest(data)
+                signature = bytes.fromhex(str(data.get("registration_signature", "")))
+                if not schnorr_verify(spend_pub, digest, signature):
+                    raise ValueError("worker registration signature verification failed")
+            except Exception as exc:
+                return False, f"Authenticated worker registration rejected: {exc}", {}
         
         worker_info = {
             "worker_id": worker_id,
             "worker_address": address,
+            "worker_spend_pub_hex": worker_spend_pub_hex,
             "tier_level": int(data.get("tier_level", 1)),
             "model_name": data.get("model_name", "deepseek-r1-distill-qwen-8b-q4"),
             "supported_models": data.get("supported_models", [data.get("model_name", "deepseek-r1")]),
@@ -596,14 +846,52 @@ class AIRPCGateway:
         logger.info(f"⚡ Registered Symbiotic GPU Worker [{worker_id}] Tier {worker_info['tier_level']} (Address: {address[:16]}...)")
         return True, "Worker registered successfully", worker_info
 
-    async def _dispatch_task_to_worker(self, worker_id: str, task: dict, timeout_sec: float = 5.0) -> Optional[str]:
+    @staticmethod
+    def worker_registration_digest(data: dict) -> bytes:
+        payload = {
+            "worker_id": data.get("worker_id", ""),
+            "worker_address": data.get("worker_address", ""),
+            "tier_level": int(data.get("tier_level", 1)),
+            "model_name": data.get("model_name", ""),
+            "supported_models": list(data.get("supported_models", [])),
+            "vram_gb": float(data.get("vram_gb", 0.0)),
+            "registration_timestamp": int(data.get("registration_timestamp", 0)),
+        }
+        return sha256(
+            b"BTCK_L2_WORKER_REGISTER_V1|"
+            + json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        )
+
+    @staticmethod
+    def worker_result_digest(task_id: str, challenge: str, output_text: str) -> bytes:
+        result_hash = hashlib.sha256(output_text.encode("utf-8")).hexdigest()
+        return sha256(f"BTCK_L2_WORKER_RESULT_V1|{task_id}|{challenge}|{result_hash}".encode())
+
+    @staticmethod
+    def worker_heartbeat_digest(data: dict) -> bytes:
+        payload = {
+            "worker_id": data.get("worker_id", ""),
+            "pearl_hashrate": data.get("pearl_hashrate", ""),
+            "status": data.get("status", ""),
+            "heartbeat_timestamp": int(data.get("heartbeat_timestamp", 0)),
+        }
+        return sha256(
+            b"BTCK_L2_WORKER_HEARTBEAT_V1|"
+            + json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        )
+
+    async def _dispatch_task_to_worker(self, worker_id: str, task: dict, timeout_sec: float = 5.0) -> Optional[dict]:
         """Dispatch task to worker queue and await completion."""
         if worker_id not in self.worker_queues:
             return None
         task_id = task["task_id"]
         loop = asyncio.get_running_loop()
         future = loop.create_future()
+        challenge = uuid.uuid4().hex
+        task = {**task, "challenge_nonce": challenge}
         self.worker_pending_tasks[task_id] = future
+        self.worker_pending_owners[task_id] = worker_id
+        self.worker_pending_challenges[task_id] = challenge
         await self.worker_queues[worker_id].put(task)
         try:
             result = await asyncio.wait_for(future, timeout=timeout_sec)
@@ -613,8 +901,10 @@ class AIRPCGateway:
             return None
         finally:
             self.worker_pending_tasks.pop(task_id, None)
+            self.worker_pending_owners.pop(task_id, None)
+            self.worker_pending_challenges.pop(task_id, None)
 
-    def process_payment_receipt(self, receipt: dict, expected_path: str = "") -> Tuple[bool, str]:
+    async def process_payment_receipt(self, receipt: dict, expected_path: str = "") -> Tuple[bool, str]:
         """
         Cryptographically verify x402 / SatK payment receipt against authentic gateway invoices (Fixes C-01).
         Requires:
@@ -622,7 +912,8 @@ class AIRPCGateway:
         2. invoice must be PENDING (double-spend protection)
         3. invoice must not be expired
         4. amount_satk must be integer >= invoice requirement
-        5. payment proof / signature verification
+        5. payer signature is bound to the payer address and exact outpoint
+        6. the exact invoice output is confirmed on the authoritative L1 chain
         """
         if not isinstance(receipt, dict):
             return False, "Receipt must be a valid JSON object"
@@ -647,11 +938,14 @@ class AIRPCGateway:
         now = int(time.time())
         if now > inv.get("expires_at", 0):
             inv["status"] = "EXPIRED"
+            self.ledger._save()
             return False, f"Invoice '{invoice_id}' expired at {inv.get('expires_at')}"
 
         try:
             raw_amt = receipt.get("amount_satk", receipt.get("amount_sats", 0))
-            amt = int(raw_amt)
+            if not isinstance(raw_amt, int) or isinstance(raw_amt, bool):
+                raise ValueError("not an integer")
+            amt = raw_amt
             if amt <= 0:
                 return False, f"Invalid payment amount: {raw_amt}. Must be strictly positive integer SatK"
         except (TypeError, ValueError):
@@ -664,7 +958,19 @@ class AIRPCGateway:
         if not payer:
             return False, "Receipt missing 'payer_stealth_address'"
 
-        # Mandatory cryptographic payment verification (Fixes P0-05)
+        if payer != inv.get("payer_stealth_address"):
+            return False, "Receipt payer does not match the agent bound to this invoice"
+
+        txid = str(receipt.get("txid", "")).lower()
+        try:
+            vout = int(receipt.get("vout"))
+        except (TypeError, ValueError):
+            return False, "Receipt must contain an integer transaction output index"
+        if len(txid) != 64 or any(ch not in "0123456789abcdef" for ch in txid) or vout < 0:
+            return False, "Receipt must contain a canonical 32-byte transaction id and non-negative vout"
+
+        # Mandatory agent authorization. The signing key must be the spend
+        # public key encoded in payer_stealth_address, not an arbitrary key.
         sig_hex = receipt.get("payment_signature") or receipt.get("schnorr_signature")
         payer_pubkey_hex = receipt.get("payer_spend_pub_hex") or receipt.get("ephemeral_pubkey")
         
@@ -674,23 +980,59 @@ class AIRPCGateway:
         try:
             sig_bytes = bytes.fromhex(sig_hex)
             pub_bytes = bytes.fromhex(payer_pubkey_hex)
-            # Digest covers invoice, amount, treasury, and nonce
-            digest = sha256(f"{invoice_id}_{amt}_{self.treasury_addr}_{inv.get('nonce', '')}_{receipt.get('timestamp', '')}".encode())
+            address_spend_pub, _ = StealthKeyPair.address_public_keys(payer)
+            if pub_bytes != address_spend_pub:
+                return False, "Receipt signing key does not match payer stealth address"
+            digest = sha256(
+                f"BTCK_L2_DEPOSIT_V1|{invoice_id}|{txid}|{vout}|{amt}|{inv.get('nonce', '')}".encode()
+            )
             if not schnorr_verify(pub_bytes, digest, sig_bytes):
                 return False, "Cryptographic payment signature verification failed"
         except Exception as e:
             return False, f"Malformed signature or public key in receipt: {e}"
 
-        # Double-spending tracking
-        receipt_key = f"{invoice_id}_{receipt.get('recipient_one_time_output', '')}"
+        if self.node_rpc is None:
+            return False, "Chain payment verification is unavailable: no authoritative L1 node RPC"
+
+        receipt_key = f"{txid}:{vout}"
         if receipt_key in self.ledger.processed_receipts:
-            return False, "Receipt key already redeemed (Double spend attempt)"
+            return False, "Transaction output was already credited (replay rejected)"
+
+        try:
+            height, _network_year = await self._resolve_l2_network_context()
+            snapshot = await self.node_rpc.call("getUTXOSet")
+        except Exception as exc:
+            return False, f"Authoritative L1 verification failed: {exc}"
+        output = next(
+            (
+                item for item in snapshot.get("outputs", [])
+                if item.get("txid") == txid and int(item.get("vout", -1)) == vout
+            ),
+            None,
+        )
+        if output is None:
+            return False, "Payment outpoint is not confirmed and unspent on the canonical L1 chain"
+        if (
+            output.get("R_ephem_hex") != inv.get("payment_R_ephem_hex")
+            or output.get("P_onetime_hex") != inv.get("payment_P_onetime_hex")
+        ):
+            return False, "Payment outpoint does not match this invoice's unique stealth output"
+        chain_amount = int(output.get("amount_satk", -1))
+        if chain_amount != amt or chain_amount < int(inv["amount_satk"]):
+            return False, "Confirmed output amount does not match the signed receipt and invoice"
+        output_height = int(output.get("height", -1))
+        confirmations = int(height) - output_height + 1
+        if output_height < 0 or confirmations < self.deposit_confirmations:
+            return False, f"Payment requires {self.deposit_confirmations} confirmations; currently {max(0, confirmations)}"
 
         self.ledger.processed_receipts.add(receipt_key)
         inv["status"] = "SETTLED"
         inv["settled_at"] = now
         inv["payer"] = payer
-        self.ledger.deposit(payer, amt)
+        inv["txid"] = txid
+        inv["vout"] = vout
+        inv["confirmations_at_credit"] = confirmations
+        self.ledger.deposit(payer, chain_amount)
         return True, "Payment verified and credited"
 
     def handle_request(self, agent_id: str, model: str, prompt: str) -> Dict[str, Any]:
@@ -1060,6 +1402,20 @@ class AIRPCGateway:
                     await self._send_response(writer, 404, json.dumps({"error": "Worker not registered"}).encode())
                     return
                 w = self.registered_workers[worker_id]
+                if not self.allow_test_faucet:
+                    try:
+                        heartbeat_timestamp = int(data.get("heartbeat_timestamp"))
+                        if abs(int(time.time()) - heartbeat_timestamp) > 120:
+                            raise ValueError("heartbeat timestamp is outside the 2-minute window")
+                        pub_bytes = bytes.fromhex(w.get("worker_spend_pub_hex", ""))
+                        signature = bytes.fromhex(str(data.get("heartbeat_signature", "")))
+                        if not schnorr_verify(pub_bytes, self.worker_heartbeat_digest(data), signature):
+                            raise ValueError("worker heartbeat signature verification failed")
+                    except Exception as exc:
+                        await self._send_response(writer, 403, json.dumps({
+                            "error": f"Authenticated heartbeat rejected: {exc}"
+                        }).encode())
+                        return
                 w["last_heartbeat"] = time.time()
                 if "pearl_hashrate" in data:
                     w["pearl_hashrate"] = data["pearl_hashrate"]
@@ -1080,12 +1436,43 @@ class AIRPCGateway:
                 except Exception:
                     await self._send_response(writer, 400, json.dumps({"error": "Invalid JSON"}).encode())
                     return
+                worker_id = data.get("worker_id", "")
                 task_id = data.get("task_id", "")
                 output_text = data.get("output_text", "")
-                if task_id in self.worker_pending_tasks:
-                    fut = self.worker_pending_tasks[task_id]
-                    if not fut.done():
-                        fut.set_result(output_text)
+                expected_worker = self.worker_pending_owners.get(task_id)
+                if expected_worker is None:
+                    await self._send_response(writer, 404, json.dumps({"error": "Unknown or expired task"}).encode())
+                    return
+                if worker_id != expected_worker:
+                    await self._send_response(writer, 403, json.dumps({"error": "Task belongs to a different worker"}).encode())
+                    return
+                if not isinstance(output_text, str) or not output_text.strip():
+                    await self._send_response(writer, 400, json.dumps({"error": "Empty inference output rejected"}).encode())
+                    return
+                provider_signature = str(data.get("provider_signature", ""))
+                if not self.allow_test_faucet:
+                    worker = self.registered_workers.get(worker_id, {})
+                    try:
+                        pub_bytes = bytes.fromhex(worker.get("worker_spend_pub_hex", ""))
+                        sig_bytes = bytes.fromhex(provider_signature)
+                        challenge = self.worker_pending_challenges[task_id]
+                        digest = self.worker_result_digest(task_id, challenge, output_text)
+                        if not schnorr_verify(pub_bytes, digest, sig_bytes):
+                            raise ValueError("provider result signature verification failed")
+                    except Exception as exc:
+                        await self._send_response(writer, 403, json.dumps({
+                            "error": f"Authenticated task completion rejected: {exc}"
+                        }).encode())
+                        return
+                fut = self.worker_pending_tasks[task_id]
+                if fut.done():
+                    await self._send_response(writer, 409, json.dumps({"error": "Task completion already submitted"}).encode())
+                    return
+                fut.set_result({
+                    "output_text": output_text,
+                    "provider_signature": provider_signature,
+                    "challenge_nonce": self.worker_pending_challenges[task_id],
+                })
                 await self._send_response(writer, 200, json.dumps({"status": "ACCEPTED"}).encode())
                 return
 
@@ -1151,7 +1538,7 @@ class AIRPCGateway:
                 return
 
         if receipt_to_verify:
-            success, reason = self.process_payment_receipt(receipt_to_verify, expected_path="/v1/chat/completions")
+            success, reason = await self.process_payment_receipt(receipt_to_verify, expected_path="/v1/chat/completions")
             if not success:
                 logger.warning(f"🛑 Payment verification failed: {reason}. Rejecting request.")
                 err_resp = {
@@ -1191,15 +1578,30 @@ class AIRPCGateway:
         # 5. Check balance
         current_bal = self.ledger.get_balance(agent_stealth_addr)
         if current_bal < est_cost_satk:
+            if not self.allow_test_faucet and (
+                self.node_rpc is None or self.treasury_wallet is None
+            ):
+                await self._send_response(writer, 503, json.dumps({
+                    "error": {
+                        "code": 503,
+                        "type": "l2_chain_settlement_unavailable",
+                        "message": "L2 payment intake is disabled until an authoritative L1 RPC and persistent treasury wallet are configured."
+                    }
+                }).encode())
+                return
             # Emit HTTP 402 Payment Required!
             quote = self.create_quote(model, est_tokens)
             invoice_id = f"inv_{uuid.uuid4().hex[:12]}"
+            payment_R, payment_P = StealthKeyPair.generate_one_time_stealth_output(self.treasury_addr)
             invoice = {
                 "invoice_id": invoice_id,
                 "quote_id": quote["quote_id"],
                 "model": model,
                 "amount_satk": est_cost_satk,
                 "payment_address": self.treasury_addr,
+                "payment_R_ephem_hex": payment_R.hex(),
+                "payment_P_onetime_hex": payment_P.hex(),
+                "payer_stealth_address": agent_stealth_addr,
                 "network": "BTCK BlockDAG",
                 "status": "PENDING",
                 "created_at": int(time.time()),
@@ -1210,6 +1612,7 @@ class AIRPCGateway:
             }
             # Register in active invoices DB (Fixes C-01)
             self.invoices[invoice_id] = invoice
+            self.ledger._save()
 
             res_402 = {
                 "error": {
@@ -1267,6 +1670,7 @@ class AIRPCGateway:
             task_id = f"task_{uuid.uuid4().hex[:12]}"
             actual_output_text = None
             worker_used = None
+            worker_result = None
 
             # Check if a registered symbiotic GPU worker can fulfill this task
             matching_workers = [
@@ -1286,13 +1690,23 @@ class AIRPCGateway:
                         "prompt_tokens": len(prompt.split()),
                         "max_tokens": 512,
                     }
-                    actual_output_text = await self._dispatch_task_to_worker(target_worker["worker_id"], task_payload, timeout_sec=6.0)
-                    if actual_output_text:
+                    worker_result = await self._dispatch_task_to_worker(target_worker["worker_id"], task_payload, timeout_sec=6.0)
+                    if worker_result and worker_result.get("output_text"):
+                        actual_output_text = worker_result["output_text"]
                         worker_used = target_worker
                 except Exception as e:
                     logger.warning(f"Worker dispatch failed ({e}), falling back to local reasoning engine.")
 
             if not actual_output_text:
+                if not self.allow_test_faucet and not is_trial:
+                    await self._send_response(writer, 503, json.dumps({
+                        "error": {
+                            "code": 503,
+                            "type": "gpu_provider_unavailable",
+                            "message": "No verified GPU provider completed the task; no SatK was charged."
+                        }
+                    }).encode())
+                    return
                 actual_output_text = self._generate_reasoning_completion(model, prompt)
 
             input_tokens = len(prompt.split())
@@ -1301,6 +1715,7 @@ class AIRPCGateway:
             actual_cost_satk = max(1, (actual_tokens * rate_per_1k + 999) // 1000)
             
             provider_address = worker_used["worker_address"] if worker_used else self.treasury_addr
+            network_height, network_year = await self._resolve_l2_network_context(sandbox=is_trial)
             settlement_id = composite_idem_key or task_id
             settlement = self.ledger.settle_l2_payment(
                 settlement_id=settlement_id,
@@ -1310,7 +1725,7 @@ class AIRPCGateway:
                 standby_account=self.l2_standby_account,
                 combo_account=self.l2_combo_account,
                 ecosystem_account=self.l2_ecosystem_account,
-                network_year=self.network_year,
+                network_year=network_year,
             )
             if settlement is None:
                 err_deduct = {
@@ -1347,6 +1762,9 @@ class AIRPCGateway:
                 "provider_spend_pub_hex": self.gateway_keypair.spend_pub_bytes.hex(),
                 "result_hash": result_hash,
                 "signature_hex": delivery_sig_bytes.hex(),
+                "worker_spend_pub_hex": worker_used.get("worker_spend_pub_hex", "") if worker_used else "",
+                "worker_signature_hex": worker_result.get("provider_signature", "") if worker_result else "",
+                "worker_challenge_nonce": worker_result.get("challenge_nonce", "") if worker_result else "",
                 "status": "delivered",
                 "timestamp": int(time.time())
             }
@@ -1367,6 +1785,7 @@ class AIRPCGateway:
                 "result_hash": result_hash,
                 "receipt_hash": f"sha256:{receipt_digest}",
                 "l2_settlement": settlement,
+                "l1_settlement_height": network_height,
                 "created_at": int(time.time())
             })
 
@@ -1389,7 +1808,8 @@ class AIRPCGateway:
                     "total_tokens": actual_tokens,
                     "cost_satk": actual_cost_satk,
                     "remaining_balance_satk": rem_bal,
-                    "l2_settlement": settlement
+                    "l2_settlement": settlement,
+                    "l1_settlement_height": network_height,
                 },
                 "delivery_receipt": delivery_receipt
             }

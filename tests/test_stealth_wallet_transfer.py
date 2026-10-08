@@ -62,6 +62,32 @@ class TestStealthWalletTransfer(unittest.TestCase):
         alice.scan_chain_outputs(alice_outputs)
         self.assertEqual(alice.get_balance_btck(), 20.0)
 
+    def test_invoice_payment_uses_exact_gateway_output(self):
+        payer = StealthWallet.generate("payer")
+        gateway = StealthWallet.generate("gateway")
+        funding_r, funding_p = StealthKeyPair.generate_one_time_stealth_output(payer.address)
+        payer.scan_chain_outputs([{
+            "txid": "bb" * 32,
+            "vout": 0,
+            "amount_satk": 50_000,
+            "R_ephem_hex": funding_r.hex(),
+            "P_onetime_hex": funding_p.hex(),
+            "height": 1,
+        }])
+        invoice_r, invoice_p = StealthKeyPair.generate_one_time_stealth_output(gateway.address)
+        invoice = {
+            "invoice_id": "inv-exact-output",
+            "amount_satk": 10_000,
+            "payment_R_ephem_hex": invoice_r.hex(),
+            "payment_P_onetime_hex": invoice_p.hex(),
+        }
+
+        tx = payer.create_and_sign_invoice_payment(invoice, fee_satk=1_000)
+        self.assertTrue(StealthWallet.verify_transaction(tx))
+        self.assertEqual(tx.outputs[0].amount_satk, 10_000)
+        self.assertEqual(tx.outputs[0].R_ephem_hex, invoice_r.hex())
+        self.assertEqual(tx.outputs[0].P_onetime_hex, invoice_p.hex())
+
 
 if __name__ == "__main__":
     unittest.main()
