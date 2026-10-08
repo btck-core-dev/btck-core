@@ -461,6 +461,8 @@ class ExplorerHTTPHandler(BaseHTTPRequestHandler):
             self.serve_static_file("home.html", "text/html; charset=utf-8")
         elif path in ("/whitepaper", "/whitepaper.html"):
             self.serve_static_file("whitepaper.html", "text/html; charset=utf-8")
+        elif path == "/whitepaper.pdf":
+            self.serve_static_file("whitepaper.pdf", "application/pdf")
         elif path in ("/participate", "/participate.html"):
             self.serve_static_file("participate.html", "text/html; charset=utf-8")
         elif path in ("/genesis", "/genesis.html"):
