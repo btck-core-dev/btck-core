@@ -33,6 +33,12 @@ class TestPrivateWebSurfaces(unittest.TestCase):
         self.assertIn("PLANNED", home)
         self.assertIn("id=\"participate\"", home)
         self.assertIn("not live products", paper)
+        self.assertIn("The primary mission: an open Agent economy", paper)
+        self.assertIn("One Agent call, end to end", paper)
+        self.assertIn("Private robot wallets", paper)
+        self.assertIn("Serving GPU provider", paper)
+        self.assertIn("20% and 33%", paper)
+        self.assertIn("IMPLEMENTATION GAP", paper)
         self.assertIsNone(re.search(r"[\u3400-\u9fff]", home + paper))
 
     def test_public_document_set_is_english_and_status_safe(self):

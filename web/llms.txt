@@ -2,6 +2,8 @@
 
 > A proof-of-work BlockDAG settlement network for a planned machine-to-machine AI compute economy.
 
+L1 proof-of-work is the security and settlement foundation. The project's primary growth mission is an L2 market where independent GPU providers serve model inference and autonomous agents pay per job in SatK.
+
 Canonical website: https://bitcoin-k.com/
 Protocol paper: https://bitcoin-k.com/whitepaper
 Participation guide: https://bitcoin-k.com/participate
