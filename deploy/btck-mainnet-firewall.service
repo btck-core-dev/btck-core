@@ -1,0 +1,13 @@
+[Unit]
+Description=BTC-K MAINNET Guardian Stratum Firewall
+After=network-online.target docker.service
+Before=btck-mainnet-stratum.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=true
+ExecStart=/bin/sh -c '/usr/sbin/iptables -C INPUT -s 183.12.45.145 -p tcp --dport 3333 -m comment --comment btck-mainnet-guardian -j ACCEPT 2>/dev/null || /usr/sbin/iptables -I INPUT 3 -s 183.12.45.145 -p tcp --dport 3333 -m comment --comment btck-mainnet-guardian -j ACCEPT'
+ExecStop=/bin/sh -c '/usr/sbin/iptables -D INPUT -s 183.12.45.145 -p tcp --dport 3333 -m comment --comment btck-mainnet-guardian -j ACCEPT 2>/dev/null || true'
+
+[Install]
+WantedBy=multi-user.target

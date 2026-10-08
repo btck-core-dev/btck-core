@@ -87,3 +87,19 @@ UTC `2026-10-08 07:00:00Z`、Unix timestamp `1791442800`。固定任务为：
 若平均蓝序保持 1 bps，#271,828 预计在北京时间 `2026-10-11 18:30:28` 到达；实际以链上
 蓝序高度为准。届时由两个独立恢复节点复算 checkpoint hash，再进入阶段 B，而不是修改
 已经冻结的 Genesis hash。
+
+### 实际阶段 A 启动记录
+
+由于执行会话中断，固定任务未能在 15:00 准时开始搜索。系统没有伪造启动时间：Genesis
+header 继续使用负责人冻结的 `15:00:00 +08:00` 时间戳，实际切换及搜索时间完整记入仪式日志：
+
+- DEVNET Stratum 停止：`2026-10-08T08:10:09Z`（北京时间 16:10:09）；
+- 固定 Genesis 搜索开始：`2026-10-08T08:10:20Z`；
+- MAINNET 节点及 Stratum 就绪：`2026-10-08T08:10:29Z`；
+- nonce：`0x2012b6eb6bc9c`；
+- Genesis hash：`b9249be0f1b57021a9cfef8241a499c6e975a91e24d6a3fc22ce850000000000`；
+- 阶段 A consensus fingerprint：`0994cd9d6899da28b708b0495049548c0b737642b1d65fa060fcb6717c842e00`；
+- 阶段 A manifest SHA-256：`61901ae76e96257f1ab216db5f2a4d0f5f0f1d9d38147bb9af7f35e7a04e63f6`。
+
+两台 KS0 已自动重连 MAINNET。主网 RPC/P2P 仅监听 VPS 回环地址，公网只允许已观察到的家庭公网
+IP 访问 Stratum 3333；Explorer 仍为旧 DEVNET 页面，没有把私有护网误报为公网发布。

@@ -1,0 +1,22 @@
+[Unit]
+Description=BTC-K MAINNET Guardian Stratum
+After=network-online.target btck-mainnet-node.service btck-mainnet-firewall.service
+Requires=btck-mainnet-node.service btck-mainnet-firewall.service
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/btck-mainnet-guardian
+EnvironmentFile=/home/ubuntu/btck-mainnet-guardian/evidence/guardian.env
+ExecStart=/usr/bin/python3 /home/ubuntu/btck-mainnet-guardian/src/stratum/stratum_server.py
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/home/ubuntu/btck-mainnet-guardian/pool-data /home/ubuntu/btck-mainnet-guardian/logs
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target
