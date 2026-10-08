@@ -1,9 +1,10 @@
-BTC-K Wallet 3.2.0-rc2（macOS）
-================================
+BTC-K Wallet 3.2.0-guardian1（macOS）
+=====================================
 
 适用范围
 --------
-本包仅用于无真实价值的 BTC-K DEVNET/TESTNET。主网尚未获批，禁止承载真实资产。
+本包已内置并仅批准当前 BTC-K 私有护网 MAINNET（guardian1），同时支持 DEVNET/TESTNET。
+它不是高度 271,828 后的公网正式钱包；届时链身份改变，必须换用重新构建的公开版钱包。
 这是节点驱动的钱包程序：私钥和签名留在本机，余额查询和广播需要连接受信任的 BTC-K 节点 RPC。
 若文件名为 btck-wallet.pyz，需要 Python 3.10 或更高版本；原生 btck-wallet 文件不需要另装 Python。
 

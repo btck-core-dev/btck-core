@@ -83,6 +83,9 @@ rm -f "$tmp_wallet" "$tmp_password"
 
 archive="$RELEASE_DIR/$PACKAGE_NAME.tar.gz"
 tar -C "$BUILD_ROOT/package" -czf "$archive" "$PACKAGE_NAME"
-shasum -a 256 "$archive" > "$archive.sha256"
+(
+  cd "$RELEASE_DIR"
+  shasum -a 256 "$(basename "$archive")" > "$(basename "$archive").sha256"
+)
 printf '%s\n' "$archive"
 printf '%s\n' "$archive.sha256"
