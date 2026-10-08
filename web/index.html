@@ -1181,6 +1181,7 @@
     let countdownInterval = null;
     let remainingSeconds = 0;
     let lastStatsAt = 0;
+    let statsRequestInFlight = false;
 
     function setTelemetryState(ok, message) {
       const el = document.getElementById("telemetry-state");
@@ -1439,9 +1440,11 @@
     }
 
     async function fetchStats() {
+      if (statsRequestInFlight) return;
+      statsRequestInFlight = true;
       try {
         const res = await fetch("/api/stats");
-        if (!res.ok) return;
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
         currentStats = data;
         lastStatsAt = Date.now();
@@ -1530,6 +1533,8 @@
       } catch (err) {
         console.error("fetchStats error:", err);
         setTelemetryState(false, "OFFLINE — displayed values are not live");
+      } finally {
+        statsRequestInFlight = false;
       }
     }
 

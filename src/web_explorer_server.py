@@ -14,7 +14,7 @@ import json
 import time
 import urllib.request
 import urllib.parse
-from http.server import HTTPServer, BaseHTTPRequestHandler
+from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
 from typing import Dict, Any, List
 
@@ -543,7 +543,7 @@ class ExplorerHTTPHandler(BaseHTTPRequestHandler):
 def run_server(port: int = 8088):
     host = os.getenv("BTCK_EXPLORER_HOST", "127.0.0.1")
     server_address = (host, port)
-    httpd = HTTPServer(server_address, ExplorerHTTPHandler)
+    httpd = ThreadingHTTPServer(server_address, ExplorerHTTPHandler)
     print(f"BTC-K Explorer running on http://{host}:{port}")
     print(f"📁 Serving static files from {WEB_DIR}")
     try:
