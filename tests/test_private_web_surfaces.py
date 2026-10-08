@@ -38,7 +38,8 @@ class TestPrivateWebSurfaces(unittest.TestCase):
         self.assertIn("Private robot wallets", paper)
         self.assertIn("Serving GPU provider", paper)
         self.assertIn("20% and 33%", paper)
-        self.assertIn("IMPLEMENTATION GAP", paper)
+        self.assertIn("IMPLEMENTATION STATUS", paper)
+        self.assertNotIn("85% direct-worker payout", paper)
         self.assertIsNone(re.search(r"[\u3400-\u9fff]", home + paper))
 
     def test_public_document_set_is_english_and_status_safe(self):

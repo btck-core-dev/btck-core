@@ -6,7 +6,7 @@ Directly connects to the 4x RTX 4070 Ti Super GPU cluster running Qwen3.6-35B.
 Features:
 1. Interactive conversational terminal interface.
 2. Real-time streaming response from physical GPUs.
-3. Instant SatK economic billing settlement (85% to miner stealth address, 15% to buyback).
+3. v2.4 five-way SatK economic allocation preview for the selected network year.
 4. BIP-340 cryptographic execution proof digest.
 """
 
@@ -37,6 +37,7 @@ C_RESET = "\033[0m"
 GPU_CLUSTER_URL = os.getenv("BTCK_AI_CLUSTER_URL", "http://100.73.134.73:8000/v1/chat/completions")
 MODEL_NAME = os.getenv("BTCK_MODEL_NAME", "qwen3.6-35b")
 MINER_STEALTH_ADDR = os.getenv("BTCK_MINER_ADDR", "btck1sqqfounderstealthwallet4070cluster98234")
+NETWORK_YEAR = int(os.getenv("BTCK_L2_NETWORK_YEAR", "1"))
 
 
 def print_banner():
@@ -128,8 +129,7 @@ def render_economic_receipt(prompt_tokens: int, completion_tokens: int, elapsed_
         variant=ModelVariant.STANDARD
     )
     total_satk = cost.total_satk
-    miner_payout_satk = max(1, int(total_satk * 0.85))
-    burn_pool_satk = total_satk - miner_payout_satk
+    split = TieredPricingEngine.calculate_revenue_split(total_satk, year=NETWORK_YEAR)
     tps = completion_tokens / elapsed_sec if elapsed_sec > 0 else 0
     
     proof_hash = hashlib.sha256(answer.encode("utf-8")).hexdigest()
@@ -138,8 +138,11 @@ def render_economic_receipt(prompt_tokens: int, completion_tokens: int, elapsed_
     print(f"  {C_BOLD}生成耗时:{C_RESET} {C_GREEN}{elapsed_sec:.2f}s{C_RESET} ({tps:.1f} tokens/s)  │  {C_BOLD}首字延迟:{C_RESET} {C_CYAN}{ttft:.2f}s{C_RESET}  │  {C_BOLD}抢占开销:{C_RESET} {C_GREEN}0.010ms{C_RESET}")
     print(f"  {C_BOLD}Token统计:{C_RESET} 输入 {prompt_tokens} + 输出 {completion_tokens} = {prompt_tokens + completion_tokens} Tokens")
     print(f"  {C_BOLD}总计扣费:{C_RESET} {C_YELLOW}{C_BOLD}{total_satk:,} SatK{C_RESET} (≈ {total_satk / 100_000_000:.6f} BTC-K)")
-    print(f"  ├─ {C_GREEN}💎 矿工隐形地址实收 (85%):{C_RESET} {C_GREEN}{C_BOLD}{miner_payout_satk:,} SatK{C_RESET}")
-    print(f"  └─ {C_RED}🔥 回购销毁池沉淀 (15%):{C_RESET} {C_RED}{burn_pool_satk:,} SatK{C_RESET}")
+    print(f"  ├─ {C_GREEN}💎 GPU 服务方 (Year {NETWORK_YEAR}):{C_RESET} {C_GREEN}{C_BOLD}{split['miner_satk']:,} SatK{C_RESET}")
+    print(f"  ├─ {C_CYAN}⚡ 待命保障池:{C_RESET} {split['standby_satk']:,} SatK")
+    print(f"  ├─ {C_MAGENTA}🎰 AI Combo:{C_RESET} {split['combo_satk']:,} SatK")
+    print(f"  ├─ {C_RED}🔥 黑洞销毁:{C_RESET} {C_RED}{split['burn_satk']:,} SatK{C_RESET}")
+    print(f"  └─ {C_YELLOW}🌱 生态与开发:{C_RESET} {split['eco_satk']:,} SatK")
     print(f"  {C_BOLD}交付凭证:{C_RESET} {C_DIM}sha256:{proof_hash[:32]}...{C_RESET}")
     print(f"{C_DIM}──────────────────────────────────────────────────────────────────────────────{C_RESET}\n")
 

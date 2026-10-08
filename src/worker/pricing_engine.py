@@ -14,12 +14,13 @@ Key Tokenomics Pillars:
     * Standard models maintain 20% ~ 33% (1/5 ~ 1/3) of commercial benchmarks
     * Uncensored / Abliterated models maintain 50% ~ 60%+ of commercial benchmarks
     * Hardware Power Floor: Safeguards miner electricity costs (never dumps below cost)
-- Quad-Split Revenue Distribution: 70% Miner, 10% Standby/Combo Pool, 15% Permanent Blackhole Burn, 5% Ecosystem Grants
+- v2.4 Five-Way Revenue Distribution: provider, standby, AI Combo, burn, and ecosystem
 - Sub-7B Anti-Spam Floor: Strict penalty floor (0.10 KCU) to eliminate toy model hash farming
 """
 
 from dataclasses import dataclass
 from enum import Enum
+from math import gcd
 from typing import Dict, Tuple, Optional, Any
 
 
@@ -324,12 +325,48 @@ class TieredPricingEngine:
         Calculate progressive revenue distribution for a given network year (1-4).
         Aligns combo draw frequency with L1 mining (12h -> 36h -> 108h -> 324h).
         """
-        sched = cls.PROGRESSIVE_REVENUE_SCHEDULE.get(year, cls.PROGRESSIVE_REVENUE_SCHEDULE[1])
-        miner = int(total_satk * sched["miner"])
-        standby = int(total_satk * sched["standby"])
-        combo = int(total_satk * sched["combo"])
-        burn = int(total_satk * sched["burn"])
-        eco = max(0, total_satk - miner - standby - combo - burn)
+        if not isinstance(total_satk, int) or isinstance(total_satk, bool) or total_satk < 0:
+            raise ValueError("total_satk must be a non-negative integer")
+        if year not in cls.PROGRESSIVE_REVENUE_SCHEDULE:
+            raise ValueError("year must be in the canonical range 1..4")
+        sched = cls.PROGRESSIVE_REVENUE_SCHEDULE[year]
+        # Convert the frozen decimal ratios once, then keep all value movement
+        # in integer SatK. This avoids floating-point accounting drift.
+        ratio_bps = {
+            key: int(round(float(sched[key]) * 10_000))
+            for key in ("miner", "standby", "combo", "burn", "eco")
+        }
+        if sum(ratio_bps.values()) != 10_000:
+            raise RuntimeError("invalid v2.4 revenue schedule: ratios do not total 100%")
+        fields = ("miner", "standby", "combo", "burn", "eco")
+        divisor = 0
+        for field in fields:
+            divisor = gcd(divisor, ratio_bps[field])
+        weights = {field: ratio_bps[field] // divisor for field in fields}
+        cycle_size = sum(weights.values())
+
+        # Smooth weighted round-robin creates a deterministic integer-SatK
+        # allocation cycle. Every prefix is conserved, no recipient ever needs
+        # a later negative correction, and every complete cycle exactly matches
+        # the frozen v2.4 percentages.
+        current = {field: 0 for field in fields}
+        cycle = []
+        for _ in range(cycle_size):
+            for field in fields:
+                current[field] += weights[field]
+            selected = max(fields, key=lambda field: current[field])
+            cycle.append(selected)
+            current[selected] -= cycle_size
+
+        full_cycles, remainder = divmod(total_satk, cycle_size)
+        amounts = {field: full_cycles * weights[field] for field in fields}
+        for selected in cycle[:remainder]:
+            amounts[selected] += 1
+        miner = amounts["miner"]
+        standby = amounts["standby"]
+        combo = amounts["combo"]
+        burn = amounts["burn"]
+        eco = amounts["eco"]
         return {
             "miner_satk": miner,
             "standby_satk": standby,

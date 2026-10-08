@@ -15,6 +15,7 @@ import hashlib
 import json
 import logging
 import os
+import threading
 import time
 import uuid
 import urllib.request
@@ -30,6 +31,7 @@ sys.path.insert(0, os.path.join(_ROOT_DIR, "sdk"))
 from privacy.stealth_address import StealthKeyPair, sha256
 from privacy.wallet_engine import schnorr_sign, schnorr_verify
 from btck_agent.delegation import DelegationReceipt
+from worker.pricing_engine import TieredPricingEngine
 
 logging.basicConfig(
     level=logging.INFO,
@@ -251,6 +253,10 @@ class AgentLedger:
         self.processed_receipts: set = set()
         self.claim_history_by_ip: Dict[str, float] = {}
         self.claim_history_by_agent: Dict[str, float] = {}
+        self.l2_burned_satk: int = 0
+        self.l2_settlements: Dict[str, Dict[str, Any]] = {}
+        self.l2_year_accounting: Dict[str, Dict[str, int]] = {}
+        self._lock = threading.RLock()
         self._load()
 
     def _load(self):
@@ -263,6 +269,9 @@ class AgentLedger:
                     self.processed_receipts = set(data.get("processed_receipts", []))
                     self.claim_history_by_ip = data.get("claim_history_by_ip", {})
                     self.claim_history_by_agent = data.get("claim_history_by_agent", {})
+                    self.l2_burned_satk = int(data.get("l2_burned_satk", 0))
+                    self.l2_settlements = data.get("l2_settlements", {})
+                    self.l2_year_accounting = data.get("l2_year_accounting", {})
             except Exception as e:
                 logger.warning(f"Failed to load agent ledger from {self.persist_path}: {e}")
 
@@ -276,7 +285,10 @@ class AgentLedger:
                         "vouchers": self.vouchers,
                         "processed_receipts": list(self.processed_receipts),
                         "claim_history_by_ip": self.claim_history_by_ip,
-                        "claim_history_by_agent": self.claim_history_by_agent
+                        "claim_history_by_agent": self.claim_history_by_agent,
+                        "l2_burned_satk": self.l2_burned_satk,
+                        "l2_settlements": self.l2_settlements,
+                        "l2_year_accounting": self.l2_year_accounting,
                     }, f, indent=2)
             except Exception as e:
                 logger.warning(f"Failed to save agent ledger to {self.persist_path}: {e}")
@@ -394,6 +406,113 @@ class AgentLedger:
         self._save()
         return True
 
+    def settle_l2_payment(
+        self,
+        settlement_id: str,
+        payer: str,
+        cost_satk: int,
+        provider_address: str,
+        standby_account: str,
+        combo_account: str,
+        ecosystem_account: str,
+        network_year: int,
+    ) -> Optional[Dict[str, Any]]:
+        """Atomically deduct and distribute real SatK under the v2.4 L2 schedule.
+
+        Sandbox voucher value is consumed but never credited to a provider or
+        protocol account. This prevents test credits from becoming withdrawable
+        currency. A persistent settlement id makes retries non-inflationary.
+        """
+        if not settlement_id or not isinstance(cost_satk, int) or cost_satk <= 0:
+            raise ValueError("settlement id and positive integer SatK cost are required")
+        if network_year not in TieredPricingEngine.PROGRESSIVE_REVENUE_SCHEDULE:
+            raise ValueError("network_year must be in the canonical range 1..4")
+
+        with self._lock:
+            prior = self.l2_settlements.get(settlement_id)
+            if prior is not None:
+                expected_identity = {
+                    "payer": payer,
+                    "provider_address": provider_address,
+                    "charged_satk": cost_satk,
+                    "network_year": network_year,
+                }
+                if any(prior.get(key) != value for key, value in expected_identity.items()):
+                    raise ValueError("settlement id was already used for different payment details")
+                replay = dict(prior)
+                replay["idempotent_replay"] = True
+                return replay
+
+            voucher_balance = self.get_voucher_balance(payer)
+            paid_balance = int(self.balances.get(payer, 0))
+            if voucher_balance + paid_balance < cost_satk:
+                return None
+
+            voucher_used = min(voucher_balance, cost_satk)
+            paid_used = cost_satk - voucher_used
+            if voucher_used and payer in self.vouchers:
+                voucher = self.vouchers[payer]
+                voucher["remaining_satk"] -= voucher_used
+                if voucher["remaining_satk"] == 0:
+                    voucher["status"] = "EXHAUSTED"
+            if paid_used:
+                self.balances[payer] = paid_balance - paid_used
+
+            year_key = str(network_year)
+            prior_year = self.l2_year_accounting.get(year_key, {
+                "paid_satk": 0, "miner_satk": 0, "standby_satk": 0,
+                "combo_satk": 0, "burn_satk": 0, "eco_satk": 0,
+            })
+            cumulative_paid = int(prior_year["paid_satk"]) + paid_used
+            cumulative_target = TieredPricingEngine.calculate_revenue_split(
+                cumulative_paid, year=network_year
+            )
+            split = {
+                field: int(cumulative_target[field]) - int(prior_year[field])
+                for field in ("miner_satk", "standby_satk", "combo_satk", "burn_satk", "eco_satk")
+            }
+            credits = (
+                (provider_address, int(split["miner_satk"])),
+                (standby_account, int(split["standby_satk"])),
+                (combo_account, int(split["combo_satk"])),
+                (ecosystem_account, int(split["eco_satk"])),
+            )
+            for destination, amount in credits:
+                if amount > 0:
+                    self.balances[destination] = self.balances.get(destination, 0) + amount
+            burned = int(split["burn_satk"])
+            self.l2_burned_satk += burned
+            self.l2_year_accounting[year_key] = {
+                "paid_satk": cumulative_paid,
+                **{field: int(cumulative_target[field]) for field in (
+                    "miner_satk", "standby_satk", "combo_satk", "burn_satk", "eco_satk"
+                )},
+            }
+
+            distributed = sum(amount for _, amount in credits)
+            if distributed + burned != paid_used:
+                raise RuntimeError("L2 settlement conservation failure")
+
+            result = {
+                "settlement_id": settlement_id,
+                "payer": payer,
+                "provider_address": provider_address,
+                "network_year": network_year,
+                "charged_satk": cost_satk,
+                "paid_satk": paid_used,
+                "sandbox_voucher_satk": voucher_used,
+                "provider_satk": int(split["miner_satk"]),
+                "standby_satk": int(split["standby_satk"]),
+                "combo_satk": int(split["combo_satk"]),
+                "burn_satk": burned,
+                "ecosystem_satk": int(split["eco_satk"]),
+                "conserved_satk": distributed + burned,
+                "idempotent_replay": False,
+            }
+            self.l2_settlements[settlement_id] = result
+            self._save()
+            return dict(result)
+
     def transfer(self, from_agent: str, to_agent: str, amount_satk: int) -> Tuple[bool, str]:
         """Strict non-transferable policy: vouchers CANNOT be transferred or withdrawn."""
         if amount_satk <= 0:
@@ -413,7 +532,8 @@ class AIRPCGateway:
         port: int = 8080,
         treasury_addr: Optional[str] = None,
         allow_test_faucet: bool = False,
-        data_dir: Optional[str] = None
+        data_dir: Optional[str] = None,
+        network_year: Optional[int] = None,
     ):
         self.host = host
         self.port = port
@@ -421,6 +541,12 @@ class AIRPCGateway:
         self.data_dir = data_dir or os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "..", "data")
         self.gateway_keypair = StealthKeyPair()
         self.treasury_addr = treasury_addr or self.gateway_keypair.get_public_stealth_address()
+        self.network_year = int(network_year if network_year is not None else os.getenv("BTCK_L2_NETWORK_YEAR", "1"))
+        if self.network_year not in TieredPricingEngine.PROGRESSIVE_REVENUE_SCHEDULE:
+            raise ValueError("BTCK_L2_NETWORK_YEAR must be in the canonical range 1..4")
+        self.l2_standby_account = "btck:l2:standby"
+        self.l2_combo_account = "btck:l2:ai-combo"
+        self.l2_ecosystem_account = "btck:l2:ecosystem"
         
         # Persistent storage paths
         agent_ledger_file = os.path.join(self.data_dir, "ai_rpc_agent_ledger.json") if self.data_dir else None
@@ -1174,8 +1300,19 @@ class AIRPCGateway:
             actual_tokens = input_tokens + output_tokens
             actual_cost_satk = max(1, (actual_tokens * rate_per_1k + 999) // 1000)
             
-            deducted = self.ledger.deduct(agent_stealth_addr, actual_cost_satk)
-            if not deducted:
+            provider_address = worker_used["worker_address"] if worker_used else self.treasury_addr
+            settlement_id = composite_idem_key or task_id
+            settlement = self.ledger.settle_l2_payment(
+                settlement_id=settlement_id,
+                payer=agent_stealth_addr,
+                cost_satk=actual_cost_satk,
+                provider_address=provider_address,
+                standby_account=self.l2_standby_account,
+                combo_account=self.l2_combo_account,
+                ecosystem_account=self.l2_ecosystem_account,
+                network_year=self.network_year,
+            )
+            if settlement is None:
                 err_deduct = {
                     "error": {
                         "code": 402,
@@ -1186,12 +1323,13 @@ class AIRPCGateway:
                 await self._send_response(writer, 402, json.dumps(err_deduct).encode())
                 return
 
-            # If worker was used, credit 85% directly to worker's stealth address!
+            # v2.4 L2 revenue is atomically distributed by AgentLedger. Only
+            # the provider share reaches this worker; vouchers never mint it.
             if worker_used:
-                worker_payout = max(1, int(actual_cost_satk * 0.85))
-                self.ledger.deposit(worker_used["worker_address"], worker_payout)
-                worker_used["satk_earned"] = worker_used.get("satk_earned", 0) + worker_payout
-                worker_used["tasks_completed"] = worker_used.get("tasks_completed", 0) + 1
+                worker_payout = int(settlement["provider_satk"])
+                if not settlement.get("idempotent_replay"):
+                    worker_used["satk_earned"] = worker_used.get("satk_earned", 0) + worker_payout
+                    worker_used["tasks_completed"] = worker_used.get("tasks_completed", 0) + 1
                 logger.info(f"💎 Symbiotic GPU Worker [{worker_used['worker_address'][:16]}...] earned {worker_payout} SatK for task {task_id}")
 
             if delegation_id:
@@ -1205,7 +1343,7 @@ class AIRPCGateway:
             delivery_sig_bytes = schnorr_sign(self.gateway_keypair.spend_priv, result_digest)
             delivery_receipt = {
                 "task_id": task_id,
-                "provider_stealth_address": self.treasury_addr,
+                "provider_stealth_address": provider_address,
                 "provider_spend_pub_hex": self.gateway_keypair.spend_pub_bytes.hex(),
                 "result_hash": result_hash,
                 "signature_hex": delivery_sig_bytes.hex(),
@@ -1228,6 +1366,7 @@ class AIRPCGateway:
                 "status": "settled",
                 "result_hash": result_hash,
                 "receipt_hash": f"sha256:{receipt_digest}",
+                "l2_settlement": settlement,
                 "created_at": int(time.time())
             })
 
@@ -1249,7 +1388,8 @@ class AIRPCGateway:
                     "completion_tokens": output_tokens,
                     "total_tokens": actual_tokens,
                     "cost_satk": actual_cost_satk,
-                    "remaining_balance_satk": rem_bal
+                    "remaining_balance_satk": rem_bal,
+                    "l2_settlement": settlement
                 },
                 "delivery_receipt": delivery_receipt
             }

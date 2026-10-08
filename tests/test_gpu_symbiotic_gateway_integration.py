@@ -5,7 +5,7 @@ Validates the complete symbiotic lifecycle:
 2. Worker performs baseline Pearl mining loop.
 3. User / Agent submits x402 chat completion.
 4. Gateway routes task to worker; worker preempts mining, executes inference, and resumes.
-5. SatK payment settles: 85% paid to worker stealth address, proof-of-delivery signed.
+5. SatK payment settles under the v2.4 five-way schedule with a signed receipt.
 """
 
 import asyncio
@@ -95,7 +95,7 @@ class TestGPUSymbioticGatewayIntegration(unittest.IsolatedAsyncioTestCase):
     async def test_end_to_end_inference_and_worker_payout(self):
         """
         Test end-to-end flow:
-        User deposits SatK -> asks question -> Worker polls & executes -> Worker receives 85% SatK!
+        User deposits SatK -> asks question -> Worker polls & executes -> v2.4 settlement.
         """
         worker_addr = "btck1sqqsymbioticworkeraddress998877665544332211"
         worker_id = "worker-symbiotic-node-42"
@@ -198,15 +198,40 @@ class TestGPUSymbioticGatewayIntegration(unittest.IsolatedAsyncioTestCase):
             self.assertLess(client_bal, 100)
             spent = 100 - client_bal
 
-            # Worker stealth address must have received exactly 85% of spent SatK!
-            expected_payout = max(1, int(spent * 0.85))
-            self.assertEqual(worker_bal, expected_payout)
+            settlement = chat_res["usage"]["l2_settlement"]
+            self.assertEqual(settlement["network_year"], 1)
+            self.assertEqual(settlement["charged_satk"], spent)
+            self.assertEqual(settlement["paid_satk"], spent)
+            self.assertEqual(settlement["sandbox_voucher_satk"], 0)
+            self.assertEqual(settlement["conserved_satk"], spent)
+            self.assertEqual(
+                settlement["provider_satk"]
+                + settlement["standby_satk"]
+                + settlement["combo_satk"]
+                + settlement["burn_satk"]
+                + settlement["ecosystem_satk"],
+                spent,
+            )
+            self.assertEqual(worker_bal, settlement["provider_satk"])
+            self.assertEqual(
+                self.gw.ledger.get_balance(self.gw.l2_standby_account),
+                settlement["standby_satk"],
+            )
+            self.assertEqual(
+                self.gw.ledger.get_balance(self.gw.l2_combo_account),
+                settlement["combo_satk"],
+            )
+            self.assertEqual(
+                self.gw.ledger.get_balance(self.gw.l2_ecosystem_account),
+                settlement["ecosystem_satk"],
+            )
+            self.assertEqual(self.gw.ledger.l2_burned_satk, settlement["burn_satk"])
             self.assertGreater(worker_bal, 0)
 
             # Worker registered stats
             worker_info = self.gw.registered_workers[worker_id]
             self.assertEqual(worker_info["tasks_completed"], 1)
-            self.assertEqual(worker_info["satk_earned"], expected_payout)
+            self.assertEqual(worker_info["satk_earned"], settlement["provider_satk"])
 
         finally:
             worker_stop_event.set()
