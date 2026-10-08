@@ -1,0 +1,15 @@
+[Unit]
+Description=BTC-K Private Guardian HTTPS Firewall Rules
+After=network-online.target
+Before=nginx.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=true
+ExecStart=/bin/sh -c '/usr/sbin/iptables -C INPUT -s 51.195.136.143/32 -p tcp -m multiport --dports 80,443 -m comment --comment btck-private-https -j ACCEPT 2>/dev/null || /usr/sbin/iptables -I INPUT 3 -s 51.195.136.143/32 -p tcp -m multiport --dports 80,443 -m comment --comment btck-private-https -j ACCEPT'
+ExecStart=/bin/sh -c '/usr/sbin/iptables -C INPUT -p tcp -m multiport --dports 80,443 -m comment --comment btck-private-https-deny -j DROP 2>/dev/null || /usr/sbin/iptables -A INPUT -p tcp -m multiport --dports 80,443 -m comment --comment btck-private-https-deny -j DROP'
+ExecStop=/bin/sh -c '/usr/sbin/iptables -D INPUT -s 51.195.136.143/32 -p tcp -m multiport --dports 80,443 -m comment --comment btck-private-https -j ACCEPT 2>/dev/null || true'
+ExecStop=/bin/sh -c '/usr/sbin/iptables -D INPUT -p tcp -m multiport --dports 80,443 -m comment --comment btck-private-https-deny -j DROP 2>/dev/null || true'
+
+[Install]
+WantedBy=multi-user.target

@@ -6,7 +6,7 @@ BUILD_ROOT="${BTCK_WALLET_BUILD_ROOT:-$PROJECT_DIR/build/wallet-macos}"
 RELEASE_DIR="${BTCK_WALLET_RELEASE_DIR:-$PROJECT_DIR/dist/wallet}"
 VENV_DIR="$BUILD_ROOT/venv"
 ARCH="$(uname -m)"
-VERSION="3.2.1-guardian1"
+VERSION="3.2.2-guardian1"
 
 case "$ARCH" in
   arm64|x86_64) ;;
@@ -65,10 +65,10 @@ else
   printf 'Xcode Command Line Tools not found; built portable Python 3 package.\n' >&2
 fi
 
-install -m 0644 "$PROJECT_DIR/packaging/WALLET_README_zh-CN.txt" \
-  "$BUILD_ROOT/package/$PACKAGE_NAME/使用说明.txt"
+install -m 0644 "$PROJECT_DIR/packaging/WALLET_README.txt" \
+  "$BUILD_ROOT/package/$PACKAGE_NAME/README.txt"
 install -m 0755 "$PROJECT_DIR/packaging/btck_wallet_launcher.command" \
-  "$BUILD_ROOT/package/$PACKAGE_NAME/打开BTC-K钱包.command"
+  "$BUILD_ROOT/package/$PACKAGE_NAME/Open BTC-K Wallet.command"
 
 "$WALLET_COMMAND" --version
 tmp_wallet="$BUILD_ROOT/package/smoke-wallet.json"

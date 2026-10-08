@@ -26,9 +26,9 @@ from urllib.request import Request, urlopen
 BASE_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(BASE_DIR / "src"))
 
-WALLET_VERSION = "3.2.1-guardian1"
+WALLET_VERSION = "3.2.2-guardian1"
 RECOVERY_SCHEME = "bip39-btck-dksap-v1"
-DEFAULT_SYNC_URL = "https://explorer.btck.network/api/wallet/sync"
+DEFAULT_SYNC_URL = "https://wallet.bitcoin-k.com/api/wallet/sync"
 
 APPROVED_NETWORKS = {
     "mainnet": {
@@ -161,15 +161,15 @@ def _read_mnemonic_file(path: str) -> str:
 
 def _prompt_visible_mnemonic(word_count: int) -> str:
     valid_words = set(WORDLIST)
-    print("助记词将在本机终端中明文显示输入；请确认周围无人、没有录屏或远程控制。")
+    print("Recovery words will be visible while you type. Ensure nobody can see or record your screen.")
     words = []
     for index in range(word_count):
         while True:
-            word = input(f"请输入第 {index + 1:02d}/{word_count} 个助记词：").strip().lower()
+            word = input(f"Enter recovery word {index + 1:02d}/{word_count}: ").strip().lower()
             if word in valid_words:
                 words.append(word)
                 break
-            print("该单词不在 BIP-39 英文词表中，请检查拼写后重新输入。")
+            print("That word is not in the English BIP-39 word list. Check the spelling and try again.")
     return " ".join(words)
 
 
@@ -198,12 +198,12 @@ def _confirm_recovery(
     account_index: int = 0,
     word_count: int = 24,
 ) -> None:
-    print("请按编号逐个重新输入全部助记词，以确认纸质备份完整无误。")
+    print("Re-enter every recovery word in order to verify your written backup.")
     repeated = _prompt_visible_mnemonic(word_count)
     recovered = _wallet_from_mnemonic(repeated, wallet.name, account_index=account_index)
     if not secrets_compare(wallet.address, recovered.address):
-        raise CLIError("助记词不能恢复当前钱包；该钱包尚未通过验证，禁止入账")
-    print("助记词完整恢复验证通过。")
+        raise CLIError("The recovery phrase does not restore this wallet; do not fund it")
+    print("Full recovery verification passed.")
 
 
 def wallet_password(args, *, confirm: bool = False) -> str:
@@ -336,7 +336,7 @@ def scan_wallet(args, wallet: StealthWallet):
     reset_attempted = False
     while True:
         print(
-            f"同步链上数据：正在读取高度 {state['next_height']} 之后的新记录…",
+            f"Syncing chain data from height {state['next_height']}...",
             file=sys.stderr, flush=True,
         )
         try:
@@ -347,7 +347,7 @@ def scan_wallet(args, wallet: StealthWallet):
                 and int(state["next_height"]) > 0
                 and ("stale" in str(exc).lower() or "outside the canonical" in str(exc).lower())
             ):
-                print("检测到链游标变化，正在安全地从创世高度重新同步…", file=sys.stderr, flush=True)
+                print("Chain cursor changed; safely resyncing from genesis...", file=sys.stderr, flush=True)
                 wallet.utxos = []
                 state = {"next_height": 0, "anchor_hash": "", "network": None}
                 _save_sync_cache(wallet, state)
@@ -390,8 +390,8 @@ def scan_wallet(args, wallet: StealthWallet):
         completed = min(state["next_height"], tip_height + 1)
         percent = 100.0 if tip_height < 0 else completed * 100.0 / (tip_height + 1)
         print(
-            f"同步进度：{completed}/{tip_height + 1}（{percent:.1f}%），"
-            f"已识别 {len(wallet.utxos)} 个未花费输出",
+            f"Sync progress: {completed}/{tip_height + 1} ({percent:.1f}%); "
+            f"{len(wallet.utxos)} unspent outputs identified",
             file=sys.stderr, flush=True,
         )
         if page.get("done"):
@@ -486,24 +486,24 @@ def cmd_init_mainnet_wallets(args):
     targets["public"] = destination / "mainnet_wallet_public.json"
     if targets["public"].exists():
         raise CLIError(
-            "主网三钱包公开参数已经存在；为避免覆盖正式身份，本程序拒绝再次初始化"
+            "Mainnet public wallet parameters already exist; refusing to overwrite the established identities"
         )
     existing_wallets = [targets[role] for role, _name in roles if targets[role].exists()]
     if existing_wallets and not getattr(args, "resume", False):
         raise CLIError(
-            "检测到未完成的钱包初始化；请使用 --resume 验证现有钱包后继续"
+            "An incomplete wallet setup was found; use --resume to verify the existing wallets and continue"
         )
 
     created: dict[str, tuple[StealthWallet, str]] = {}
     word_count = int(args.words)
     for role, name in roles:
         if targets[role].exists():
-            print(f"\n检测到已创建的钱包：{name}")
+            print(f"\nExisting wallet found: {name}")
             existing_wallet = load_wallet(str(targets[role]), args)
             raw = read_json(str(targets[role]), "wallet file")
             recovery = raw.get("recovery", {})
             if recovery.get("scheme") != RECOVERY_SCHEME:
-                raise CLIError(f"现有 {role} 钱包没有受支持的助记词恢复标记")
+                raise CLIError(f"Existing {role} wallet has no supported recovery metadata")
             existing_word_count = int(recovery.get("word_count", word_count))
             existing_account_index = int(recovery.get("account_index", 0))
             _confirm_recovery(

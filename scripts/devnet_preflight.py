@@ -53,17 +53,15 @@ def main() -> None:
         capture_output=True,
         text=True,
     ).stdout.splitlines()
-    forbidden_tracked = [path for path in tracked if path not in {"web/wallet.html"}]
+    forbidden_tracked = list(tracked)
     if forbidden_tracked:
         fail("tracked secret/wallet artifacts: " + ", ".join(forbidden_tracked))
 
     decimal_secret = re.compile(r'(?i)(spendKey|viewKey|private[^\n]{0,30}key)[^\n]{0,80}["=:]\s*["\']?[0-9]{60,}')
     for relative in ("web/wallet.html", "web/wallet_treasury.html", "web/app.js"):
-        text = (PROJECT_ROOT / relative).read_text(encoding="utf-8")
-        if decimal_secret.search(text):
-            fail(f"private scalar appears in {relative}")
-        if "转账广播成功" in text or "Stealth Transfer Broadcasted" in text:
-            fail(f"fake broadcast success remains in {relative}")
+        path = PROJECT_ROOT / relative
+        if path.exists():
+            fail(f"retired browser-wallet asset must not be shipped: {relative}")
 
     print("PREFLIGHT GO: isolated no-real-value DEVNET code path")
     print(f"chain_id={network.chain_id}")

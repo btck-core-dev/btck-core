@@ -7,51 +7,51 @@ if [ -x "$PACKAGE_DIR/btck-wallet" ]; then
 elif [ -x "$PACKAGE_DIR/btck-wallet.pyz" ]; then
   WALLET_BIN="$PACKAGE_DIR/btck-wallet.pyz"
 else
-  echo "找不到 btck-wallet 或 btck-wallet.pyz。"
-  read -r -p "按回车键退出..."
+  echo "Cannot find btck-wallet or btck-wallet.pyz."
+  read -r -p "Press Return to exit..."
   exit 1
 fi
 
 while true; do
   clear
   echo "=============================================="
-  echo " BTC-K 钱包 3.2.1-guardian1"
+  echo " BTC-K Wallet 3.2.2-guardian1"
   echo "=============================================="
-  echo "1. 首次生成三个主网钱包（个人/矿池/生态基金）"
-  echo "2. 查看加密钱包地址"
-  echo "3. 查看当前护网主网个人钱包余额"
-  echo "4. 验证助记词能恢复钱包"
-  echo "5. 显示命令行帮助"
-  echo "0. 退出"
+  echo "1. Create the three mainnet wallets"
+  echo "2. View an encrypted wallet address"
+  echo "3. View personal wallet balance"
+  echo "4. Verify a recovery phrase"
+  echo "5. Show command-line help"
+  echo "0. Exit"
   echo
-  read -r -p "请选择：" choice
+  read -r -p "Select an option: " choice
   case "$choice" in
     1)
       default_dir="$HOME/Documents/BTC-K-Mainnet-Wallets"
-      read -r -p "保存目录 [$default_dir]：" target_dir
+      read -r -p "Wallet directory [$default_dir]: " target_dir
       target_dir="${target_dir:-$default_dir}"
       if ! "$WALLET_BIN" init-mainnet-wallets --resume --words 24 --output-dir "$target_dir"; then
         echo
-        echo "钱包操作未完成。现有文件已保留，可返回菜单后继续。"
+        echo "Wallet setup did not finish. Existing files were preserved; you may resume from this menu."
       fi
       ;;
     2)
-      read -r -p "请输入钱包 JSON 文件完整路径：" wallet_path
-      "$WALLET_BIN" info "$wallet_path" || echo "读取失败，请检查路径或口令。"
+      read -r -p "Full path to the wallet JSON file: " wallet_path
+      "$WALLET_BIN" info "$wallet_path" || echo "Unable to read the wallet. Check the path and password."
       ;;
     3)
       wallet_path="$HOME/Documents/BTC-K-Mainnet-Wallets/personal_wallet.json"
       if [ ! -f "$wallet_path" ]; then
-        echo "找不到个人钱包：$wallet_path"
+        echo "Personal wallet not found: $wallet_path"
       else
-        echo "正在通过公开 HTTPS 接口同步链上数据；密钥始终留在本机..."
+        echo "Syncing through the private HTTPS endpoint. Keys always remain on this Mac..."
         "$WALLET_BIN" balance "$wallet_path" || \
-          echo "余额读取失败；钱包文件没有被修改。"
+          echo "Balance lookup failed. The wallet file was not modified."
       fi
       ;;
     4)
-      read -r -p "请输入钱包 JSON 文件完整路径：" wallet_path
-      "$WALLET_BIN" verify-recovery "$wallet_path" || echo "验证未通过，钱包文件保持不变。"
+      read -r -p "Full path to the wallet JSON file: " wallet_path
+      "$WALLET_BIN" verify-recovery "$wallet_path" || echo "Verification failed. The wallet file remains unchanged."
       ;;
     5)
       "$WALLET_BIN" --help
@@ -60,9 +60,9 @@ while true; do
       exit 0
       ;;
     *)
-      echo "无效选择。"
+      echo "Invalid selection."
       ;;
   esac
   echo
-  read -r -p "按回车键返回主菜单..."
+  read -r -p "Press Return to return to the main menu..."
 done

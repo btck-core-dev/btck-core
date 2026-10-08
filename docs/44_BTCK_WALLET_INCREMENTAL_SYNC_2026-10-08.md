@@ -19,15 +19,15 @@
 - 部署后主网节点、Stratum 和钱包同步服务均为 `active`；两台矿机重新连接。
 - 全量回归：`195 passed, 5 subtests passed`。
 
-## 公网 HTTPS 状态
+## 私有 HTTPS 状态
 
-后端和受限 Nginx 模板已经就绪，但截至记录时 `btck.network`、`explorer.btck.network` 和
-`wallet.btck.network` 均没有 DNS A 记录，无法签发受信任证书。公网 HTTPS 不使用自签名证书
-冒充完成。获得实际域名后需要：
+- `wallet.bitcoin-k.com` 已指向 `185.130.45.240`，Let's Encrypt 证书已签发，有效期至 `2027-01-06`。
+- Nginx 仅代理 `GET /api/wallet/sync`，后端仍只监听 `127.0.0.1:18088`。
+- VPS 防火墙和 Nginx 双层白名单仅放行当前管理出口 `51.195.136.143/32`；其他来源不能访问 80/443。
+- 遗留 Docker 看板端口 `8088` 已改为只绑定 `127.0.0.1`，不存在绕过普通 `INPUT` 链的公开入口。
+- 钱包 `3.2.2-guardian1` 默认同步地址冻结为 `https://wallet.bitcoin-k.com/api/wallet/sync`。
+- 钱包界面、错误、进度、说明文件和打包文件名已全英文化；旧中文浏览器演示钱包已删除。
 
-1. 将钱包同步子域名 A 记录指向 VPS；
-2. 签发受信任 TLS 证书；
-3. 由 Nginx 仅公开 `GET /api/wallet/sync`，代理至 `127.0.0.1:18088`；
-4. 将正式域名冻结进钱包默认同步地址并重新构建发布包。
+注意：当家庭/管理出口 IP 变化时，需先更新防火墙和 Nginx 白名单。私有模式下不能依赖公网 HTTP-01 自动续签，应在证书到期前切换为 DNS-01 续签。
 
-预制模板：`deploy/public-edge/guardian-wallet-sync.nginx.conf.template`。
+部署模板：`deploy/public-edge/guardian-wallet-sync.nginx.conf.template`。
