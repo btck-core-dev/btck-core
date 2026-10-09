@@ -67,9 +67,28 @@ def atomic_write(path: Path, payload: dict) -> None:
             os.unlink(temporary)
 
 
+def resolve_network_name(requested: str | None, manifest_path: Path | None) -> str:
+    """Use an explicit network, otherwise derive it from the reviewed manifest."""
+    if requested:
+        return requested
+    if manifest_path is None:
+        return "devnet"
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise SystemExit(f"cannot read network identity from manifest: {exc}") from exc
+    network_name = manifest.get("network") if isinstance(manifest, dict) else None
+    if not isinstance(network_name, str) or not network_name.strip():
+        raise SystemExit("network manifest does not contain a valid network name")
+    return network_name.strip()
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--network", default="devnet")
+    parser.add_argument(
+        "--network",
+        help="network name; defaults to the manifest network, or devnet without a manifest",
+    )
     parser.add_argument("--network-manifest", type=Path, help="explicit reviewed network manifest")
     parser.add_argument("--data-root", type=Path, required=True)
     parser.add_argument("--expect", type=Path, help="prior replay evidence to compare")
@@ -82,7 +101,8 @@ def main() -> None:
     args = parser.parse_args()
 
     started = time.monotonic()
-    network = load_network(args.network, args.network_manifest)
+    network_name = resolve_network_name(args.network, args.network_manifest)
+    network = load_network(network_name, args.network_manifest)
     daemon = BTCKDaemon(
         host="127.0.0.1",
         network=network,

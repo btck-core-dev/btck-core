@@ -52,6 +52,21 @@ class TestVerifyChainReplay(unittest.TestCase):
             module.atomic_write(path, evidence())
             self.assertEqual(json.loads(path.read_text(encoding="utf-8")), evidence())
 
+    def test_network_defaults_to_manifest_identity(self):
+        with tempfile.TemporaryDirectory() as directory:
+            manifest = Path(directory) / "mainnet.json"
+            manifest.write_text(json.dumps({"network": "mainnet"}), encoding="utf-8")
+            self.assertEqual(module.resolve_network_name(None, manifest), "mainnet")
+            self.assertEqual(module.resolve_network_name("testnet", manifest), "testnet")
+        self.assertEqual(module.resolve_network_name(None, None), "devnet")
+
+    def test_manifest_without_network_fails_closed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            manifest = Path(directory) / "broken.json"
+            manifest.write_text("{}", encoding="utf-8")
+            with self.assertRaisesRegex(SystemExit, "valid network name"):
+                module.resolve_network_name(None, manifest)
+
 
 if __name__ == "__main__":
     unittest.main()
