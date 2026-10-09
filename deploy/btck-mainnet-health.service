@@ -1,0 +1,13 @@
+[Unit]
+Description=BTC-K MAINNET Guardian Health Watch
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /home/ubuntu/btck-mainnet-guardian/deploy/guardian_health_watch.py
+TimeoutStartSec=300
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/run
+
