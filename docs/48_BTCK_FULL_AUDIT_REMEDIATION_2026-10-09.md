@@ -63,3 +63,10 @@ L2 继续保持禁用。L2 未完成项是独立里程碑，不是 L1 到达 che
 ## 当前状态
 
 源码修复完成，但公网 MAINNET 发布仍为 **NO-GO until evidence exists**。私有 Guardian Stage A 可按现有受控方式继续运行；不得把 locked `params/networks/mainnet.json` 当作新 genesis 启动入口，不得在缺少上述证据时绕过 gate。
+
+## 公网节点版本与旧制品处置
+
+- 公网开放时只发布最新的 checkpoint-bound、P2P 1.2.0 节点及批准后的 Stage-B manifest；新用户不需要、也不得使用旧节点过渡。
+- pre-genesis RC、P2P 1.1.x 和未绑定 checkpoint 的节点不提供下载、镜像或兼容支持。
+- 旧版不能作为公网回退目标；正式回退包也必须保持相同公网协议、manifest 身份和 consensus fingerprint，并通过发布签名验证。
+- 本机未跟踪的 `dist/release-candidate/` 3.2.0-rc2 pre-genesis 整包已退出可发布集合并移入废纸篓。创世证据、Guardian manifest、链备份和审计文档继续保留，它们是恢复与取证材料，不是旧节点下载包。

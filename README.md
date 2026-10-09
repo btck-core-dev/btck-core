@@ -77,7 +77,9 @@ git diff --check
 ## MAINNET 发布边界
 
 - Stage-A Guardian 不授权开放公网 P2P、矿池或钱包下载。
+- 公网开放只发布 checkpoint 绑定的最新节点；不发布、不镜像、不支持 pre-genesis RC 或 P2P 1.1.x 旧节点。新加入者必须直接使用统一的 P2P 1.2.0 节点和批准后的 Stage-B manifest。
+- 旧节点制品不得作为回退包；回退只能使用同一公网协议和同一 consensus fingerprint 下经过签名验证的前一正式版本。
 - L2 AI 结算、DEX、wBTCK、桥和交易所适配保持关闭，是独立里程碑，不是 L1 checkpoint 发射门槛。
 - 不得使用“从第 0 块开放挖矿的公平启动”“生产就绪”或“已完成外审”等未经事实支持的宣传。
 
-公开 L1 仍需：到达 271,828、冻结 checkpoint、两次独立全 journal 重放、批准 Stage-B manifest、构建身份绑定的钱包及源码制品、发布 SHA-256/SBOM/签名状态，并完成公网 P2P IBD 与恢复门禁。
+公开 L1 仍需：到达 271,828、冻结 checkpoint、两次独立全 journal 重放、批准 Stage-B manifest、构建身份绑定的钱包及源码制品、发布 SHA-256/SBOM/签名状态，并完成公网 P2P IBD 与恢复门禁。公开下载目录只能包含这套最终制品，不得混放历史候选版本。
