@@ -9,7 +9,7 @@ upstream btck_private_mainnet_web {
 server {
     listen 80;
     listen [::]:80;
-    server_name bitcoin-k.com explorer.bitcoin-k.com pool.bitcoin-k.com;
+    server_name bitcoin-k.com www.bitcoin-k.com explorer.bitcoin-k.com pool.bitcoin-k.com;
 
     location /.well-known/acme-challenge/ {
         root /var/www/html;
@@ -21,6 +21,25 @@ server {
         deny all;
         return 308 https://$host$request_uri;
     }
+}
+
+server {
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
+    server_name www.bitcoin-k.com;
+
+    allow 51.195.136.143;
+    deny all;
+    ssl_certificate /etc/letsencrypt/live/bitcoin-k.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/bitcoin-k.com/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_session_tickets off;
+    add_header Strict-Transport-Security "max-age=31536000" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-Frame-Options "DENY" always;
+    add_header Referrer-Policy "no-referrer" always;
+
+    return 308 https://bitcoin-k.com$request_uri;
 }
 
 server {

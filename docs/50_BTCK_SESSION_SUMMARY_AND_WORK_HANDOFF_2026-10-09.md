@@ -40,7 +40,8 @@
 - Guardian 防火墙与 Nginx 当前只允许既定管理出口 `51.195.136.143/32` 访问 80/443；SSH 同样受管理来源限制。
 - 本轮管理出口一度变化，因此 80/443 和 SSH 被丢弃，而允许矿机来源访问的 3333 仍正常；切回白名单出口后四个 HTTPS 域名均恢复 `200`。
 - 访问恢复后，提交 `6eaefda` 的 `web/index.html` 已带旧文件备份原子部署到 Guardian；线上 SHA-256 为 `306b195d05048b40f38f864a236a2cf714e3afa3e848bc88365de89d7979f447`，Combo 规则标记可由 HTTPS 获取，节点、Stratum、wallet edge 与 Nginx 均保持 active。
-- `www.bitcoin-k.com` 没有 DNS A/CNAME，当前证书和 Nginx 也不包含 `www`；裸域 `https://bitcoin-k.com/home` 正常。修复 `www` 需先增加 DNS，再扩展证书并配置到裸域的 301 跳转。
+- `www.bitcoin-k.com` 已增加到裸域的 CNAME；Google 与 Cloudflare DoH 均返回 TTL 10,800 秒。证书已扩展为同时覆盖裸域与 `www`，Nginx 对 `www` 返回到裸域的 308 跳转。本机 GGDD 节点仍可能短暂保留新增记录前的负缓存，刷新后即可使用。
+- Certbot 自动续期钩子仅在 ACME 验证期间临时开放 80，验证结束自动删除规则；正式续期 dry-run 已通过，443、SSH、RPC 与 Stratum 防火墙策略未改变。
 - 恢复管理访问应切回既定出口，或从 VPS 控制台把新的固定管理出口加入白名单；禁止为了恢复页面而把 SSH、RPC 或 Guardian HTTPS 无条件开放全网。
 
 ## 5. 第 2–9 项实际状态

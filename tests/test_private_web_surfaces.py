@@ -20,10 +20,20 @@ class TestPrivateWebSurfaces(unittest.TestCase):
         self.assertIn("server_name explorer.bitcoin-k.com;", config)
         self.assertIn("server_name pool.bitcoin-k.com;", config)
         self.assertIn("server_name bitcoin-k.com;", config)
+        self.assertIn("server_name www.bitcoin-k.com;", config)
+        self.assertIn("return 308 https://bitcoin-k.com$request_uri;", config)
         self.assertIn("proxy_pass http://btck_private_mainnet_web/home;", config)
         self.assertIn("proxy_pass http://btck_private_mainnet_web/explorer;", config)
         self.assertGreaterEqual(config.count("allow 51.195.136.143;"), 4)
         self.assertGreaterEqual(config.count("deny all;"), 4)
+
+    def test_certbot_hooks_scope_temporary_access_to_http_only(self):
+        pre = (ROOT / "deploy" / "certbot-hooks" / "10-btck-open-acme-http.sh").read_text(encoding="utf-8")
+        post = (ROOT / "deploy" / "certbot-hooks" / "90-btck-close-acme-http.sh").read_text(encoding="utf-8")
+        self.assertIn("--dport 80", pre)
+        self.assertIn("btck-acme-temporary", pre + post)
+        self.assertNotIn("--dport 443", pre + post)
+        self.assertIn("iptables -D", post)
 
     def test_home_and_whitepaper_are_english_and_honest_about_status(self):
         home = (ROOT / "web" / "home.html").read_text(encoding="utf-8")
