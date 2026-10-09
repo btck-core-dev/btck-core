@@ -21,7 +21,7 @@ import urllib.request
 import urllib.parse
 import signal
 
-REPO_ROOT = "/Users/a1234/btck-core"
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 LOG_FILE = os.path.join(REPO_ROOT, "logs", "12h_benchmark_monitor.log")
 METRICS_JSON = os.path.join(REPO_ROOT, "data", "12h_benchmark_metrics.json")
 CHAIN_STATE_FILE = os.path.join(REPO_ROOT, "data", "chain_state.json")

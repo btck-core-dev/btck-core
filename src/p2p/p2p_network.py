@@ -34,6 +34,10 @@ INITIAL_PEER_SCORE = 100
 MIN_VALID_PEER_SCORE = 20
 MAX_PEERS = 128
 MAX_ORPHANS = 1000
+MAX_INV_BLOCKS = 500
+MAX_LOCATOR_HASHES = 64
+MAX_PEER_SCORE = 200
+P2P_PROTOCOL_VERSION = "1.2.0"
 
 class PeerConnection:
     def __init__(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter, peer_addr: str, network_magic: str):
@@ -46,6 +50,10 @@ class PeerConnection:
         self.connected_at = time.time()
         self.score = INITIAL_PEER_SCORE
         self.banned = False
+        self.peer_host = peer_addr.rsplit(":", 1)[0]
+        self.ibd_pending: Set[str] = set()
+        self.ibd_more = False
+        self.ibd_cursor: Optional[str] = None
 
     async def send_msg(self, msg_type: str, payload: dict):
         envelope = {
@@ -59,7 +67,7 @@ class PeerConnection:
         await self.writer.drain()
 
     def adjust_score(self, delta: int) -> bool:
-        self.score += delta
+        self.score = min(MAX_PEER_SCORE, self.score + delta)
         if self.score <= MIN_VALID_PEER_SCORE:
             self.banned = True
             return False
@@ -82,6 +90,8 @@ class P2PNetwork:
         self.seed_peers = seed_peers or []
         self.block_acceptor = block_acceptor or self.dag.add_block
         self.peers: Dict[str, PeerConnection] = {}
+        # Ban by host, not ephemeral source port.  Otherwise reconnecting from
+        # a new port bypasses the penalty immediately.
         self.banned_addrs: Set[str] = set()
         self.orphan_pool: Dict[str, DAGBlock] = {}  # block_hash -> DAGBlock awaiting missing parents
         self.server: Optional[asyncio.Server] = None
@@ -102,7 +112,8 @@ class P2PNetwork:
 
     async def connect_to_peer(self, peer_str: str):
         """Outbound peer connection"""
-        if peer_str in self.peers or peer_str in self.banned_addrs:
+        peer_host = peer_str.rsplit(":", 1)[0]
+        if peer_str in self.peers or peer_host in self.banned_addrs:
             return
         try:
             host, port = peer_str.split(":")
@@ -119,7 +130,7 @@ class P2PNetwork:
                 "consensus_fingerprint": self.network.consensus_fingerprint,
                 "genesis_hash": self.dag.genesis_hash,
                 "blue_score": local_tip.blue_score,
-                "version": "1.1.0"
+                "version": P2P_PROTOCOL_VERSION,
             })
             
             t = asyncio.create_task(self._peer_listen_loop(peer))
@@ -131,7 +142,7 @@ class P2PNetwork:
         """Inbound peer connection"""
         addr = writer.get_extra_info('peername')
         peer_addr = f"{addr[0]}:{addr[1]}"
-        if peer_addr in self.banned_addrs or len(self.peers) >= MAX_PEERS:
+        if addr[0] in self.banned_addrs or len(self.peers) >= MAX_PEERS:
             writer.close()
             return
 
@@ -166,7 +177,7 @@ class P2PNetwork:
 
                 await self._process_msg(peer, msg)
                 if peer.banned:
-                    self.banned_addrs.add(peer.peer_addr)
+                    self.banned_addrs.add(peer.peer_host)
                     break
         except Exception as e:
             logger.debug(f"Peer {peer.peer_addr} loop terminated: {e}")
@@ -195,6 +206,7 @@ class P2PNetwork:
                 or payload.get("chain_id") != self.network.chain_id
                 or payload.get("consensus_fingerprint") != self.network.consensus_fingerprint
                 or payload.get("genesis_hash") != self.dag.genesis_hash
+                or payload.get("version") != P2P_PROTOCOL_VERSION
             ):
                 logger.warning(f"Peer {peer.peer_addr} network identity mismatch! Banning.")
                 peer.adjust_score(-100)
@@ -213,7 +225,7 @@ class P2PNetwork:
                 "consensus_fingerprint": self.network.consensus_fingerprint,
                 "genesis_hash": self.dag.genesis_hash,
                 "blue_score": local_tip.blue_score,
-                "version": "1.1.0"
+                "version": P2P_PROTOCOL_VERSION,
             })
 
             # Check if remote peer is ahead: trigger Initial Block Download (IBD)
@@ -227,6 +239,7 @@ class P2PNetwork:
                 or payload.get("chain_id") != self.network.chain_id
                 or payload.get("consensus_fingerprint") != self.network.consensus_fingerprint
                 or payload.get("genesis_hash") != self.dag.genesis_hash
+                or payload.get("version") != P2P_PROTOCOL_VERSION
             ):
                 peer.adjust_score(-100)
                 peer.writer.close()
@@ -245,22 +258,47 @@ class P2PNetwork:
             # Initial block download locator resolution
             # Search newest-to-oldest to find the most recent common ancestor
             locator = payload.get("locator", [])
+            if (
+                not isinstance(locator, list)
+                or len(locator) > MAX_LOCATOR_HASHES
+                or any(not isinstance(value, str) or len(value) != 64 for value in locator)
+            ):
+                peer.adjust_score(-25)
+                return
             split_idx = 0
             chain = self.dag.virtual_selected_parent_chain
+            positions = {block_hash: index for index, block_hash in enumerate(chain)}
             for h in reversed(locator):
-                if h in chain:
-                    split_idx = chain.index(h) + 1
+                if h in positions:
+                    split_idx = positions[h] + 1
                     break
             # Send up to 500 block hashes to catch up
-            send_hashes = chain[split_idx:split_idx + 500]
+            send_hashes = chain[split_idx:split_idx + MAX_INV_BLOCKS]
             if send_hashes:
-                await peer.send_msg("INV", {"blocks": send_hashes})
+                await peer.send_msg("INV", {
+                    "blocks": send_hashes,
+                    "more": split_idx + len(send_hashes) < len(chain),
+                })
 
         elif m_type == "INV":
             hashes = payload.get("blocks", [])
+            if (
+                not isinstance(hashes, list)
+                or len(hashes) > MAX_INV_BLOCKS
+                or any(not isinstance(value, str) or len(value) != 64 for value in hashes)
+            ):
+                peer.adjust_score(-25)
+                return
+            peer.ibd_more = payload.get("more") is True
+            peer.ibd_cursor = hashes[-1] if hashes else peer.ibd_cursor
+            peer.ibd_pending = {
+                h for h in hashes if h not in self.dag.blocks and h not in self.orphan_pool
+            }
             for h in hashes:
                 if h not in self.dag.blocks and h not in self.orphan_pool:
                     await peer.send_msg("GET_BLOCK", {"hash": h})
+            if not peer.ibd_pending and peer.ibd_more:
+                await self._request_next_ibd_batch(peer)
 
         elif m_type == "GET_BLOCK":
             h = payload.get("hash")
@@ -313,6 +351,9 @@ class P2PNetwork:
                     self.orphan_pool[blk.hash] = blk
                     for mp in missing_parents:
                         await peer.send_msg("GET_BLOCK", {"hash": mp})
+                    peer.ibd_pending.discard(h)
+                    if not peer.ibd_pending and peer.ibd_more:
+                        await self._request_next_ibd_batch(peer)
                     return
 
                 try:
@@ -326,6 +367,18 @@ class P2PNetwork:
                 except Exception as e:
                     logger.debug(f"Invalid block from peer {peer.peer_addr}: {e}")
                     peer.adjust_score(-15)
+            peer.ibd_pending.discard(h)
+            if not peer.ibd_pending and peer.ibd_more:
+                await self._request_next_ibd_batch(peer)
+
+    async def _request_next_ibd_batch(self, peer: PeerConnection) -> None:
+        """Continue IBD only after every advertised block was received."""
+        peer.ibd_more = False
+        # Continue from the remote batch cursor even when some advertised
+        # selected-chain blocks are temporarily orphaned waiting for merge
+        # parents. Using only the local tip can otherwise repeat the same page.
+        locator = [peer.ibd_cursor] if peer.ibd_cursor else list(self.dag.virtual_selected_parent_chain[-10:])
+        await peer.send_msg("GET_BLOCKS", {"locator": locator})
 
     async def _process_orphans(self, newly_added_hash: str):
         """Recursively resolves orphan blocks once their parents are added"""

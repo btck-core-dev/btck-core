@@ -97,10 +97,10 @@ To eliminate cross-platform floating-point divergence, consensus enforces an exa
 
 ### 3. Euler Genesis Security Reserve (Block #271,828)
 During the first 75.508 hours of network genesis, controlled hashrate was deployed to establish chain depth up to height `#271,828` (mapped to Euler's constant $e = 2.71828...$):
-- **Checkpoint Locking**: The cryptographic hash of block `#271,828` is hardcoded into node consensus rules (`GENESIS_CHECKPOINT_HASH`). Nodes automatically discard any reorganization attempt targeting blocks prior to `#271,828`.
+- **Checkpoint Locking**: The hash of block `#271,828` is committed by the approved MAINNET manifest after two independent full-journal replays. Nodes reject histories that disagree at that height.
 - **Strategic Purpose**: Accrues 1,502,695.04 BTCK (7.1557% of supply) dedicated to bootstrapping Uniswap V3 liquidity (wBTCK/USDT), exchange listing collateral, and seed infrastructure.
 
-### 4. 20% Combo Reserve & Periodic Payout Tier
+### 4. Tiered Combo Reserve & Periodic Payout
 Phase-1 block rewards are split into an 80% immediate miner baseline payout, a 15% Combo jackpot reserve, and a 5% ecosystem reserve. Every 43,200 blocks (~12 hours), the consensus engine evaluates a future random beacon (+100 blocks) and applies Kademlia XOR geometric distance metrics to select a single winning block hash. The winner receives the eligible accumulated Combo pool according to the consensus vesting schedule.
 
 ---

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fail-closed checks for the BTC-K MAINNET genesis-search handoff.
+"""Retained fail-closed checks for the historical MAINNET genesis handoff.
 
 This does not approve MAINNET, alter its manifest, touch chain data, or start
 services.  It verifies that the locked candidate is internally consistent and
@@ -16,6 +16,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 MANIFEST = ROOT / "params/networks/mainnet.json"
+GUARDIAN_MANIFEST = ROOT / "params/networks/mainnet.guardian.json"
 PUBLIC_WALLETS = ROOT / "params/mainnet_wallets_public.json"
 sys.path.insert(0, str(ROOT / "src"))
 
@@ -30,6 +31,11 @@ def require(condition: bool, message: str) -> None:
 
 
 def main() -> None:
+    if GUARDIAN_MANIFEST.exists():
+        fail(
+            "genesis already exists in mainnet.guardian.json; the genesis-search "
+            "preflight is retired. Use the Stage-A checkpoint/replay workflow."
+        )
     manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
     wallets = json.loads(PUBLIC_WALLETS.read_text(encoding="utf-8"))
     consensus = manifest["consensus"]

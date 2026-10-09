@@ -15,6 +15,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
 from node.daemon import BTCKDaemon
+from config.network import load_network
 
 
 CONSENSUS_FIELDS = (
@@ -69,6 +70,7 @@ def atomic_write(path: Path, payload: dict) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--network", default="devnet")
+    parser.add_argument("--network-manifest", type=Path, help="explicit reviewed network manifest")
     parser.add_argument("--data-root", type=Path, required=True)
     parser.add_argument("--expect", type=Path, help="prior replay evidence to compare")
     parser.add_argument("--output", type=Path, help="atomically write machine evidence")
@@ -80,9 +82,10 @@ def main() -> None:
     args = parser.parse_args()
 
     started = time.monotonic()
+    network = load_network(args.network, args.network_manifest)
     daemon = BTCKDaemon(
         host="127.0.0.1",
-        network=args.network,
+        network=network,
         data_root=str(args.data_root),
         persistent=True,
     )

@@ -195,6 +195,44 @@ class UTXOSet:
         fee_satk = total_in - total_out
         return True, "", fee_satk
 
+    def preview_block_fees(
+        self,
+        transactions: List[StealthTransaction],
+        block_height: int,
+        allow_transaction_skips: bool = False,
+    ) -> int:
+        """Validate a block transaction sequence without mutating consensus state."""
+        overlay = dict(self.utxos)
+        total_fees_sats = 0
+        for tx in transactions:
+            valid, error, fee_sats = self.validate_transaction(tx, block_height, overlay)
+            if not valid:
+                if allow_transaction_skips:
+                    continue
+                raise ValueError(f"invalid transaction {tx.txid}: {error}")
+            candidate = dict(overlay)
+            for tx_input in tx.inputs:
+                candidate.pop((tx_input.prev_txid, tx_input.prev_vout))
+            duplicate = False
+            for index, output in enumerate(tx.outputs):
+                outpoint = (tx.txid, index)
+                if not tx.txid or outpoint in candidate:
+                    duplicate = True
+                    break
+                candidate[outpoint] = UTXOEntry(
+                    amount_satk=output.amount_satk,
+                    P_onetime_hex=output.P_onetime_hex,
+                    R_ephem_hex=output.R_ephem_hex,
+                    block_height=block_height,
+                )
+            if duplicate:
+                if allow_transaction_skips:
+                    continue
+                raise ValueError(f"Duplicate or empty transaction outpoint in {tx.txid}")
+            overlay = candidate
+            total_fees_sats += fee_sats
+        return total_fees_sats
+
     def apply_block(
         self,
         block_hash: str,
@@ -206,6 +244,8 @@ class UTXOSet:
         eco_output: Optional[Tuple[int, bytes, bytes]] = None,
         pool_deposit_sats: int = 0,
         pool_payout_sats: int = 0,
+        expected_miner_fee_sats: Optional[int] = None,
+        fee_pool_deposit_sats: int = 0,
         allow_transaction_skips: bool = False,
     ) -> Tuple[bool, str]:
         """
@@ -321,7 +361,13 @@ class UTXOSet:
             accepted_txids.append(tx.txid)
 
         # 3. Add Coinbase UTXO (if reward > 0)
-        miner_payout_sats = reward_sats + total_fees_sats
+        if expected_miner_fee_sats is None:
+            expected_miner_fee_sats = total_fees_sats
+        if expected_miner_fee_sats < 0 or fee_pool_deposit_sats < 0:
+            return False, "Fee split amounts cannot be negative"
+        if expected_miner_fee_sats + fee_pool_deposit_sats != total_fees_sats:
+            return False, "Consensus fee split does not equal validated transaction fees"
+        miner_payout_sats = reward_sats + expected_miner_fee_sats
         if miner_payout_sats > 0:
             cb_outpoint = (f"cb_{block_hash}", 0)
             if cb_outpoint in overlay:

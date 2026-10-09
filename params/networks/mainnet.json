@@ -28,7 +28,17 @@
       "0218c8a8b18a55da9f1aeb1d60baebfe176419eca4fdf5549ffcb9c0190060d55c",
       "0263bf9a23d411aad1e3e5a9c71414895ac32122ff8f7a68ac651cba5c5d0dfd4d"
     ],
-    "hard_checkpoints": {}
+    "hard_checkpoints": {},
+    "tokenomics": {
+      "version": "2.4.1",
+      "daily_quotas_sha256": "7896cf36303e123f799c71b4d72b74a684e0079c1e32e57eac34d4ed04913e59",
+      "combo_stage_boundary_liquidation": true,
+      "post_mining_fee_split_percent": {
+        "miner": 50,
+        "combo": 50
+      }
+    },
+    "p2p_protocol_version": "1.2.0"
   },
   "genesis": {
     "version": 2,

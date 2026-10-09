@@ -10,9 +10,10 @@ Verifies:
 
 import math
 import sys
+import os
 import unittest
 
-sys.path.insert(0, '/Users/a1234/btck-core/src')
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
 
 from dex.amm_engine import BTCKSwapPool
 from gateway.exchange_rpc import ExchangeRPCAdapter

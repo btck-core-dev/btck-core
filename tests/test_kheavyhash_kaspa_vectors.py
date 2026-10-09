@@ -8,8 +8,9 @@ Verifies bit-for-bit equivalence against:
 
 import unittest
 import sys
-sys.path.insert(0, '/Users/a1234/btck-core/src')
-sys.path.insert(0, '/Users/a1234/btck-core/tests')
+import os
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
+sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
 
 from consensus.kheavyhash import (
     generate_matrix,

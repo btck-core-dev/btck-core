@@ -9,7 +9,7 @@ Monitors 5 IceRiver KS0 Ultra miners:
   - ks005 (192.168.50.57):  PPLNS Pool (Shared Stealth Addr)
 Tracks:
   1. Block Tempo (Target 1.000s / block)
-  2. 10x Combo Jackpots (Theoretical 1/41 = 2.439%)
+  2. Scheduled Combo draws and +100-block beacon resolutions
   3. Pool (ks004+ks005) vs 3 SOLO (ks001, ks002, ks003) Combo & Block Comparison
   4. Complete Repair & Operational Log
 """
@@ -23,10 +23,11 @@ import urllib.parse
 import http.cookiejar
 from datetime import datetime
 
-BASE_DIR = "/Users/a1234/btck-core"
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA_DIR = os.path.join(BASE_DIR, "data")
 DOCS_DIR = os.path.join(BASE_DIR, "docs")
-ARTIFACT_DIR = "/Users/a1234/.gemini/antigravity-cli/brain/bf3baa71-ba7c-48c4-af8c-b28192130394"
+ARTIFACT_DIR = os.environ.get("BTCK_BENCHMARK_OUTPUT_DIR", DOCS_DIR)
+MINER_PASSWORD = os.environ.get("BTCK_MINER_PASSWORD")
 
 CHAIN_STATE_FILE = os.path.join(DATA_DIR, "chain_state.json")
 EXP_DATA_FILE = os.path.join(DATA_DIR, "experiment_1h_data.json")
@@ -52,10 +53,13 @@ def fetch_miner_hardware(ip):
         "outtmp": 0.0,
         "chips": "0/18"
     }
+    if not MINER_PASSWORD:
+        data["error"] = "BTCK_MINER_PASSWORD is not configured"
+        return data
     try:
         cj = http.cookiejar.CookieJar()
         opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cj))
-        login_data = urllib.parse.urlencode({"post": 6, "user": "admin", "pwd": "12345678"}).encode()
+        login_data = urllib.parse.urlencode({"post": 6, "user": "admin", "pwd": MINER_PASSWORD}).encode()
         opener.open(urllib.request.Request(f"http://{ip}/user/loginpost", data=login_data, method="POST"), timeout=2.5)
         panel_data = urllib.parse.urlencode({"post": 4}).encode()
         with opener.open(urllib.request.Request(f"http://{ip}/user/userpanel", data=panel_data, method="POST"), timeout=2.5) as r:
@@ -221,7 +225,7 @@ def update_monitor():
    - **PPLNS 矿池测试组 (2台)**：`ks004`, `ks005`（使用同一隐形钱包地址 `btck1s02095f...`，共享算力按 Share 权重分配奖励）；
 2. **重点监测指标**：
    - **全网爆块节奏 (BPS)**：目标锚定 **1.000 秒/块** (1.000 BPS)；
-   - **10x Combo 暴击连击率**：数学期望 $P = 1/41 \\approx 2.439\%$；
+   - **Combo 共识状态**：按当前阶段调度高度、未来 +100 块信标和奖池守恒核验；
    - **组团矿池 vs 3 台独立机 Combo 收益对比**：测试 2 台组团池是否比 3 台 SOLO 更多、或者相对单机多多少。
 
 ---
@@ -270,7 +274,7 @@ def update_monitor():
 >
 > 3. **矿池核心价值（方差平滑与持续入账）**：
 >    - 单台 SOLO 挖矿极易出现连续几十秒“爆块荒”，收益方差巨大；
->    - 004 + 005 组团采用 PPLNS 机制，不论哪一台命中区块或 10x Combo 暴击，收益均即时合并归集到同一个隐形地址，**大幅削减出块方差达 50% 以上**，资金流极其平滑稳定！
+>    - 004 + 005 组团采用 PPLNS 机制，收益按持久化 Share 权重结算；方差改善取决于实际算力、窗口和观察周期，不承诺固定降幅。
 
 ---
 

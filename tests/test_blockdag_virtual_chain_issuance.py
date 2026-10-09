@@ -9,7 +9,8 @@ Verifies:
 
 import unittest
 import sys
-sys.path.insert(0, '/Users/a1234/btck-core/src')
+import os
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
 
 from node.blockdag import BlockDAG, DAGBlock
 from tokenomics.emission_schedule import get_base_block_reward_sats, SATS_PER_COIN

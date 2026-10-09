@@ -177,6 +177,20 @@ def _parse_manifest(path: Path, requested_name: str) -> NetworkConfig:
             f"Hard checkpoint {height} must be a 32-byte hex hash",
         )
         hard_checkpoints[height] = raw_hash.lower()
+    if requested_name == "mainnet" and 271_828 in hard_checkpoints:
+        _require(
+            consensus.get("p2p_protocol_version") == "1.2.0",
+            "Checkpointed MAINNET requires paginated P2P protocol 1.2.0",
+        )
+        _require(
+            consensus.get("tokenomics") == {
+                "version": "2.4.1",
+                "daily_quotas_sha256": "7896cf36303e123f799c71b4d72b74a684e0079c1e32e57eac34d4ed04913e59",
+                "combo_stage_boundary_liquidation": True,
+                "post_mining_fee_split_percent": {"miner": 50, "combo": 50},
+            },
+            "Checkpointed MAINNET must bind canonical tokenomics v2.4.1",
+        )
 
     release = raw.get("release", {})
     approved = release.get("approved") is True

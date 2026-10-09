@@ -11,7 +11,7 @@ Tracks:
   1. Real-time online/offline state of every miner
   2. DAA difficulty responsiveness (rate of adjustment, damping, deadband)
   3. Block interval distribution (stall vs burst detection)
-  4. 10x Combo Jackpot randomness, fairness, and prize pool solvency
+  4. Scheduled Combo resolution and prize-pool solvency
 """
 
 import os
@@ -22,7 +22,7 @@ import time
 import subprocess
 from datetime import datetime
 
-BASE_DIR = "/Users/a1234/btck-core"
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA_DIR = os.path.join(BASE_DIR, "data")
 LOGS_DIR = os.path.join(BASE_DIR, "logs")
 ARTIFACT_DIR = "/Users/a1234/.gemini/antigravity-cli/brain/bf3baa71-ba7c-48c4-af8c-b28192130394"
@@ -302,8 +302,8 @@ def update_stress_monitor():
 | **本轮累计产出区块** | **+{delta_blocks:,} 块** | 期望: 3,600 块/小时 | 出块链未发生死锁与停滞 |
 | **实时出块速度 (BPS)** | **{bps:.3f} 块/秒** | **1.000 块/秒** (目标节奏) | 动态阻尼收敛中 |
 | **平均单块耗时** | **{sec_per_block:.3f} 秒/块** | **1.000 秒/块** | 动态适应算力波动 |
-| **10x Combo 触发次数** | **{total_window_combos} 次** | 期望: {round(delta_blocks * (1.0/41.0), 1)} 次 | 随机暴击率严格独立 |
-| **实测 Combo 命中率** | **{combo_pct:.3f}%** | **2.439% (1/41)** | 无偏性不受开/关机干扰 |
+| **Combo 解析次数** | **{total_window_combos} 次** | 按阶段高度与 +100 块信标核对 | 非逐块独立概率事件 |
+| **解析数 / 窗口块数** | **{combo_pct:.3f}%** | 仅作运行观测 | 不用于宣称随机无偏 |
 | **全网奖池结余** | **{cs.get("pool_balance_btck", 0.0):,.2f} BTC-K** | 即时注入/兑现 | 兑付链条健康无穿仓 |
 
 ---

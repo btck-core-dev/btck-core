@@ -77,6 +77,20 @@ class TestNodeTransactionRPC(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(RPCError):
             await self.rpc.call("submitTransaction", {"transaction": transaction_to_dict(conflict)})
 
+    async def test_mempool_maturity_uses_virtual_blue_height(self):
+        entry = self.daemon.dag.utxo_set.utxos[("11" * 32, 0)]
+        entry.is_coinbase = True
+        entry.block_height = 100
+        genesis = self.daemon.dag.genesis_hash
+        self.daemon.dag.virtual_selected_parent_chain = [genesis]
+        self.daemon.dag.virtual_blue_order = [genesis] * 7_301
+        snapshot = await self.rpc.call("getUTXOSet")
+        self.sender.scan_chain_outputs(snapshot["outputs"])
+        recipient = StealthWallet.generate("blue-height-recipient")
+        tx = self.sender.create_and_sign_transfer(recipient.address, 400_000, 10_000)
+        result = await self.rpc.call("submitTransaction", {"transaction": transaction_to_dict(tx)})
+        self.assertEqual(result["status"], "mempool")
+
 
 if __name__ == "__main__":
     unittest.main()

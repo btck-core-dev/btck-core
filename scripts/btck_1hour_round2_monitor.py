@@ -18,9 +18,10 @@ import urllib.parse
 import http.cookiejar
 from datetime import datetime
 
-BASE_DIR = "/Users/a1234/btck-core"
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA_DIR = os.path.join(BASE_DIR, "data")
-ARTIFACT_DIR = "/Users/a1234/.gemini/antigravity-cli/brain/bf3baa71-ba7c-48c4-af8c-b28192130394"
+ARTIFACT_DIR = os.environ.get("BTCK_BENCHMARK_OUTPUT_DIR", os.path.join(BASE_DIR, "docs"))
+MINER_PASSWORD = os.environ.get("BTCK_MINER_PASSWORD")
 
 CHAIN_STATE_FILE = os.path.join(DATA_DIR, "chain_state.json")
 EXP_DATA_FILE = os.path.join(DATA_DIR, "experiment_1h_round2_data.json")
@@ -46,10 +47,13 @@ def fetch_miner_hardware(ip):
         "outtmp": 0.0,
         "chips": "0/18"
     }
+    if not MINER_PASSWORD:
+        data["error"] = "BTCK_MINER_PASSWORD is not configured"
+        return data
     try:
         cj = http.cookiejar.CookieJar()
         opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cj))
-        login_data = urllib.parse.urlencode({"post": 6, "user": "admin", "pwd": "12345678"}).encode()
+        login_data = urllib.parse.urlencode({"post": 6, "user": "admin", "pwd": MINER_PASSWORD}).encode()
         opener.open(urllib.request.Request(f"http://{ip}/user/loginpost", data=login_data, method="POST"), timeout=2.5)
         panel_data = urllib.parse.urlencode({"post": 4}).encode()
         with opener.open(urllib.request.Request(f"http://{ip}/user/userpanel", data=panel_data, method="POST"), timeout=2.5) as r:
@@ -224,7 +228,7 @@ def update_monitor():
    - **PPLNS 矿池测试组 (2台)**：`ks004`、`ks005`，使用同一隐形钱包地址（`btck1s02095f...f10bce6d`），基于滑动时间窗口 Share 权重共享区块与 Combo 收益。
 3. **重点监测**：
    - 第二轮全网爆块节奏 (BPS) 与 Fast DAA 调谐表现（目标 1.000s/块）；
-   - 10x Combo 暴击连击率（理论期望 1/41 ≈ 2.439%）；
+   - Combo 调度高度、未来 +100 块信标解析和奖池守恒；
    - 004+005 联合矿池与 3 台 SOLO 机器在第二轮的爆块与连击对比。
 
 ---
@@ -239,8 +243,8 @@ def update_monitor():
 | **实时出块速度 (BPS)** | **{bps:.3f} 块/秒** | **1.000 块/秒** | 绝对误差: **{abs(bps - 1.0)*100:.2f}%** |
 | **平均单块耗时** | **{sec_per_block:.3f} 秒/块** | **1.000 秒/块** | Fast DAA 自适应调谐 |
 | **网络自适应难度** | **{cs.get("network_diff", 609.19)}** | 动态扩容平滑调节 | 完美匹配 2.05 TH/s 物理算力 |
-| **本轮 10x Combo 触发** | **{total_window_combos} 次** | 期望: {round(delta_blocks * (1.0/41.0), 1)} 次 | 随机无偏分布 |
-| **本轮实测 Combo 命中率** | **{combo_pct:.3f}%** | **2.439% (1/41)** | 统计拟合良好 |
+| **本轮 Combo 解析** | **{total_window_combos} 次** | 按阶段调度高度与 +100 块信标核对 | 非逐块独立概率事件 |
+| **解析数 / 窗口块数** | **{combo_pct:.3f}%** | 仅作运行观测，不代表中奖概率 | - |
 | **共识奖池即时储备** | **{cs.get("pool_balance_btck", 0.0):,.2f} BTC-K** | 即时注入即时兑付 | 储备充裕，即时兑现暴击 |
 
 ---

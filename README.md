@@ -1,13 +1,13 @@
 # BTC-K Core
 
-> 当前状态（2026-09-28）：仅供无真实价值的 DEVNET/TESTNET 内部点火。主网被代码锁定，尚未达到公开承载价值的标准。
+> 当前状态（2026-10-09）：MAINNET Stage-A 私有 Guardian 已运行；公网 P2P、公开矿池和最终钱包发布仍锁定，必须等待高度 271,828 checkpoint、双环境独立重放、Stage-B manifest 审批和最终制品构建。
 
-BTC-K Core 目前包含 Python BlockDAG 节点、kHeavyHash PoW、网络隔离、持久化 UTXO、节点权威 Stratum 桥和最小命令行钱包。代码仍是待外审的实验实现，不应被描述为生产级 GhostDAG、BIP-340、Monero 级隐私、原生 Kaspa ASIC 兼容或交易所就绪。
+BTC-K Core 包含 Python BlockDAG 节点、kHeavyHash PoW、网络隔离、持久化 UTXO、节点权威 Stratum 和本地签名钱包。正式公网状态只能由批准的 MAINNET manifest 与发布清单判定；不得把 Guardian 私网身份当作最终公网身份，也不得宣称 Monero 级隐私、交易所就绪或已完成独立外审。
 
 ## 当前安全边界
 
 - 默认网络是 `devnet`；`testnet` 有独立 chain ID、magic、genesis 和数据目录。
-- `mainnet` manifest 未批准，启动会失败。
+- 默认 `mainnet.json` 保持发布锁；私有 Guardian 使用单独审批且仅限 Stage-A 的 manifest。
 - 节点是高度、发行、奖池和 UTXO 的唯一权威；Stratum 不保存独立账本。
 - CLI 在本地扫描公开 UTXO、本地签名，再向节点提交真实交易。
 - 网页钱包只读；浏览器密钥生成和“随机 TXID 假广播”已关闭。
@@ -74,11 +74,10 @@ python3 -m unittest discover -s tests -q
 git diff --check
 ```
 
-## 明确不在本轮 DEVNET 点火范围内
+## MAINNET 发布边界
 
-- 公开主网和任何真实资金；
-- Go/Redis 原型 Stratum；
-- AI 402 自签名收据、网页转账、DEX、wBTCK、桥和交易所入账；
-- “公平启动”“生产就绪”“已完成外审”等对外宣传。
+- Stage-A Guardian 不授权开放公网 P2P、矿池或钱包下载。
+- L2 AI 结算、DEX、wBTCK、桥和交易所适配保持关闭，是独立里程碑，不是 L1 checkpoint 发射门槛。
+- 不得使用“从第 0 块开放挖矿的公平启动”“生产就绪”或“已完成外审”等未经事实支持的宣传。
 
-公开主网仍需：新协议/参数冻结、全新离线密钥仪式、全新 genesis 和空数据库、第三方密码学与共识审计、多节点长期 soak、备份恢复演练及正式发布审批。
+公开 L1 仍需：到达 271,828、冻结 checkpoint、两次独立全 journal 重放、批准 Stage-B manifest、构建身份绑定的钱包及源码制品、发布 SHA-256/SBOM/签名状态，并完成公网 P2P IBD 与恢复门禁。

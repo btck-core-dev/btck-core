@@ -2,8 +2,8 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "meta": {
     "title": "BTC-K Protocol Canonical Parameters (SSOT - Single Source of Truth)",
-    "version": "3.0.1",
-    "last_updated": "2026-10-08T01:00:00+08:00",
+    "version": "2.4.1",
+    "last_updated": "2026-10-09T00:00:00+08:00",
     "license": "MIT",
     "audit_alignment": "Doc 29 - Canonical 4-Year Rational Decay & Exact Integer Quotas"
   },
@@ -58,7 +58,7 @@
             365
           ],
           "blocks": [
-            0,
+            1,
             31536000
           ],
           "combo_ratio": 0.15,
@@ -78,16 +78,18 @@
             730
           ],
           "blocks": [
-            31536000,
+            31536001,
             63072000
           ],
           "combo_ratio": 0.25,
           "draw_interval_hours": 36,
           "draw_interval_blocks": 129600,
-          "draws_per_year": 243,
+          "draws_per_year": 244,
+          "scheduled_interval_draws": 243,
+          "boundary_liquidation_draws": 1,
           "annual_total_btck": 2663680.46356581,
           "annual_jackpot_pool_btck": 665920.11589145,
-          "avg_jackpot_btck": 2740.41199955
+          "avg_jackpot_btck": 2729.18080283
         },
         {
           "stage": 3,
@@ -97,16 +99,18 @@
             1095
           ],
           "blocks": [
-            63072000,
+            63072001,
             94608000
           ],
           "combo_ratio": 0.35,
           "draw_interval_hours": 108,
           "draw_interval_blocks": 388800,
-          "draws_per_year": 81,
+          "draws_per_year": 82,
+          "scheduled_interval_draws": 81,
+          "boundary_liquidation_draws": 1,
           "annual_total_btck": 1566908.91994744,
           "annual_jackpot_pool_btck": 548418.1219816,
-          "avg_jackpot_btck": 6770.59409854
+          "avg_jackpot_btck": 6688.02587782
         },
         {
           "stage": 4,
@@ -116,16 +120,18 @@
             1460
           ],
           "blocks": [
-            94608000,
+            94608001,
             126144000
           ],
           "combo_ratio": 0.45,
           "draw_interval_hours": 324,
           "draw_interval_blocks": 1166400,
-          "draws_per_year": 27,
+          "draws_per_year": 28,
+          "scheduled_interval_draws": 27,
+          "boundary_liquidation_draws": 1,
           "annual_total_btck": 1114190.65710165,
           "annual_jackpot_pool_btck": 501385.79569574,
-          "avg_jackpot_btck": 18569.84428503
+          "avg_jackpot_btck": 17906.63556056
         }
       ],
       "jackpot_maturity_blocks": 172800,
@@ -149,7 +155,7 @@
         "anti_monopoly_properties": [
           "Zero predictive advantage for high-hashrate pools: H_beacon is determined 100 blocks AFTER window closure",
           "Uniformly distributed geometric probability space: each single valid block has an equal cryptographic chance to be the minimum XOR distance",
-          "Reorg-proof: Deep DAG finality of 100 blocks prevents selfish-mining or reorg snipe attacks on the jackpot block",
+          "Probabilistic finality: 100 later blue-order blocks increase the cost of beacon reorganization but do not make reorgs mathematically impossible",
           "Sybil-immune: Does not rely on wallet addresses or miner identity, completely neutral to PPLNS vs Solo structure"
         ]
       },
@@ -237,24 +243,14 @@
     "pow_algorithm": "kHeavyHash (Kaspa byte-compatible)",
     "network_identity_source": "params/networks/{simnet,devnet,testnet,mainnet}.json",
     "genesis_block": {
-      "network": "devnet",
-      "status": "NO REAL VALUE; canonical values are enforced by params/networks/devnet.json",
-      "hash": "00afe7ba34ab52100a7e086f8bf16cee97dfaa80eaf7bc157a8d933d6ed6fa2a",
-      "version": 2,
-      "timestamp": 1788912000.0,
-      "bits": 545259519,
-      "nonce": "0x1",
-      "headline": "BTC-K DEVNET v3 ASIC-CANONICAL - NO REAL VALUE - 2026-10-02",
-      "headline_hash": "1148e8622d1a285a87b1d7697b34ae2518fba9ea323b9681a61d3e0b49c58cd4",
-      "coinbase_outputs": [
-        "02ac791bd3152f0347a07c84bd32355f8625e034c4c43b8783421a3bd6f7a40321",
-        "025eb0c909e619a0f7baef61b20ceee8cd6b5d6bdd4dd8f97827be831016f957d0"
-      ]
+      "network_specific": true,
+      "source": "params/networks/<network>.json",
+      "status": "Never copy a DEVNET genesis identity into this network-neutral parameter index"
     },
     "daa": {
       "window_blocks": 264,
-      "initial_bits": "0x1c01ffff",
-      "method": "Selected-chain endpoint median-time sliding window",
+      "initial_bits": "network manifest consensus.daa.initial_bits",
+      "method": "Virtual blue-score progress with median-time sliding window",
       "target_interval_sec": 1.0,
       "median_time_blocks": 11,
       "damping_factor_clamp": [

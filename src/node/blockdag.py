@@ -26,7 +26,6 @@ from tokenomics.emission_schedule import (
     get_base_block_reward_sats,
     is_combo_block,
     SATS_PER_COIN,
-    COMBO_MULTIPLIER,
     compute_block_issuance,
     BlockIssuanceResult,
     TOTAL_HARD_CAP_SATK,
@@ -704,13 +703,20 @@ class BlockDAG:
             for idx, b_hash in blocks_to_apply:
                 b = self.blocks[b_hash]
                 b_hash_bytes = bytes.fromhex(b.hash)
+                allow_transaction_skips = b_hash not in selected_chain_set
+                previewed_fees = self.utxo_set.preview_block_fees(
+                    b.transactions,
+                    idx,
+                    allow_transaction_skips=allow_transaction_skips,
+                )
                 
                 # Sequential blue height preserves the fixed emission cap.
                 issuance: BlockIssuanceResult = compute_block_issuance(
                     block_height=idx,
                     block_hash=b_hash_bytes,
                     current_issued_sats=self.issued_supply_sats,
-                    current_pool_balance_sats=self.pool_balance_sats
+                    current_pool_balance_sats=self.pool_balance_sats,
+                    total_fee_sats=previewed_fees,
                 )
 
                 # Process Combo state machine for future beacon & winner resolution
@@ -763,7 +769,9 @@ class BlockDAG:
                     ),
                     pool_deposit_sats=issuance.pool_deposit_sats,
                     pool_payout_sats=pool_deduction,
-                    allow_transaction_skips=b_hash not in selected_chain_set,
+                    expected_miner_fee_sats=issuance.miner_fee_sats,
+                    fee_pool_deposit_sats=issuance.combo_fee_deposit_sats,
+                    allow_transaction_skips=allow_transaction_skips,
                 )
                 if not applied:
                     raise ValueError(f"Consensus failure applying block {b.hash}: {err}")

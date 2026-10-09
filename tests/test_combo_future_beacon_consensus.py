@@ -217,6 +217,12 @@ class TestComboFutureBeaconConsensus(unittest.TestCase):
 
         # Final block of Year 4 (126,144,000) must trigger final liquidation
         self.assertTrue(is_combo_block(TOTAL_BLOCKS))
+        # Every stage closes exactly at its boundary, preventing mixed epochs.
+        self.assertTrue(is_combo_block(63_072_000))
+        self.assertTrue(is_combo_block(94_608_000))
+        # Perpetual fee-era draws continue at the mature Stage-4 cadence.
+        self.assertFalse(is_combo_block(TOTAL_BLOCKS + 1))
+        self.assertTrue(is_combo_block(TOTAL_BLOCKS + 1_166_400))
 
     def test_05_reorganization_rollback_safety(self):
         """

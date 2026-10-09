@@ -27,8 +27,8 @@ import unittest
 import urllib.request
 import urllib.error
 
-sys.path.insert(0, '/Users/a1234/btck-core/src')
-sys.path.insert(0, '/Users/a1234/btck-core/sdk')
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "sdk")))
 
 from gateway.ai_rpc_gateway import AIRPCGateway
 from btck_agent import (

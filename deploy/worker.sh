@@ -95,7 +95,7 @@ import sys
 import json
 import time
 
-CORE_DIR = "/Users/a1234/btck-core"
+CORE_DIR = os.environ.get("BTCK_CORE_DIR", os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 if os.path.exists(CORE_DIR):
     sys.path.insert(0, os.path.join(CORE_DIR, "src"))
 

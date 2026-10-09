@@ -11,7 +11,10 @@ from unittest import mock
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
 
-from config.network import DisabledFeatureError, MainnetReleaseError, load_network, require_feature
+from config.network import (
+    DisabledFeatureError, MainnetReleaseError, NetworkConfigurationError,
+    load_network, require_feature,
+)
 from node.blockdag import BlockDAG
 from node.daemon import BTCKDaemon
 from p2p.p2p_network import P2PNetwork, PeerConnection
@@ -109,6 +112,28 @@ class TestNetworkIsolation(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "Hard checkpoint mismatch"):
                 dag.add_block(block)
 
+    def test_checkpointed_mainnet_binds_tokenomics_and_p2p_protocol(self):
+        project = Path(__file__).resolve().parents[1]
+        raw = json.loads((project / "params/networks/mainnet.json").read_text(encoding="utf-8"))
+        raw["release"] = {"approved": True, "approval_id": "unit-test-stage-b"}
+        raw["consensus"]["hard_checkpoints"] = {"271828": "11" * 32}
+        raw["consensus"].pop("tokenomics", None)
+        raw["consensus"].pop("p2p_protocol_version", None)
+        with tempfile.TemporaryDirectory() as root:
+            manifest = Path(root) / "mainnet.json"
+            manifest.write_text(json.dumps(raw), encoding="utf-8")
+            with self.assertRaises(NetworkConfigurationError):
+                load_network("mainnet", manifest_path=manifest)
+            raw["consensus"]["p2p_protocol_version"] = "1.2.0"
+            raw["consensus"]["tokenomics"] = {
+                "version": "2.4.1",
+                "daily_quotas_sha256": "7896cf36303e123f799c71b4d72b74a684e0079c1e32e57eac34d4ed04913e59",
+                "combo_stage_boundary_liquidation": True,
+                "post_mining_fee_split_percent": {"miner": 50, "combo": 50},
+            }
+            manifest.write_text(json.dumps(raw), encoding="utf-8")
+            self.assertEqual(load_network("mainnet", manifest_path=manifest).hard_checkpoints[271_828], "11" * 32)
+
     def test_safe_stratum_enabled_but_unsafe_prototypes_disabled(self):
         self.assertEqual(require_feature("stratum", "devnet").name, "devnet")
         with self.assertRaises(DisabledFeatureError):
@@ -145,6 +170,34 @@ class TestP2PNetworkIsolation(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(peer.banned)
         self.assertTrue(writer.closed)
         self.assertFalse(peer.handshake_complete)
+
+    async def test_ibd_batches_advertise_and_request_continuation(self):
+        local = P2PNetwork(BlockDAG(network="testnet"), p2p_host="127.0.0.1")
+        local.dag.virtual_selected_parent_chain = [f"{index:064x}" for index in range(1_002)]
+        writer = _MemoryWriter()
+        peer = PeerConnection(None, writer, "203.0.113.8:45000", local.network_magic)
+        peer.handshake_complete = True
+        await local._process_msg(peer, {"type": "GET_BLOCKS", "payload": {"locator": []}})
+        response = json.loads(writer.buffer.decode().splitlines()[-1])
+        self.assertEqual(response["type"], "INV")
+        self.assertEqual(len(response["payload"]["blocks"]), 500)
+        self.assertTrue(response["payload"]["more"])
+
+        writer.buffer.clear()
+        local.dag.blocks.update({block_hash: object() for block_hash in response["payload"]["blocks"]})
+        await local._process_msg(peer, response)
+        continuation = json.loads(writer.buffer.decode().splitlines()[-1])
+        self.assertEqual(continuation["type"], "GET_BLOCKS")
+        self.assertEqual(continuation["payload"]["locator"], [response["payload"]["blocks"][-1]])
+
+    async def test_peer_score_is_capped_and_bans_are_host_scoped(self):
+        local = P2PNetwork(BlockDAG(network="testnet"), p2p_host="127.0.0.1")
+        peer = PeerConnection(None, _MemoryWriter(), "203.0.113.9:45000", local.network_magic)
+        peer.adjust_score(10_000)
+        self.assertEqual(peer.score, 200)
+        peer.adjust_score(-1_000)
+        self.assertTrue(peer.banned)
+        self.assertEqual(peer.peer_host, "203.0.113.9")
 
 
 if __name__ == "__main__":

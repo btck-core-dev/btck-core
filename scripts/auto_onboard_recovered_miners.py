@@ -13,6 +13,9 @@ import json
 import urllib.request
 import urllib.parse
 import http.cookiejar
+import os
+
+MINER_PASSWORD = os.environ.get("BTCK_MINER_PASSWORD")
 
 TARGETS = [
     {
@@ -32,6 +35,8 @@ TARGETS = [
 POOL_URL = "stratum+tcp://192.168.50.189:3333"
 
 def attempt_configure(miner):
+    if not MINER_PASSWORD:
+        raise RuntimeError("BTCK_MINER_PASSWORD is required")
     name = miner["name"]
     ip = miner["ip"]
     wallet = miner["wallet"]
@@ -40,7 +45,7 @@ def attempt_configure(miner):
     opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cj))
     
     # 1. Login
-    login_data = urllib.parse.urlencode({"post": 6, "user": "admin", "pwd": "12345678"}).encode()
+    login_data = urllib.parse.urlencode({"post": 6, "user": "admin", "pwd": MINER_PASSWORD}).encode()
     req_login = urllib.request.Request(f"http://{ip}/user/loginpost", data=login_data, method="POST")
     try:
         with opener.open(req_login, timeout=3) as r:

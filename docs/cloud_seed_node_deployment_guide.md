@@ -27,7 +27,7 @@
 
 ```bash
 # 将 <VPS_IP> 替换为您租用的海外服务器公网 IP
-rsync -avz --exclude='.git' --exclude='logs/*.log' --exclude='*.pyc' /Users/a1234/btck-core/ root@<VPS_IP>:/root/btck-core/
+rsync -avz --exclude='.git' --exclude='logs/*.log' --exclude='*.pyc' ./ root@<VPS_IP>:/root/btck-core/
 ```
 
 ---

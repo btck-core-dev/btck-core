@@ -1,11 +1,12 @@
-BTC-K Wallet 3.2.3-guardian1 (macOS)
-=====================================
+BTC-K Wallet (macOS)
+====================
 
 Scope
 -----
-This package approves the current private guardian MAINNET identity and also supports DEVNET and TESTNET.
-It is not the public wallet for the post-checkpoint chain. A newly built public release will be required
-after the height 271,828 checkpoint changes the consensus identity.
+The exact version and approved MAINNET genesis/checkpoint identity are recorded in the adjacent
+network_identity.json and archive build-evidence file. The wallet rejects a node whose network,
+genesis hash, or consensus fingerprint differs. Guardian and public post-checkpoint packages are
+separate artifacts and must never be substituted for one another.
 
 Private keys, view keys, and transaction signing always remain on this Mac. Balance lookup downloads
 address-neutral chain output pages through the private HTTPS endpoint; the server receives no wallet
@@ -67,5 +68,5 @@ Security boundaries
 5. This build is not Apple Developer ID signed or notarized and has no third-party security audit.
 6. Use prepare/sign/broadcast for offline signing; the sign command makes no node connection.
 7. Verify every release archive using its adjacent .sha256 file.
-8. This guardian build rejects any unapproved genesis or consensus fingerprint.
+8. This build rejects any genesis or consensus fingerprint not recorded in network_identity.json.
 9. Transfers select only mature, unlocked outputs.

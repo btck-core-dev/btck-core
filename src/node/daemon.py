@@ -116,7 +116,10 @@ class BTCKDaemon:
 
     def _mempool_overlay(self):
         overlay = copy.deepcopy(self.dag.utxo_set.utxos)
-        height = len(self.dag.virtual_selected_parent_chain)
+        # UTXO heights, coinbase maturity and timelocks are consensus-defined
+        # in the canonical virtual blue order.  Selected-parent steps can be
+        # dramatically shorter on a busy DAG and must never be used here.
+        height = len(self.dag.virtual_blue_order) - 1
         for tx in self.mempool.values():
             valid, error, _ = self.dag.utxo_set.validate_transaction(tx, height, overlay)
             if not valid:
@@ -153,7 +156,7 @@ class BTCKDaemon:
             if any(existing.txid == tx.txid for existing in block.transactions):
                 return {"accepted": True, "txid": tx.txid, "status": "confirmed"}
         overlay = self._mempool_overlay()
-        height = len(self.dag.virtual_selected_parent_chain)
+        height = len(self.dag.virtual_blue_order) - 1
         valid, error, fee_sats = self.dag.utxo_set.validate_transaction(tx, height, overlay)
         if not valid:
             raise ValueError(error)
@@ -533,7 +536,7 @@ class BTCKDaemon:
                         "hash": block.hash,
                         "blue_score": block.blue_score,
                         "reward_btck": block.reward_sats / SATS_PER_COIN,
-                        "is_combo_10x": block.is_combo
+                        "is_combo": block.is_combo
                     },
                     "id": req_id
                 }
@@ -624,7 +627,7 @@ class BTCKDaemon:
                             "blue_score": b.blue_score,
                             "sats": b.reward_sats,
                             "btck": b.reward_sats / SATS_PER_COIN,
-                            "is_combo_10x": b.is_combo
+                            "is_combo": b.is_combo
                         })
                         total_sats += b.reward_sats
 

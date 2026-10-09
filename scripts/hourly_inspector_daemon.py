@@ -1,13 +1,7 @@
 #!/usr/bin/env python3
-import time
-import subprocess
-import os
+"""Retired compatibility entry point for the old hourly inspector daemon."""
 
-inspector_path = "/Users/a1234/btck-core/scripts/hourly_mining_inspector.py"
-while True:
-    try:
-        subprocess.run(["python3", inspector_path], check=False)
-    except Exception as e:
-        print(f"Inspector error: {e}")
-    # Sleep 30 minutes
-    time.sleep(1800)
+raise SystemExit(
+    "hourly_inspector_daemon.py is retired with hourly_mining_inspector.py; "
+    "install the supported readiness/probe systemd units instead."
+)

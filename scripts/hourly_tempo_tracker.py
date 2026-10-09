@@ -14,7 +14,7 @@ import urllib.request
 import urllib.parse
 import re
 
-BASE_DIR = "/Users/a1234/btck-core"
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA_FILE = os.path.join(BASE_DIR, "data", "hourly_tempo_tracking.json")
 MD_FILE = os.path.join(BASE_DIR, "docs", "hourly_tempo_tracking.md")
 CHAIN_STATE_FILE = os.path.join(BASE_DIR, "data", "chain_state.json")

@@ -5,6 +5,12 @@
   "personal_address": "btck1s6LLVmAk5s1PN5VRRh2h4AqmGnASiPe4reShbabFbEFSp7zPRm92MrprgtkgqQTg9C9vZgFmfdfYLkm4NhXWmbZLujFbXkA1",
   "pool_treasury_address": "btck1sAPmQArRKd4jw8xVrVrvzUKz3BXCY7QYuk27wS9nUYMApuF8u8QfQV5KNFfejoPEf8m1r5qsYRSz8S44wG3ZiWTzy8guRRuK",
   "eco_fund_address": "btck1s7dX78F81eqKTMG9frk3kgur7ZRQo6UjgAazMyF2hA5nH1ma13kUpfygG3TAYopLN99jizhLd66xuR9CXwdqL64fXqr7qggd",
+  "eco_fund_custody": {
+    "current_script_model": "single dual-key stealth wallet",
+    "on_chain_multisig": false,
+    "governance_timelock": false,
+    "disclosure": "Public MAINNET launch requires named custody roles and an offline approval procedure; future multisig migration requires a separately reviewed upgrade."
+  },
   "eco_fund_output": [
     "0218c8a8b18a55da9f1aeb1d60baebfe176419eca4fdf5549ffcb9c0190060d55c",
     "0263bf9a23d411aad1e3e5a9c71414895ac32122ff8f7a68ac651cba5c5d0dfd4d"

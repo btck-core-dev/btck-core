@@ -8,8 +8,9 @@ import paramiko
 
 TARGET_IP = "100.73.134.73"
 SSH_USER = "jczhang"
-SSH_PWD = "jczhang"
-LOG_FILE = "/Users/a1234/btck-core/logs/emergency_recovery_4070.log"
+SSH_KEY = os.environ.get("BTCK_4070_SSH_KEY")
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+LOG_FILE = os.path.join(REPO_ROOT, "logs", "emergency_recovery_4070.log")
 
 def log(msg):
     ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -35,11 +36,16 @@ def check_banner(ip, port=22, timeout=1.5):
         s.close()
 
 def execute_recovery():
+    if not SSH_KEY:
+        log("❌ BTCK_4070_SSH_KEY is required; password authentication is disabled")
+        return False
     log(f"⚡ Connection detected on {TARGET_IP}:22! Connecting SSH...")
     client = paramiko.SSHClient()
-    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    client.load_system_host_keys()
+    client.set_missing_host_key_policy(paramiko.RejectPolicy())
     try:
-        client.connect(TARGET_IP, port=22, username=SSH_USER, password=SSH_PWD, timeout=8)
+        client.connect(TARGET_IP, port=22, username=SSH_USER, key_filename=SSH_KEY,
+                       look_for_keys=False, allow_agent=False, timeout=8)
         log("✅ SSH connected successfully!")
     except Exception as e:
         log(f"❌ SSH connect error: {e}")
@@ -60,13 +66,13 @@ def execute_recovery():
 
     # 1. EMERGENCY KILL HIGH-POWER MINER INSTANTLY
     log("🚨 STEP 1: Emergency stopping any high-power miners to relieve PSU & thermals...")
-    exec_cmd("echo jczhang | sudo -S pkill -9 -f SRBMiner-MULTI; echo jczhang | sudo -S pkill -9 -f PeakMiner; echo jczhang | sudo -S systemctl stop peakminer 2>/dev/null || true", "STOP HIGH POWER MINERS")
+    exec_cmd("sudo -n pkill -9 -f SRBMiner-MULTI || true; sudo -n pkill -9 -f PeakMiner || true; sudo -n systemctl stop peakminer 2>/dev/null || true", "STOP HIGH POWER MINERS")
 
     # 2. APPLY CONSERVATIVE SAFE POWER LIMITS & CLOCKS
     log("🔒 STEP 2: Applying conservative safe power limits (190W) & clock locks...")
-    exec_cmd("echo jczhang | sudo -S nvidia-smi -pm 1", "ENABLE PERSISTENCE MODE")
-    exec_cmd("echo jczhang | sudo -S nvidia-smi -pl 190", "SET POWER LIMIT TO 190W")
-    exec_cmd("echo jczhang | sudo -S nvidia-smi -lgc 1500,2000", "LOCK MAX CORE CLOCK TO 2000MHz")
+    exec_cmd("sudo -n nvidia-smi -pm 1", "ENABLE PERSISTENCE MODE")
+    exec_cmd("sudo -n nvidia-smi -pl 190", "SET POWER LIMIT TO 190W")
+    exec_cmd("sudo -n nvidia-smi -lgc 1500,2000", "LOCK MAX CORE CLOCK TO 2000MHz")
 
     # 3. VERIFY GPU TELEMETRY
     log("📊 STEP 3: Verifying GPU status after applying conservative parameters...")
@@ -75,10 +81,10 @@ def execute_recovery():
 
     # 4. GATHER CRITICAL HARDWARE & CRASH LOGS (JOURNALCTL -B -1, DMESG, IPMI)
     log("🔍 STEP 4: Inspecting previous boot crash logs and hardware error ring...")
-    exec_cmd("echo jczhang | sudo -S journalctl -b -1 -p 3 -n 60 --no-pager 2>/dev/null || echo 'No previous journal'", "PREVIOUS BOOT (-1) CRITICAL ERRORS")
-    exec_cmd("echo jczhang | sudo -S journalctl -b -2 -p 3 -n 60 --no-pager 2>/dev/null || echo 'No -2 journal'", "PREVIOUS BOOT (-2) CRITICAL ERRORS")
-    exec_cmd("echo jczhang | sudo -S dmesg -T | grep -iE 'xid|thermal|mce|power|psu|throttle|error|hardware' | tail -n 50 || true", "KERNEL DMESG HARDWARE ALERTS")
-    exec_cmd("echo jczhang | sudo -S which ipmitool && echo jczhang | sudo -S ipmitool sel list | tail -n 30 || echo 'ipmitool not installed'", "IPMI HARDWARE SEL EVENT LOGS")
+    exec_cmd("sudo -n journalctl -b -1 -p 3 -n 60 --no-pager 2>/dev/null || echo 'No previous journal or sudo permission'", "PREVIOUS BOOT (-1) CRITICAL ERRORS")
+    exec_cmd("sudo -n journalctl -b -2 -p 3 -n 60 --no-pager 2>/dev/null || echo 'No -2 journal or sudo permission'", "PREVIOUS BOOT (-2) CRITICAL ERRORS")
+    exec_cmd("sudo -n dmesg -T | grep -iE 'xid|thermal|mce|power|psu|throttle|error|hardware' | tail -n 50 || true", "KERNEL DMESG HARDWARE ALERTS")
+    exec_cmd("command -v ipmitool >/dev/null && sudo -n ipmitool sel list | tail -n 30 || echo 'ipmitool unavailable or sudo denied'", "IPMI HARDWARE SEL EVENT LOGS")
 
     # 5. CHECK AUTOSTART / CRON CONFIGURATION TO PREVENT RE-TRIGGERING
     log("📋 STEP 5: Checking mining autostart services...")

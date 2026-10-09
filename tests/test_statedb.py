@@ -9,7 +9,7 @@ import tempfile
 import time
 import sys
 
-sys.path.insert(0, '/Users/a1234/btck-core/src')
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
 from node.statedb import BTCKStateDB
 
 class TestBTCKStateDB(unittest.TestCase):

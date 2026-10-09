@@ -20,9 +20,11 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import math
 import os
 import sqlite3
 import time
+from decimal import Decimal, ROUND_DOWN
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -222,13 +224,20 @@ class PPLNSEngine:
     ) -> None:
         """Record an accepted valid share."""
         ts = time.time() if timestamp is None else timestamp
+        numeric_difficulty = float(difficulty)
+        if not wallet_address or not worker_name:
+            raise ValueError("Share wallet and worker must be non-empty")
+        if not math.isfinite(numeric_difficulty) or numeric_difficulty <= 0:
+            raise ValueError("Share difficulty must be a finite positive number")
+        if not math.isfinite(float(ts)):
+            raise ValueError("Share timestamp must be finite")
         with self._get_connection() as conn:
             conn.execute(
                 """
                 INSERT INTO shares (wallet_address, worker_name, difficulty, timestamp)
                 VALUES (?, ?, ?, ?)
                 """,
-                (wallet_address, worker_name, float(difficulty), ts),
+                (wallet_address, worker_name, numeric_difficulty, ts),
             )
             conn.execute(
                 """
@@ -239,7 +248,7 @@ class PPLNSEngine:
                     total_shares_count = total_shares_count + 1,
                     last_share_timestamp = excluded.last_share_timestamp
                 """,
-                (wallet_address, float(difficulty), ts),
+                (wallet_address, numeric_difficulty, ts),
             )
 
     @staticmethod
@@ -525,13 +534,21 @@ class PPLNSEngine:
         Divides net block reward proportionally across the last N shares.
         """
         N = window_size or self.window_size
-        fee_rate = max(0.0, min(1.0, float(pool_fee_rate)))
-        pool_fee_satk = int(reward_satk * fee_rate)
+        fee_rate = Decimal(str(pool_fee_rate))
+        if not fee_rate.is_finite():
+            raise ValueError("Pool fee rate must be finite")
+        fee_rate = max(Decimal("0"), min(Decimal("1"), fee_rate))
+        pool_fee_satk = int((Decimal(reward_satk) * fee_rate).to_integral_value(rounding=ROUND_DOWN))
 
         # Optional finder bonus
         finder_bonus_satk = 0
         if finder_wallet and self.finder_bonus_rate > 0.0:
-            finder_bonus_satk = int(reward_satk * self.finder_bonus_rate)
+            finder_bonus_satk = int(
+                (Decimal(reward_satk) * Decimal(str(self.finder_bonus_rate))).to_integral_value(
+                    rounding=ROUND_DOWN
+                )
+            )
+            finder_bonus_satk = min(finder_bonus_satk, reward_satk - pool_fee_satk)
 
         distributable_satk = max(0, reward_satk - pool_fee_satk - finder_bonus_satk)
 
@@ -553,22 +570,33 @@ class PPLNSEngine:
             )
             rows = cur.fetchall()
 
-            total_window_weight = sum(r["difficulty"] for r in rows)
-            miner_weights: Dict[str, float] = {}
+            total_window_weight_decimal = sum(
+                (Decimal(str(r["difficulty"])) for r in rows), Decimal("0")
+            )
+            total_window_weight = float(total_window_weight_decimal)
+            miner_weights: Dict[str, Decimal] = {}
             for r in rows:
                 w = r["wallet_address"]
-                miner_weights[w] = miner_weights.get(w, 0.0) + r["difficulty"]
+                miner_weights[w] = miner_weights.get(w, Decimal("0")) + Decimal(str(r["difficulty"]))
 
             miner_credits: Dict[str, int] = {}
             total_distributed = 0
 
-            if total_window_weight > 0 and distributable_satk > 0:
-                for wallet, weight in miner_weights.items():
-                    share_fraction = weight / total_window_weight
-                    credit = int(distributable_satk * share_fraction)
-                    if credit > 0:
-                        miner_credits[wallet] = credit
-                        total_distributed += credit
+            if total_window_weight_decimal > 0 and distributable_satk > 0:
+                # Hamilton/largest-remainder allocation: pure decimal weights,
+                # deterministic wallet tie-break and exactly zero SatK dust.
+                remainders = []
+                allocated = 0
+                for wallet in sorted(miner_weights):
+                    exact = Decimal(distributable_satk) * miner_weights[wallet] / total_window_weight_decimal
+                    credit = int(exact.to_integral_value(rounding=ROUND_DOWN))
+                    miner_credits[wallet] = credit
+                    allocated += credit
+                    remainders.append((exact - Decimal(credit), wallet))
+                for _, wallet in sorted(remainders, key=lambda item: (-item[0], item[1]))[:distributable_satk - allocated]:
+                    miner_credits[wallet] += 1
+                miner_credits = {wallet: credit for wallet, credit in miner_credits.items() if credit > 0}
+                total_distributed = distributable_satk
 
                 # Credit finder bonus to finder
                 if finder_wallet and finder_bonus_satk > 0:
@@ -600,6 +628,13 @@ class PPLNSEngine:
                     """,
                     (finder_wallet, credit),
                 )
+            else:
+                # No eligible share window and no finder: retain the net amount
+                # as an explicitly accounted treasury fee, never silent dust.
+                pool_fee_satk = reward_satk
+
+            if pool_fee_satk + total_distributed != reward_satk:
+                raise RuntimeError("PPLNS settlement conservation invariant breached")
 
             # Record block settlement
             conn.execute(

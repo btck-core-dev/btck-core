@@ -213,7 +213,7 @@ gantt
 ### 步骤详情：
 
 - **第一阶段（本地代码与沙盒模拟，0风险）**：
-  1. 编写核心调度引擎 [`src/worker/symbiotic_worker.py`](file:///Users/a1234/btck-core/src/worker/symbiotic_worker.py)；
+  1. 编写核心调度引擎 `src/worker/symbiotic_worker.py`；
   2. 实现 `HardwareProbe`（自动探查显存卡数与分配 Tier 等级）；
   3. 实现 `ProcessPreemptor`（基于系统信号 `SIGSTOP / SIGCONT` 的毫秒级挖矿抢占控制）；
   4. 实现 `TieredPricingCalculator`（阶梯价格计算与版本衰减器）。
@@ -228,7 +228,7 @@ gantt
   2. 打包便携式配置文件模板与 systemd 自动守护脚本。
 
 - **第四阶段（联调与闭环）**：
-  1. 将调度器与现有的 [`src/gateway/ai_rpc_gateway.py`](file:///Users/a1234/btck-core/src/gateway/ai_rpc_gateway.py) 贯通；
+  1. 将调度器与现有的 `src/gateway/ai_rpc_gateway.py` 贯通；
   2. 模拟真实 SatsChat 问答触发调用，完成从“冻结挖矿 -> 本地生成 -> SatK 签名打款 -> 解冻挖矿”的完整闭环。
 
 ---

@@ -14,9 +14,9 @@ This document contains the complete, canonical data payload required to submit *
 | **Mining Algorithm** | `kHeavyHash` | Matrix multiplication over $64 \times 64$ integer field |
 | **ASIC Compatibility** | 100% Native Kaspa ASICs | IceRiver (KS0-KS5), Antminer (KS3/KS5) |
 | **Block Time / Cadence** | 1.000 second | 1.000 blocks per second (BPS) |
-| **Block Reward** | 6.2982 BTCK (Day 0) | Miner Base 80% (5.0385) + Combo 20% (1.2596) |
+| **Block Reward** | 6.29815765 BTCK budget at block 1 | 80% miner + 15% Combo + 5% ecosystem reserve |
 | **Max / Hard Cap** | 21,000,000.00000000 BTCK | $2,100,000,000,000,000$ SatK (Zero drift) |
-| **Premine / ICO** | 0.0% (Zero) | Fair Launch, no private allocation |
+| **Premine / ICO** | Genesis block 0 SatK; no ICO/private allocation | Disclosed controlled guardian mining through block 271,828; not a block-0 open-mining fair launch |
 | **Genesis Checkpoint** | Block `#271,828` | Euler constant mapping ($e = 2.71828...$) |
 | **Official Website** | `https://btck.network` | Primary portal |
 | **Block Explorer** | `https://explorer.btck.network` | Real-time DAG visualizer & tx search |

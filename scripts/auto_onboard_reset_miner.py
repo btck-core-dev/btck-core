@@ -7,7 +7,9 @@ import http.cookiejar
 import subprocess
 import os
 
-LOG_FILE = "/Users/a1234/btck-core/logs/auto_onboard.log"
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+LOG_FILE = os.path.join(REPO_ROOT, "logs", "auto_onboard.log")
+MINER_PASSWORD = os.environ.get("BTCK_MINER_PASSWORD")
 
 MINERS = [
     {
@@ -40,6 +42,8 @@ def log(msg):
         f.write(line + "\n")
 
 def try_onboard(miner):
+    if not MINER_PASSWORD:
+        raise RuntimeError("BTCK_MINER_PASSWORD is required")
     name = miner["name"]
     ip = miner["ip"]
     wallet = miner["wallet"]
@@ -49,7 +53,7 @@ def try_onboard(miner):
     opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cj))
     
     # 1. Login
-    login_data = urllib.parse.urlencode({"post": 6, "user": "admin", "pwd": "12345678"}).encode()
+    login_data = urllib.parse.urlencode({"post": 6, "user": "admin", "pwd": MINER_PASSWORD}).encode()
     req_login = urllib.request.Request(f"http://{ip}/user/loginpost", data=login_data, method="POST")
     try:
         with opener.open(req_login, timeout=2.0) as r:

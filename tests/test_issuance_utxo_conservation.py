@@ -11,6 +11,9 @@ from node.blockdag import BlockDAG
 from node.utxo_set import UTXOEntry, UTXOSet
 from tests.pow_helpers import mine_block
 from tokenomics.emission_schedule import compute_block_issuance
+from tokenomics.emission_schedule import TOTAL_BLOCKS, TOTAL_HARD_CAP_SATK
+from privacy.stealth_address import StealthKeyPair
+from privacy.wallet_engine import StealthWallet
 
 
 MINER_OUTPUT = (bytes.fromhex("02" + "11" * 32), bytes.fromhex("03" + "22" * 32))
@@ -121,6 +124,48 @@ class TestIssuanceUTXOConservation(unittest.TestCase):
         self.assertEqual(utxos.value_by_kind_sats("vesting"), 0)
         self.assertEqual(utxos.total_value_sats(), before_total)
 
+    def test_post_mining_fees_are_split_into_miner_and_combo_utxos(self):
+        utxos = UTXOSet()
+        sender = StealthWallet.generate("post-mining-sender")
+        r_ephem, p_onetime = StealthKeyPair.generate_one_time_stealth_output(sender.address)
+        txid = "ab" * 32
+        utxos.utxos[(txid, 0)] = UTXOEntry(
+            amount_satk=1_000_000,
+            P_onetime_hex=p_onetime.hex(),
+            R_ephem_hex=r_ephem.hex(),
+            block_height=1,
+        )
+        sender.scan_chain_outputs([{
+            "txid": txid,
+            "vout": 0,
+            "amount_satk": 1_000_000,
+            "P_onetime_hex": p_onetime.hex(),
+            "R_ephem_hex": r_ephem.hex(),
+            "height": 1,
+        }])
+        recipient = StealthWallet.generate("post-mining-recipient")
+        tx = sender.create_and_sign_transfer(recipient.address, 400_000, 101)
+        issuance = compute_block_issuance(
+            TOTAL_BLOCKS + 1,
+            b"\x22" * 32,
+            TOTAL_HARD_CAP_SATK,
+            0,
+            total_fee_sats=101,
+        )
+        applied, error = utxos.apply_block(
+            block_hash="dd" * 32,
+            block_height=TOTAL_BLOCKS + 1,
+            coinbase_output=MINER_OUTPUT,
+            reward_sats=0,
+            transactions=[tx],
+            pool_deposit_sats=issuance.pool_deposit_sats,
+            expected_miner_fee_sats=issuance.miner_fee_sats,
+            fee_pool_deposit_sats=issuance.combo_fee_deposit_sats,
+        )
+        self.assertTrue(applied, error)
+        self.assertEqual(utxos.value_by_kind_sats("miner"), 51)
+        self.assertEqual(utxos.value_by_kind_sats("jackpot_pool"), 50)
+        self.assertEqual(utxos.total_value_sats(), 1_000_000)
 
 if __name__ == "__main__":
     unittest.main()

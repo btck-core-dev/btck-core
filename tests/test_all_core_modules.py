@@ -17,7 +17,7 @@ import tempfile
 import shutil
 
 # Add src to python path
-sys.path.insert(0, '/Users/a1234/btck-core/src')
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
 
 from tokenomics.emission_schedule import (
     get_base_block_reward_sats,

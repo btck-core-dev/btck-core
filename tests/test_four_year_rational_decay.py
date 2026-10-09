@@ -133,6 +133,19 @@ class TestFourYearRationalDecay(unittest.TestCase):
         with self.assertRaises(ValueError):
             split_post_mining_fees(-1)
 
+        issuance = compute_block_issuance(
+            TOTAL_BLOCKS + 1,
+            b"\x11" * 32,
+            TOTAL_HARD_CAP_SATK,
+            1_000,
+            total_fee_sats=101,
+        )
+        self.assertEqual(issuance.minted_sats, 0)
+        self.assertEqual(issuance.miner_fee_sats, 51)
+        self.assertEqual(issuance.combo_fee_deposit_sats, 50)
+        self.assertEqual(issuance.pool_deposit_sats, 50)
+        self.assertEqual(issuance.new_pool_balance_sats, 1_050)
+
     def test_07_beacon_xor_distance_winner_selection(self):
         """Audit Section 10: 未来随机信标 + Kademlia XOR 几何距离选奖"""
         candidates = [hashlib.sha256(f"BLOCK_HASH_{i}".encode()).digest() for i in range(100)]

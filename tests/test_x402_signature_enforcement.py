@@ -13,7 +13,8 @@ import unittest
 import tempfile
 import shutil
 import sys
-sys.path.insert(0, '/Users/a1234/btck-core/src')
+import os
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
 
 from gateway.ai_rpc_gateway import AIRPCGateway
 from gateway.exchange_rpc import ExchangeRPCAdapter

@@ -41,6 +41,10 @@ class TestPPLNSEngine(unittest.TestCase):
         self.assertEqual(stats["active_miners"], 2)
         self.assertEqual(stats["active_workers"], 2)
 
+        for invalid in (0, -1, float("inf"), float("nan")):
+            with self.assertRaises(ValueError):
+                self.engine.record_share(w1, "invalid", invalid)
+
     def test_block_settlement_proportions(self):
         # 3 miners with different weights:
         # Alice (diff 100), Bob (diff 300), Charlie (diff 600) -> Total weight = 1000
@@ -83,9 +87,9 @@ class TestPPLNSEngine(unittest.TestCase):
         self.assertAlmostEqual(m_bob.unpaid_btck, 1.41, places=4)
         self.assertAlmostEqual(m_charlie.unpaid_btck, 2.87, places=4)
 
-        # Total distributed + fee should equal total reward (within integer rounding precision)
+        # Largest-remainder allocation accounts for every SatK exactly.
         total_accounted = m_alice.unpaid_satk + m_bob.unpaid_satk + m_charlie.unpaid_satk + res["pool_fee_satk"]
-        self.assertTrue(abs(total_accounted - reward_satk) <= 5)
+        self.assertEqual(total_accounted, reward_satk)
 
     def test_payout_threshold_and_recording(self):
         miner = "btck1s_dave"

@@ -51,6 +51,39 @@ APPROVED_NETWORKS = {
     },
 }
 
+
+def _load_packaged_identity() -> None:
+    """Override build identity from the authenticated adjacent sidecar."""
+    global WALLET_VERSION
+    candidates = []
+    configured = os.getenv("BTCK_WALLET_IDENTITY_FILE")
+    if configured:
+        candidates.append(Path(configured))
+    if getattr(sys, "frozen", False):
+        candidates.append(Path(sys.executable).resolve().parent / "network_identity.json")
+    else:
+        candidates.append(Path(sys.argv[0]).resolve().parent / "network_identity.json")
+        candidates.append(Path(__file__).resolve().parent / "network_identity.json")
+    for path in candidates:
+        if not path.is_file():
+            continue
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        required = ("version", "name", "chain_id", "genesis_hash", "consensus_fingerprint")
+        if any(not isinstance(payload.get(key), str) or not payload[key] for key in required):
+            raise RuntimeError(f"Malformed wallet network identity: {path}")
+        if payload["name"] != "mainnet":
+            raise RuntimeError("Packaged wallet identity must be MAINNET")
+        if len(payload["genesis_hash"]) != 64 or len(payload["consensus_fingerprint"]) != 64:
+            raise RuntimeError("Packaged wallet identity hashes must be 32-byte hex")
+        WALLET_VERSION = payload["version"]
+        APPROVED_NETWORKS["mainnet"] = {
+            key: payload[key] for key in ("name", "chain_id", "genesis_hash", "consensus_fingerprint")
+        }
+        break
+
+
+_load_packaged_identity()
+
 from privacy.stealth_address import StealthKeyPair
 from privacy.bip39 import WORDLIST, derive_btck_stealth_wallet, generate_mnemonic, mnemonic_to_seed, validate_mnemonic
 from privacy.wallet_crypto import WALLET_FORMAT, decrypt_wallet_payload, encrypt_wallet_payload

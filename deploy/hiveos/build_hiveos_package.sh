@@ -16,6 +16,6 @@ cp "$DIR/../../src/worker/hardware_probe.py" "$PACKAGE_DIR/"
 cp "$DIR/../../src/worker/pricing_engine.py" "$PACKAGE_DIR/"
 cp "$DIR/../../src/worker/tui_console.py" "$PACKAGE_DIR/"
 
-OUT_TAR="/Users/a1234/btck-core/deploy/hiveos/btck-symbiotic-1.0.0.tar.gz"
+OUT_TAR="${DIR}/btck-symbiotic-1.0.0.tar.gz"
 tar -czf "$OUT_TAR" -C "/tmp" "btck-symbiotic-hiveos"
 echo "HiveOS Custom Miner Package Built: $OUT_TAR"

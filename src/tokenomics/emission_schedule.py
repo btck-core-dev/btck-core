@@ -1,5 +1,5 @@
 """
-BTC-K Canonical Tokenomics & 4-Year Rational Smooth Decay Engine (SSOT v2.2.0)
+BTC-K Canonical Tokenomics & 4-Year Rational Smooth Decay Engine (SSOT v2.4.1)
 ------------------------------------------------------------------------------
 Implements the definitive, mathematical consensus specification (Doc 29 & Canonical Whitepaper):
 1. 21,000,000.00000000 BTC-K (2,100,000,000,000,000 SatK) Absolute Hard Cap (0 SatK drift).
@@ -15,10 +15,12 @@ Implements the definitive, mathematical consensus specification (Doc 29 & Canoni
 
 import os
 import json
-import math
 import hashlib
+import base64
+import struct
 from dataclasses import dataclass
 from typing import Tuple, List, Dict, Any, Optional
+from tokenomics.canonical_daily_quotas import FROZEN_DAILY_QUOTAS_B85
 
 # =====================================================================
 # 1. Global Accounting Constants (Integer SatK, 100M SatK = 1 BTC-K)
@@ -32,11 +34,9 @@ BLOCKS_PER_DAY = 86_400  # 1.0 second per block
 LIFESPAN_DAYS = 1460     # 4 years (365 * 4 = 1460 days)
 TOTAL_BLOCKS = LIFESPAN_DAYS * BLOCKS_PER_DAY  # 126,144,000 blocks
 BLOCKS_PER_YEAR = 365 * BLOCKS_PER_DAY        # 31,536,000 blocks
-COMBO_MULTIPLIER = 10.0                        # Backward compatibility alias
 
 # Mathematical Rational Decay Parameters
-K_PER_DAY = 0.15  # Daily damping factor (k = 0.15 day^-1)
-LN_220 = math.log(1.0 + K_PER_DAY * LIFESPAN_DAYS)  # ln(1 + 0.15 * 1460) = ln(220)
+K_PER_DAY = 0.15  # Documentation parameter; never used for runtime consensus math.
 
 # Genesis Euler Security Reserve & Hard Checkpoint Target (e = 2.71828...)
 GENESIS_CHECKPOINT_BLOCK = 271_828  # Euler's number homage: 271,828 blocks (75.51h, ~7.16% supply)
@@ -45,35 +45,17 @@ GENESIS_72H_BLOCKS = GENESIS_CHECKPOINT_BLOCK
 # =====================================================================
 # 2. Deterministic Integer SatK Issuance Table (SSOT Daily Quotas)
 # =====================================================================
-def _generate_canonical_daily_quotas() -> List[int]:
-    """
-    Deterministically computes the daily integer SatK quotas for all 1460 days.
-    Guarantees mathematically that sum(daily_quotas) == TOTAL_HARD_CAP_SATK with ZERO drift.
-    """
-    quotas: List[int] = []
-    prev_cumulative = 0
-    for d in range(LIFESPAN_DAYS):
-        if d == LIFESPAN_DAYS - 1:
-            # Final day absorbs any fractional rounding, guaranteeing exact 2.1 Quadrillion
-            cur_cumulative = TOTAL_HARD_CAP_SATK
-        else:
-            # Cumulative integral fraction: F(d) = ln(1 + k*(d+1)) / ln(220)
-            target_frac = math.log(1.0 + K_PER_DAY * (d + 1)) / LN_220
-            cur_cumulative = int(round(TOTAL_HARD_CAP_SATK * target_frac))
-        
-        daily_amount = cur_cumulative - prev_cumulative
-        quotas.append(daily_amount)
-        prev_cumulative = cur_cumulative
-
-    return quotas
-
-DAILY_QUOTAS_SATK: List[int] = _generate_canonical_daily_quotas()
-assert len(DAILY_QUOTAS_SATK) == LIFESPAN_DAYS, "Daily quotas length mismatch!"
-assert sum(DAILY_QUOTAS_SATK) == TOTAL_HARD_CAP_SATK, "Hard cap conservation violated!"
+_quota_bytes = base64.b85decode(FROZEN_DAILY_QUOTAS_B85.encode("ascii"))
+if len(_quota_bytes) != LIFESPAN_DAYS * 8:
+    raise RuntimeError("Canonical daily quota payload length mismatch")
+DAILY_QUOTAS_SATK: List[int] = list(struct.unpack(f">{LIFESPAN_DAYS}Q", _quota_bytes))
+if sum(DAILY_QUOTAS_SATK) != TOTAL_HARD_CAP_SATK:
+    raise RuntimeError("Canonical daily quota hard-cap conservation violated")
 
 # Canonical SHA-256 Checksum of the 1460 daily quota schedule
 CANONICAL_DAILY_QUOTAS_SHA256 = hashlib.sha256(json.dumps(DAILY_QUOTAS_SATK).encode()).hexdigest()
-assert CANONICAL_DAILY_QUOTAS_SHA256 == "7896cf36303e123f799c71b4d72b74a684e0079c1e32e57eac34d4ed04913e59"
+if CANONICAL_DAILY_QUOTAS_SHA256 != "7896cf36303e123f799c71b4d72b74a684e0079c1e32e57eac34d4ed04913e59":
+    raise RuntimeError("Canonical daily quota fingerprint mismatch")
 
 # =====================================================================
 # 3. Combo Tiered Stages & Draw Schedules (Audit v3 & Doc 29)
@@ -104,7 +86,8 @@ INSTANT_UNLOCK_PERCENT_BY_STAGE = {1: 50, 2: 25, 3: 10, 4: 10}
 # Combo funding.  Odd SatK remain with the immediate miner payout.
 POST_MINING_MINER_FEE_PERCENT = 50
 POST_MINING_COMBO_FEE_PERCENT = 50
-assert POST_MINING_MINER_FEE_PERCENT + POST_MINING_COMBO_FEE_PERCENT == 100
+if POST_MINING_MINER_FEE_PERCENT + POST_MINING_COMBO_FEE_PERCENT != 100:
+    raise RuntimeError("Post-mining fee split must sum to 100 percent")
 
 COMBO_STAGES: List[ComboStageSpec] = [
     ComboStageSpec(1, 1, 1, 31_536_000, 0.15, 43_200, 12, 48, 172_800, 0.50, 1),
@@ -234,10 +217,18 @@ def is_combo_block(block_height: int, block_hash: bytes = b"") -> bool:
     """
     if block_height <= 0:
         return False
-    if block_height == TOTAL_BLOCKS:
-        return True  # Final liquidation draw sweeps any remaining pool balance
+    if block_height > TOTAL_BLOCKS:
+        # The fee-funded era continues the Stage-4 cadence, aligned to the
+        # first post-subsidy block so every implementation derives identical
+        # draw heights without wall-clock state.
+        return ((block_height - TOTAL_BLOCKS) % COMBO_STAGES[-1].draw_interval_blocks) == 0
     for stage in COMBO_STAGES:
         if stage.start_block <= block_height <= stage.end_block:
+            # Close each stage at its exact boundary.  Without this liquidation
+            # the remainder of an interval crosses into the next stage and is
+            # paid under the previous year's vesting rules.
+            if block_height == stage.end_block:
+                return True
             offset = block_height - stage.start_block + 1
             return (offset % stage.draw_interval_blocks) == 0
     return False
@@ -282,13 +273,28 @@ def compute_jackpot_vesting_tranches(
                     })
             return tranches
 
-    # Default fallback: 100% unlocked after standard maturity
-    return [{
-        "tranche_index": 0,
-        "unlock_block_height": draw_block_height + 86400,
-        "amount_satk": jackpot_amount_satk,
-        "is_instant": True
-    }]
+    if stage_id == 5:
+        # Perpetual fee Combo inherits the mature Stage-4 release policy.
+        spec = COMBO_STAGES[-1]
+        instant_amount = jackpot_amount_satk * INSTANT_UNLOCK_PERCENT_BY_STAGE[4] // 100
+        streaming_amount = jackpot_amount_satk - instant_amount
+        tranches = [{
+            "tranche_index": 0,
+            "unlock_block_height": draw_block_height,
+            "amount_satk": instant_amount,
+            "is_instant": True,
+        }]
+        per_tranche, remainder = divmod(streaming_amount, spec.streaming_tranches)
+        interval = spec.maturation_blocks // spec.streaming_tranches
+        for index in range(1, spec.streaming_tranches + 1):
+            tranches.append({
+                "tranche_index": index,
+                "unlock_block_height": draw_block_height + index * interval,
+                "amount_satk": per_tranche + (1 if index <= remainder else 0),
+                "is_instant": False,
+            })
+        return tranches
+    raise ValueError(f"Unknown Combo stage: {stage_id}")
 
 # =====================================================================
 # 6. Consensus Issuance & Jackpot Accounting Result
@@ -302,6 +308,8 @@ class BlockIssuanceResult:
     miner_base_sats: int           # Immediate base payout to miner (budget - pool_deposit - eco_deposit)
     pool_deposit_sats: int         # Ratio deposit into consensus jackpot pool
     eco_deposit_sats: int          # Consensus AI Standby & Hardware Symbiosis Reserve (5%)
+    miner_fee_sats: int            # Transaction fees paid immediately to miner
+    combo_fee_deposit_sats: int     # Transaction fees deposited into perpetual Combo
     combo_payout_sats: int         # Jackpot bonus paid out of pool balance
     miner_total_payout_sats: int   # miner_base_sats + combo_payout_sats
     new_pool_balance_sats: int     # Updated consensus jackpot pool balance
@@ -312,7 +320,8 @@ def compute_block_issuance(
     block_hash: bytes,
     current_issued_sats: int,
     current_pool_balance_sats: int,
-    force_combo: bool = False
+    force_combo: bool = False,
+    total_fee_sats: int = 0,
 ) -> BlockIssuanceResult:
     """
     Core issuance partition engine.
@@ -344,6 +353,8 @@ def compute_block_issuance(
     """
     if block_height < 0:
         raise ValueError("Block height cannot be negative")
+    if total_fee_sats < 0:
+        raise ValueError("Transaction fees cannot be negative")
     
     budget = get_block_budget_sats(block_height)
     remaining_cap = max(0, TOTAL_HARD_CAP_SATK - current_issued_sats)
@@ -351,22 +362,31 @@ def compute_block_issuance(
     
     stage_id, _, _ = get_combo_spec_for_height(block_height)
     eco_deposit = (minted * ECO_RESERVE_PERCENT) // 100 if (0 < block_height <= TOTAL_BLOCKS) else 0
-    pool_deposit = (minted * COMBO_PERCENT_BY_STAGE[stage_id]) // 100
-    miner_base = minted - pool_deposit - eco_deposit
+    subsidy_pool_deposit = (minted * COMBO_PERCENT_BY_STAGE[stage_id]) // 100
+    miner_base = minted - subsidy_pool_deposit - eco_deposit
+    if block_height > TOTAL_BLOCKS:
+        miner_fee, combo_fee_deposit = split_post_mining_fees(total_fee_sats)
+    else:
+        miner_fee, combo_fee_deposit = total_fee_sats, 0
+    pool_deposit = subsidy_pool_deposit + combo_fee_deposit
     
     available_pool = current_pool_balance_sats + pool_deposit
     is_combo = force_combo or is_combo_block(block_height, block_hash)
     
     combo_payout = 0
     new_pool_balance = available_pool
-    miner_total = miner_base
+    miner_total = miner_base + miner_fee
     new_issued_supply = current_issued_sats + minted
     
     # Assert consensus invariants
-    assert miner_base + pool_deposit + eco_deposit == minted, "Minted partition invariant breached"
-    assert miner_total + new_pool_balance + eco_deposit == current_pool_balance_sats + minted, "Jackpot solvency conservation breached"
-    assert new_issued_supply <= TOTAL_HARD_CAP_SATK, "Total hard cap breached"
-    assert new_pool_balance >= 0, "Negative pool balance detected"
+    if miner_base + subsidy_pool_deposit + eco_deposit != minted:
+        raise ValueError("Minted partition invariant breached")
+    if miner_fee + combo_fee_deposit != total_fee_sats:
+        raise ValueError("Fee partition invariant breached")
+    if new_issued_supply > TOTAL_HARD_CAP_SATK:
+        raise ValueError("Total hard cap breached")
+    if new_pool_balance < 0:
+        raise ValueError("Negative pool balance detected")
     
     return BlockIssuanceResult(
         block_height=block_height,
@@ -376,6 +396,8 @@ def compute_block_issuance(
         miner_base_sats=miner_base,
         pool_deposit_sats=pool_deposit,
         eco_deposit_sats=eco_deposit,
+        miner_fee_sats=miner_fee,
+        combo_fee_deposit_sats=combo_fee_deposit,
         combo_payout_sats=combo_payout,
         miner_total_payout_sats=miner_total,
         new_pool_balance_sats=new_pool_balance,

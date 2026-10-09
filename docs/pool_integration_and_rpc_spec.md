@@ -212,5 +212,5 @@ $$\text{Hashrate (H/s)} = \text{Difficulty} \times \frac{2^{32}}{\text{Observed 
 
 * **官方测试节点 RPC**：`http://seed1.btck.network:8092`
 * **官方 Stratum 参照服务**：`stratum+tcp://pool.btck.network:3333`
-* **开源 Golang 矿池网关源码**：[`src/stratum_gateway_go/`](file:///Users/a1234/btck-core/src/stratum_gateway_go)
+* **开源 Golang 矿池网关源码**：`src/stratum_gateway_go/`
 * **矿池对接专属对接负责人**：`dev@btck.network` / Telegram: `@btck_dev`

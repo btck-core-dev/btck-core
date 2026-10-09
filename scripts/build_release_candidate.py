@@ -26,7 +26,7 @@ NODE_FILES = {
     "Dockerfile", "README.md", "requirements.txt", "docker-compose.yml", "bin/btck-cli",
     "src/web_explorer_server.py",
     "deploy/btckd.service", "deploy/install_seed_node.sh", "deploy/launch_mainnet_guardian.sh",
-    "deploy/verify_chain_replay.py",
+    "deploy/verify_chain_replay.py", "deploy/backup_guardian_state.py",
     "scripts/backup_genesis_state.sh", "scripts/mainnet_preflight.py",
     "scripts/finalize_mainnet_genesis.py", "scripts/mainnet_genesis_rehearsal.py",
     "scripts/mine_mainnet_genesis.py", "scripts/start_node.sh",
@@ -81,6 +81,12 @@ def main() -> None:
     parser.add_argument("--wallet-artifact", type=Path, required=True)
     parser.add_argument("--allow-dirty", action="store_true")
     args = parser.parse_args()
+
+    if (ROOT / "params/networks/mainnet.guardian.json").exists():
+        raise SystemExit(
+            "pre-genesis release builder is retired because MAINNET genesis already exists; "
+            "use scripts/build_mainnet_release.py after checkpoint approval"
+        )
 
     status = run("git", "status", "--porcelain")
     if status and not args.allow_dirty:

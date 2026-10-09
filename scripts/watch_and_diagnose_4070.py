@@ -4,7 +4,7 @@ watch_and_diagnose_4070.py
 ==========================
 Continuously polls 4070 server over Tailscale (100.73.134.73).
 The moment Tailscale/SSH becomes reachable:
-1. Logs in via SSH (jczhang / jczhang)
+1. Logs in with a configured SSH key and verified known-host entry
 2. Captures real-time GPU thermals, VRAM junction temp, fan speed (nvidia-smi)
 3. Captures CPU temperatures (sensors / sysfs thermal zones)
 4. Checks previous boot crash logs (journalctl -b -1, dmesg) to identify why it buzzed/crashed
@@ -18,11 +18,11 @@ import datetime
 import os
 import sys
 
-REPO_ROOT = "/Users/a1234/btck-core"
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 LOG_FILE = os.path.join(REPO_ROOT, "logs", "4070_hardware_diagnosis.log")
 TARGET_IP = "100.73.134.73"
 SSH_USER = "jczhang"
-SSH_PWD = "jczhang"
+SSH_KEY = os.environ.get("BTCK_4070_SSH_KEY")
 
 def log(msg):
     ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -49,13 +49,18 @@ def check_ssh_banner(ip, port=22, timeout=1.0):
 
 def diagnose_server(active_ip):
     import paramiko
+    if not SSH_KEY:
+        log("❌ BTCK_4070_SSH_KEY is required; password authentication is disabled")
+        return False
     log(f"🔌 Valid SSH banner received on {active_ip}! Initiating SSH login...")
     
     client = paramiko.SSHClient()
-    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    client.load_system_host_keys()
+    client.set_missing_host_key_policy(paramiko.RejectPolicy())
     
     try:
-        client.connect(active_ip, port=22, username=SSH_USER, password=SSH_PWD, timeout=8)
+        client.connect(active_ip, port=22, username=SSH_USER, key_filename=SSH_KEY,
+                       look_for_keys=False, allow_agent=False, timeout=8)
         log(f"✅ Successfully authenticated to 4070 server via SSH ({active_ip})!")
     except Exception as e:
         log(f"❌ SSH Connection failed: {e}")
@@ -121,8 +126,10 @@ def main():
                     try:
                         import paramiko
                         c = paramiko.SSHClient()
-                        c.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-                        c.connect(TARGET_IP, port=22, username=SSH_USER, password=SSH_PWD, timeout=5)
+                        c.load_system_host_keys()
+                        c.set_missing_host_key_policy(paramiko.RejectPolicy())
+                        c.connect(TARGET_IP, port=22, username=SSH_USER, key_filename=SSH_KEY,
+                                  look_for_keys=False, allow_agent=False, timeout=5)
                         stdin, stdout, _ = c.exec_command("nvidia-smi --query-gpu=temperature.gpu,fan.speed,power.draw --format=csv,noheader,nounits; sensors 2>/dev/null | grep -i 'package id 0' || true")
                         metrics = stdout.read().decode('utf-8', errors='ignore').strip()
                         c.close()
