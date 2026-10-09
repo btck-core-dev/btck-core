@@ -7,12 +7,60 @@ import argparse
 import hashlib
 import json
 import os
+import re
+import shutil
 import sqlite3
 import tempfile
 import time
 from pathlib import Path
 from urllib.error import URLError
 from urllib.request import urlopen
+
+
+SNAPSHOT_NAME = re.compile(r"^\d{8}T\d{6}Z$")
+
+
+def snapshot_directories(backup_root: Path) -> list[Path]:
+    """Return valid snapshot directories from newest to oldest."""
+    return sorted(
+        (
+            path
+            for path in backup_root.iterdir()
+            if path.is_dir() and not path.is_symlink() and SNAPSHOT_NAME.fullmatch(path.name)
+        ),
+        key=lambda path: path.name,
+        reverse=True,
+    )
+
+
+def retention_plan(snapshots: list[Path], keep_hourly: int, keep_daily: int) -> set[Path]:
+    """Keep recent hourly snapshots plus the newest snapshot from recent UTC days."""
+    keep = set(snapshots[:keep_hourly])
+    retained_days: set[str] = set()
+    for snapshot in snapshots:
+        day = snapshot.name[:8]
+        if day in retained_days:
+            continue
+        retained_days.add(day)
+        keep.add(snapshot)
+        if len(retained_days) >= keep_daily:
+            break
+    return keep
+
+
+def prune_snapshots(backup_root: Path, keep_hourly: int, keep_daily: int) -> list[str]:
+    snapshots = snapshot_directories(backup_root)
+    keep = retention_plan(snapshots, keep_hourly, keep_daily)
+    removed: list[str] = []
+    resolved_root = backup_root.resolve()
+    for snapshot in snapshots:
+        if snapshot in keep:
+            continue
+        if snapshot.parent.resolve() != resolved_root or not SNAPSHOT_NAME.fullmatch(snapshot.name):
+            raise RuntimeError(f"refusing to prune unsafe backup path: {snapshot}")
+        shutil.rmtree(snapshot)
+        removed.append(snapshot.name)
+    return removed
 
 
 def backup_sqlite(source: Path, destination: Path) -> None:
@@ -42,7 +90,11 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, default=Path("/home/ubuntu/btck-mainnet-guardian"))
     parser.add_argument("--backup-root", type=Path, default=Path("/home/ubuntu/btck-mainnet-backups"))
+    parser.add_argument("--keep-hourly", type=int, default=24)
+    parser.add_argument("--keep-daily", type=int, default=7)
     args = parser.parse_args()
+    if args.keep_hourly < 1 or args.keep_daily < 1:
+        parser.error("backup retention must keep at least one hourly and one daily snapshot")
     stamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
     args.backup_root.mkdir(parents=True, exist_ok=True)
     temporary = Path(tempfile.mkdtemp(prefix=".backup.", dir=args.backup_root))
@@ -73,6 +125,9 @@ def main() -> None:
         replacement.symlink_to(final.name)
         os.replace(replacement, latest)
         print(final)
+        removed = prune_snapshots(args.backup_root, args.keep_hourly, args.keep_daily)
+        if removed:
+            print(f"pruned {len(removed)} expired snapshot(s): {', '.join(removed)}")
     finally:
         if temporary.exists():
             for path in temporary.iterdir():
