@@ -65,6 +65,18 @@ class TestPrivateWebSurfaces(unittest.TestCase):
         self.assertNotIn("v.address.toLowerCase()", pool)
         self.assertIn("Payout identity withheld", pool)
 
+    def test_pool_combo_policy_states_scope_and_payout_boundaries(self):
+        pool = (ROOT / "web" / "index.html").read_text(encoding="utf-8")
+        self.assertIn("Official Pool Policy · Anti-Hopping", pool)
+        self.assertIn("at least 95% of the epoch's slots", pool)
+        self.assertIn("failing the Combo gate removes only official-pool Combo eligibility".lower(), pool.lower())
+        self.assertIn("not a BlockDAG consensus rule", pool)
+        self.assertIn("Private Stratum shares never enter L1 winner selection", pool)
+        self.assertIn("no qualified pool candidate", pool)
+        self.assertIn("no fixed return or prize multiple is promised", pool)
+        self.assertNotIn("hashrate works for free", pool.lower())
+        self.assertNotIn("guaranteed profit", pool.lower())
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -487,6 +487,127 @@
       border-radius: 2px;
     }
 
+    /* Official-pool Combo attribution policy */
+    .combo-policy-card {
+      background: linear-gradient(135deg, rgba(6, 182, 212, 0.08), rgba(16, 185, 129, 0.06)), var(--bg-surface);
+      border: 1px solid rgba(16, 185, 129, 0.4);
+      border-radius: 14px;
+      padding: 24px;
+      margin-bottom: 28px;
+    }
+    .combo-policy-heading {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 18px;
+      margin-bottom: 18px;
+    }
+    .combo-policy-kicker {
+      color: var(--emerald-primary);
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.8px;
+      text-transform: uppercase;
+    }
+    .combo-policy-heading h2 {
+      color: #fff;
+      font-size: 24px;
+      line-height: 1.2;
+      margin-top: 5px;
+    }
+    .combo-policy-status {
+      border: 1px solid var(--gold-primary);
+      border-radius: 5px;
+      color: var(--gold-light);
+      flex: 0 0 auto;
+      font-family: var(--font-mono);
+      font-size: 10px;
+      font-weight: 800;
+      padding: 5px 9px;
+    }
+    .combo-policy-summary {
+      color: var(--text-secondary);
+      font-size: 13px;
+      margin-bottom: 18px;
+      max-width: 1080px;
+    }
+    .combo-policy-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+      margin-bottom: 18px;
+    }
+    .combo-policy-rule {
+      background: rgba(10, 13, 20, 0.72);
+      border: 1px solid var(--border-medium);
+      border-radius: 9px;
+      padding: 16px;
+    }
+    .combo-policy-rule strong {
+      color: var(--cyan-primary);
+      display: block;
+      font-size: 13px;
+      margin-bottom: 6px;
+    }
+    .combo-policy-rule p {
+      color: var(--text-secondary);
+      font-size: 12px;
+      line-height: 1.55;
+    }
+    .combo-policy-table-wrap {
+      border: 1px solid var(--border-medium);
+      border-radius: 9px;
+      overflow-x: auto;
+    }
+    .combo-policy-table {
+      border-collapse: collapse;
+      min-width: 820px;
+      width: 100%;
+    }
+    .combo-policy-table th,
+    .combo-policy-table td {
+      border-bottom: 1px solid var(--border-subtle);
+      padding: 10px 12px;
+      text-align: left;
+      white-space: nowrap;
+    }
+    .combo-policy-table th {
+      background: rgba(10, 13, 20, 0.72);
+      color: var(--text-muted);
+      font-size: 10px;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+    }
+    .combo-policy-table td {
+      color: var(--text-secondary);
+      font-family: var(--font-mono);
+      font-size: 11px;
+    }
+    .combo-policy-table tr:last-child td { border-bottom: 0; }
+    .combo-policy-boundary {
+      background: rgba(245, 158, 11, 0.08);
+      border-left: 3px solid var(--gold-primary);
+      color: var(--text-secondary);
+      font-size: 12px;
+      line-height: 1.6;
+      margin-top: 16px;
+      padding: 12px 14px;
+    }
+    .combo-policy-boundary strong { color: var(--gold-light); }
+    .combo-policy-motto {
+      color: var(--emerald-primary);
+      font-family: var(--font-mono);
+      font-size: 12px;
+      font-weight: 700;
+      margin-top: 14px;
+      text-align: center;
+    }
+    @media (max-width: 900px) {
+      .combo-policy-grid { grid-template-columns: 1fr; }
+      .combo-policy-heading { flex-direction: column; }
+    }
+
     .stats-grid {
       display: grid;
       grid-template-columns: repeat(6, 1fr);
@@ -844,6 +965,7 @@
       <!-- Links -->
       <div class="header-links">
         <a href="#section-jackpot" class="nav-btn">Jackpot</a>
+        <a href="#section-combo-policy" class="nav-btn">Combo Rules</a>
         <a href="#section-miners" class="nav-btn">Workers</a>
         <a href="#section-blocks" class="nav-btn">Blocks</a>
         <a href="#section-setup" class="nav-btn">Setup</a>
@@ -938,6 +1060,67 @@
         </div>
 
       </div>
+    </section>
+
+    <!-- ==================================================================== -->
+    <!-- OFFICIAL POOL COMBO ATTRIBUTION POLICY (not L1 consensus) -->
+    <!-- ==================================================================== -->
+    <section class="combo-policy-card" id="section-combo-policy">
+      <div class="combo-policy-heading">
+        <div>
+          <div class="combo-policy-kicker">Official Pool Policy · Anti-Hopping</div>
+          <h2>Continuous contribution protects pool-side Combo eligibility</h2>
+        </div>
+        <span class="combo-policy-status">POLICY PREVIEW · GUARDIAN ACCESS ONLY</span>
+      </div>
+
+      <p class="combo-policy-summary">
+        Regular block income and Combo attribution are separate. Normal PPLNS income is allocated by accepted-share difficulty and the published pool-fee schedule. If this official pool's on-chain coinbase wins a Combo, the pool attributes that Combo entitlement to one qualified worker identity under the rules below and credits each tranche only after its consensus unlock height.
+      </p>
+
+      <div class="combo-policy-grid">
+        <div class="combo-policy-rule">
+          <strong>1 · Qualification is measured from accepted shares</strong>
+          <p>A worker identity is the exact wallet-address and worker-name pair. It qualifies only when at least 95% of the epoch's slots contain an accepted share and the stage-specific consecutive-miss limit is not exceeded. This ledger rule does not prove a distinct physical machine.</p>
+        </div>
+        <div class="combo-policy-rule">
+          <strong>2 · The same future beacon selects attribution</strong>
+          <p>If the original pool worker is qualified, its winning block remains the attributed block. If not, the pool re-applies the same committed future beacon to blocks contributed by qualified official-pool workers and selects the nearest XOR candidate.</p>
+        </div>
+        <div class="combo-policy-rule">
+          <strong>3 · PPLNS income is not forfeited</strong>
+          <p>Failing the Combo gate removes only official-pool Combo eligibility. Valid accepted shares remain eligible for ordinary PPLNS accounting. If the epoch has no qualified pool candidate, its Combo remains undistributed rather than being promised to an ineligible worker.</p>
+        </div>
+      </div>
+
+      <div class="combo-policy-table-wrap" aria-label="Combo qualification schedule">
+        <table class="combo-policy-table">
+          <thead>
+            <tr>
+              <th>Stage</th>
+              <th>Combo funding</th>
+              <th>Epoch</th>
+              <th>Share slot</th>
+              <th>Minimum duty cycle</th>
+              <th>Max consecutive misses</th>
+              <th>Initial release</th>
+              <th>Full maturity</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td>Year 1</td><td>15%</td><td>12h</td><td>10 min</td><td>95%</td><td>1 slot</td><td>50%</td><td>48h</td></tr>
+            <tr><td>Year 2</td><td>25%</td><td>36h</td><td>10 min</td><td>95%</td><td>2 slots</td><td>25%</td><td>144h</td></tr>
+            <tr><td>Year 3</td><td>35%</td><td>108h</td><td>15 min</td><td>95%</td><td>3 slots</td><td>10%</td><td>432h</td></tr>
+            <tr><td>Year 4</td><td>45%</td><td>324h</td><td>30 min</td><td>95%</td><td>4 slots</td><td>10%</td><td>1,296h</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="combo-policy-boundary">
+        <strong>Scope boundary:</strong> this is an internal payout policy of the official pool, not a BlockDAG consensus rule. Private Stratum shares never enter L1 winner selection. Solo miners and other pools keep the Combo outcomes assigned by their on-chain coinbase; this pool cannot cancel or redirect them. Combo amounts are determined by the actual reserve balance—no fixed return or prize multiple is promised. Current pool fees are shown live above; the schedule is 5% for days 1–7, 3% for days 8–30, and 1% from day 31 onward.
+      </div>
+
+      <div class="combo-policy-motto">Regular rewards follow contributed shares. Pool-side Combo eligibility follows continuous contribution.</div>
     </section>
 
     <!-- ==================================================================== -->

@@ -88,8 +88,8 @@ git diff --check
 
 外审基准为提交 `5025b17`，结论见 [`docs/49_BTCK_FULL_INDEPENDENT_AUDIT_REPORT_2026-10-09.md`](docs/49_BTCK_FULL_INDEPENDENT_AUDIT_REPORT_2026-10-09.md)。L1 源码外审已通过；以下清单是后续工作的唯一主顺序，任何一项不得用模拟或自签数据代替真实证据。
 
-- [ ] **2. 稳定运行 Stage-A**：Guardian 与两台 KS0 持续护网；不改共识、不开放公网，持续执行健康检查、SQLite 完整备份和异机副本验证。
-- [ ] **3. 准备独立基础设施**：准备第二公网 Seed、两个真正独立的重放环境、仓库外离线 Ed25519 签名密钥及受信公钥分发渠道。准备完成不等于提前开放端口。
+- [ ] **2. 稳定运行 Stage-A**：Guardian 与两台 KS0 持续护网；不改共识、不开放公网，持续执行健康检查、SQLite 完整备份和异机副本验证。已增加 `scripts/verify_guardian_stage_a.py`，对每个异机快照执行哈希、双 SQLite 完整性、网络身份、资产守恒、快照新鲜度和预期 worker 在线检查；这是持续门禁，不能因单次 PASS 提前勾选完成。
+- [ ] **3. 准备独立基础设施**：准备第二公网 Seed、两个真正独立的重放环境、仓库外离线 Ed25519 签名密钥及受信公钥分发渠道。安全部署边界与验收命令见 `docs/cloud_seed_node_deployment_guide.md`；购买独立故障域主机、创建仓库外密钥和分发信任锚仍须由持有人完成。准备完成不等于提前开放端口。
 - [ ] **4. 冻结高度 271,828 checkpoint**：链真实到达目标高度后，保存候选区块哈希、状态根、完整数据库备份和 Stage-A 身份证据；不得手填或预生成结果。
 - [ ] **5. 审批 Stage-B manifest**：两个独立环境对同一候选执行全 journal 重放；仅在 checkpoint、state root、供给、UTXO、奖池和数据库摘要完全一致后签发独立 approval ID。
 - [ ] **6. 构建最终发布制品**：从 clean、已签 tag 构建两次字节一致的钱包、节点和矿池包，生成 checkpoint-bound manifest、SHA-256、SBOM，并使用仓库外私钥离线签名。
