@@ -1,0 +1,45 @@
+# Security & Secret exclusions
+secrets/
+docs_internal_confidential/
+tools_internal/
+tools/dual_profit_monitor.py
+tools/multi_miner_auto_provisioner.py
+tools/broadcast_guardian_alert.py
+tools/desktop_treasury_wallet_app.py
+tools/desktop_wallet_app.py
+tools/ks0_power_guardian.py
+*.key
+*privkey*
+*wallet.json
+*.tar.gz
+*.tar.gz.sha256
+backups/
+.env
+
+# Logs & Runtime
+logs/
+data/
+*.log
+tools/*_report.json
+tools/profit_history.json
+tools/profit_monitor.log
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.coverage
+
+# Virtual Environments
+venv/
+env/
+.venv/
+build/
+dist/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Contracts artifacts
+contracts/node_modules/
+contracts/build/

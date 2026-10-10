@@ -1,0 +1,11 @@
+[Unit]
+Description=Finalize BTC-K v3 24-hour mining acceptance report
+After=docker.service btck-observation.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/btck-devnet
+ExecStart=/home/ubuntu/btck-devnet/deploy/finalize_v3_acceptance.sh

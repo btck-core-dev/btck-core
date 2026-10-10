@@ -1,0 +1,1729 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BTC-K Mining Pool</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-base: #0a0d14;
+      --bg-surface: #111622;
+      --bg-surface-elevated: #161d2c;
+      --bg-surface-hover: #1c2538;
+      --border-subtle: #1c2436;
+      --border-medium: #27334d;
+      --border-highlight: #3b4d73;
+      
+      --gold-primary: #f59e0b;
+      --gold-light: #fbbf24;
+      --gold-dim: #b45309;
+      --gold-glow: rgba(245, 158, 11, 0.25);
+      
+      --emerald-primary: #10b981;
+      --emerald-glow: rgba(16, 185, 129, 0.25);
+      
+      --cyan-primary: #06b6d4;
+      --cyan-glow: rgba(6, 182, 212, 0.25);
+      
+      --purple-primary: #8b5cf6;
+      --purple-glow: rgba(139, 92, 246, 0.25);
+      
+      --red-primary: #ef4444;
+      
+      --text-main: #f8fafc;
+      --text-secondary: #94a3b8;
+      --text-muted: #64748b;
+      
+      --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      --font-mono: "JetBrains Mono", monospace;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background-color: var(--bg-base);
+      color: var(--text-main);
+      font-family: var(--font-sans);
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+      padding-bottom: 60px;
+    }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar { width: 8px; height: 8px; }
+    ::-webkit-scrollbar-track { background: var(--bg-base); }
+    ::-webkit-scrollbar-thumb { background: var(--border-medium); border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--border-highlight); }
+
+    .container {
+      max-width: 1440px;
+      margin: 0 auto;
+      padding: 0 24px;
+    }
+
+    /* Top Promo Bar */
+    .top-promo-bar {
+      background: linear-gradient(90deg, #111622 0%, rgba(245, 158, 11, 0.15) 50%, #111622 100%);
+      border-bottom: 1px solid rgba(245, 158, 11, 0.3);
+      padding: 8px 0;
+      font-size: 13px;
+      text-align: center;
+      color: var(--gold-light);
+      font-weight: 500;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 12px;
+    }
+    .top-promo-bar .badge {
+      background: var(--gold-primary);
+      color: #000;
+      font-weight: 700;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    /* Header Nav */
+    header {
+      background: rgba(17, 22, 34, 0.85);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border-subtle);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      padding: 14px 0;
+    }
+    .header-inner {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 20px;
+      flex-wrap: wrap;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      text-decoration: none;
+      color: #fff;
+    }
+    .brand-icon {
+      width: 40px;
+      height: 40px;
+      border-radius: 10px;
+      background: linear-gradient(135deg, #f59e0b 0%, #10b981 100%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 22px;
+      box-shadow: 0 0 15px var(--gold-glow);
+    }
+    .brand-text h1 {
+      font-size: 20px;
+      font-weight: 800;
+      letter-spacing: -0.5px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      line-height: 1.1;
+    }
+    .brand-text h1 span {
+      background: linear-gradient(135deg, #f59e0b, #10b981);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .brand-text p {
+      font-size: 11px;
+      color: var(--text-muted);
+      font-family: var(--font-mono);
+      letter-spacing: 0.5px;
+    }
+
+    .header-stratum {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      background: var(--bg-base);
+      border: 1px solid var(--border-medium);
+      padding: 6px 14px;
+      border-radius: 8px;
+      font-family: var(--font-mono);
+      font-size: 12px;
+    }
+    .stratum-tag {
+      color: var(--emerald-primary);
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .stratum-tag .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--emerald-primary);
+      box-shadow: 0 0 8px var(--emerald-primary);
+      animation: pulse 2s infinite;
+    }
+    .copy-btn {
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid var(--border-medium);
+      color: var(--text-secondary);
+      padding: 4px 10px;
+      border-radius: 5px;
+      cursor: pointer;
+      font-size: 11px;
+      font-family: var(--font-sans);
+      font-weight: 600;
+      transition: all 0.2s;
+    }
+    .copy-btn:hover {
+      background: rgba(255, 255, 255, 0.15);
+      color: #fff;
+    }
+
+    .header-links {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .nav-btn {
+      text-decoration: none;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-secondary);
+      padding: 6px 12px;
+      border-radius: 6px;
+      transition: all 0.2s;
+      border: 1px solid transparent;
+    }
+    .nav-btn:hover {
+      color: #fff;
+      background: var(--bg-surface-elevated);
+      border-color: var(--border-medium);
+    }
+    .nav-btn.active {
+      color: #fff;
+      background: var(--border-medium);
+    }
+    .nav-btn.wallet-btn {
+      color: var(--emerald-primary);
+      background: rgba(16, 185, 129, 0.12);
+      border-color: rgba(16, 185, 129, 0.3);
+    }
+    .nav-btn.wallet-btn:hover {
+      background: rgba(16, 185, 129, 0.2);
+    }
+
+    /* Main Content */
+    main {
+      padding-top: 24px;
+    }
+
+    /* ==================================================================== */
+    /* HERO: 12-HOUR EULER COMBO JACKPOT SHOWCASE (LuckyPool / K1Pool Style) */
+    /* ==================================================================== */
+    .hero-jackpot-card {
+      background: radial-gradient(ellipse at 15% 25%, rgba(245, 158, 11, 0.18) 0%, rgba(17, 22, 34, 0.95) 70%), var(--bg-surface);
+      border: 1px solid rgba(245, 158, 11, 0.4);
+      border-radius: 16px;
+      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5), 0 0 30px rgba(245, 158, 11, 0.12);
+      padding: 30px;
+      margin-bottom: 28px;
+      position: relative;
+      overflow: hidden;
+    }
+    .hero-jackpot-card::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 3px;
+      background: linear-gradient(90deg, transparent, #f59e0b, #fbbf24, #10b981, transparent);
+    }
+
+    .jackpot-grid {
+      display: grid;
+      grid-template-columns: 1.1fr 1fr 1.3fr;
+      gap: 28px;
+      align-items: center;
+    }
+    @media (max-width: 1100px) {
+      .jackpot-grid { grid-template-columns: 1fr; gap: 24px; }
+    }
+
+    /* Left: Countdown & Progress */
+    .jackpot-timer-col {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    .jackpot-header-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--gold-light);
+      background: rgba(245, 158, 11, 0.15);
+      border: 1px solid rgba(245, 158, 11, 0.35);
+      padding: 4px 12px;
+      border-radius: 20px;
+      width: fit-content;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .jackpot-title {
+      font-size: 26px;
+      font-weight: 800;
+      letter-spacing: -0.5px;
+      color: #fff;
+      line-height: 1.2;
+    }
+    .jackpot-countdown-boxes {
+      display: flex;
+      gap: 10px;
+      margin: 4px 0;
+    }
+    .countdown-unit {
+      background: rgba(10, 13, 20, 0.85);
+      border: 1px solid var(--border-medium);
+      border-radius: 10px;
+      padding: 10px 14px;
+      min-width: 72px;
+      text-align: center;
+      box-shadow: inset 0 2px 4px rgba(0,0,0,0.5);
+    }
+    .countdown-val {
+      font-family: var(--font-mono);
+      font-size: 32px;
+      font-weight: 800;
+      color: #fff;
+      line-height: 1;
+    }
+    .countdown-lbl {
+      font-size: 10px;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-top: 4px;
+      font-weight: 600;
+    }
+    .jackpot-progress-wrap {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .jackpot-progress-info {
+      display: flex;
+      justify-content: space-between;
+      font-size: 12px;
+      color: var(--text-secondary);
+      font-family: var(--font-mono);
+    }
+    .jackpot-progress-bar {
+      height: 8px;
+      background: var(--bg-base);
+      border-radius: 4px;
+      overflow: hidden;
+      border: 1px solid var(--border-subtle);
+    }
+    .jackpot-progress-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #f59e0b, #fbbf24);
+      border-radius: 4px;
+      transition: width 0.5s ease;
+    }
+
+    /* Center: Prize Amount Highlight */
+    .jackpot-amount-col {
+      background: rgba(10, 13, 20, 0.6);
+      border: 1px solid rgba(245, 158, 11, 0.25);
+      border-radius: 14px;
+      padding: 24px;
+      text-align: center;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+    }
+    .jackpot-pool-tag {
+      font-size: 12px;
+      color: var(--gold-light);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      font-weight: 700;
+      margin-bottom: 6px;
+    }
+    .jackpot-big-number {
+      font-family: var(--font-mono);
+      font-size: 42px;
+      font-weight: 800;
+      color: #fff;
+      text-shadow: 0 0 25px var(--gold-glow);
+      line-height: 1.1;
+      display: flex;
+      align-items: baseline;
+      justify-content: center;
+      gap: 8px;
+    }
+    .jackpot-big-number .symbol {
+      color: var(--gold-primary);
+      font-size: 24px;
+    }
+    .jackpot-usd-sub {
+      font-size: 15px;
+      color: var(--text-secondary);
+      margin-top: 4px;
+      font-family: var(--font-mono);
+      font-weight: 500;
+    }
+    .jackpot-boost-pill {
+      margin-top: 14px;
+      background: linear-gradient(135deg, rgba(245, 158, 11, 0.2), rgba(16, 185, 129, 0.2));
+      border: 1px solid var(--gold-primary);
+      color: #fff;
+      padding: 6px 14px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 700;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    /* Right: Champions / Recent Grand Winners Table */
+    .jackpot-winners-col {
+      background: rgba(10, 13, 20, 0.6);
+      border: 1px solid var(--border-medium);
+      border-radius: 14px;
+      padding: 18px;
+    }
+    .jackpot-winners-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--border-subtle);
+    }
+    .jackpot-winners-header h3 {
+      font-size: 14px;
+      font-weight: 700;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .jackpot-winners-header a {
+      font-size: 11px;
+      color: var(--cyan-primary);
+      text-decoration: none;
+      font-weight: 600;
+    }
+    .jackpot-winners-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+      font-family: var(--font-mono);
+    }
+    .jackpot-winners-table th {
+      text-align: left;
+      color: var(--text-muted);
+      padding: 6px 8px;
+      font-size: 11px;
+      border-bottom: 1px solid var(--border-subtle);
+      font-weight: 600;
+    }
+    .jackpot-winners-table td {
+      padding: 8px 8px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+      color: var(--text-secondary);
+    }
+    .jackpot-winners-table tr:last-child td {
+      border-bottom: none;
+    }
+    .winner-highlight {
+      color: var(--gold-light);
+      font-weight: 700;
+    }
+    .winner-addr {
+      color: var(--text-main);
+      cursor: pointer;
+    }
+    .winner-addr:hover {
+      text-decoration: underline;
+      color: var(--cyan-primary);
+    }
+
+    /* ==================================================================== */
+    /* GLOBAL POOL STATISTICS (Card Grid - K1Pool Style) */
+    /* ==================================================================== */
+    .section-title {
+      font-size: 18px;
+      font-weight: 700;
+      color: #fff;
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .section-title .accent-bar {
+      width: 4px;
+      height: 18px;
+      background: var(--gold-primary);
+      border-radius: 2px;
+    }
+
+    /* Official-pool Combo attribution policy */
+    .combo-policy-card {
+      background: linear-gradient(135deg, rgba(6, 182, 212, 0.08), rgba(16, 185, 129, 0.06)), var(--bg-surface);
+      border: 1px solid rgba(16, 185, 129, 0.4);
+      border-radius: 14px;
+      padding: 24px;
+      margin-bottom: 28px;
+    }
+    .combo-policy-heading {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 18px;
+      margin-bottom: 18px;
+    }
+    .combo-policy-kicker {
+      color: var(--emerald-primary);
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.8px;
+      text-transform: uppercase;
+    }
+    .combo-policy-heading h2 {
+      color: #fff;
+      font-size: 24px;
+      line-height: 1.2;
+      margin-top: 5px;
+    }
+    .combo-policy-status {
+      border: 1px solid var(--gold-primary);
+      border-radius: 5px;
+      color: var(--gold-light);
+      flex: 0 0 auto;
+      font-family: var(--font-mono);
+      font-size: 10px;
+      font-weight: 800;
+      padding: 5px 9px;
+    }
+    .combo-policy-summary {
+      color: var(--text-secondary);
+      font-size: 13px;
+      margin-bottom: 18px;
+      max-width: 1080px;
+    }
+    .combo-policy-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+      margin-bottom: 18px;
+    }
+    .combo-policy-rule {
+      background: rgba(10, 13, 20, 0.72);
+      border: 1px solid var(--border-medium);
+      border-radius: 9px;
+      padding: 16px;
+    }
+    .combo-policy-rule strong {
+      color: var(--cyan-primary);
+      display: block;
+      font-size: 13px;
+      margin-bottom: 6px;
+    }
+    .combo-policy-rule p {
+      color: var(--text-secondary);
+      font-size: 12px;
+      line-height: 1.55;
+    }
+    .combo-policy-table-wrap {
+      border: 1px solid var(--border-medium);
+      border-radius: 9px;
+      overflow-x: auto;
+    }
+    .combo-policy-table {
+      border-collapse: collapse;
+      min-width: 820px;
+      width: 100%;
+    }
+    .combo-policy-table th,
+    .combo-policy-table td {
+      border-bottom: 1px solid var(--border-subtle);
+      padding: 10px 12px;
+      text-align: left;
+      white-space: nowrap;
+    }
+    .combo-policy-table th {
+      background: rgba(10, 13, 20, 0.72);
+      color: var(--text-muted);
+      font-size: 10px;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+    }
+    .combo-policy-table td {
+      color: var(--text-secondary);
+      font-family: var(--font-mono);
+      font-size: 11px;
+    }
+    .combo-policy-table tr:last-child td { border-bottom: 0; }
+    .combo-policy-boundary {
+      background: rgba(245, 158, 11, 0.08);
+      border-left: 3px solid var(--gold-primary);
+      color: var(--text-secondary);
+      font-size: 12px;
+      line-height: 1.6;
+      margin-top: 16px;
+      padding: 12px 14px;
+    }
+    .combo-policy-boundary strong { color: var(--gold-light); }
+    .combo-policy-motto {
+      color: var(--emerald-primary);
+      font-family: var(--font-mono);
+      font-size: 12px;
+      font-weight: 700;
+      margin-top: 14px;
+      text-align: center;
+    }
+    @media (max-width: 900px) {
+      .combo-policy-grid { grid-template-columns: 1fr; }
+      .combo-policy-heading { flex-direction: column; }
+    }
+
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(6, 1fr);
+      gap: 16px;
+      margin-bottom: 28px;
+    }
+    @media (max-width: 1200px) {
+      .stats-grid { grid-template-columns: repeat(3, 1fr); }
+    }
+    @media (max-width: 640px) {
+      .stats-grid { grid-template-columns: repeat(2, 1fr); }
+    }
+
+    .stat-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: 12px;
+      padding: 18px;
+      transition: transform 0.2s, border-color 0.2s;
+    }
+    .stat-card:hover {
+      border-color: var(--border-highlight);
+      transform: translateY(-2px);
+    }
+    .stat-card-label {
+      font-size: 11px;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      font-weight: 600;
+      margin-bottom: 6px;
+    }
+    .stat-card-value {
+      font-family: var(--font-mono);
+      font-size: 20px;
+      font-weight: 800;
+      color: #fff;
+      line-height: 1.2;
+    }
+    .stat-card-sub {
+      font-size: 11px;
+      color: var(--text-secondary);
+      margin-top: 4px;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    /* ==================================================================== */
+    /* MINER LOOKUP & PERSONAL DASHBOARD ("Track Your Miner") */
+    /* ==================================================================== */
+    .lookup-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: 14px;
+      padding: 24px;
+      margin-bottom: 28px;
+    }
+    .lookup-form {
+      display: flex;
+      gap: 12px;
+      margin-top: 12px;
+    }
+    .lookup-input-wrap {
+      flex: 1;
+      position: relative;
+    }
+    .lookup-input {
+      width: 100%;
+      background: var(--bg-base);
+      border: 1px solid var(--border-medium);
+      color: #fff;
+      padding: 12px 16px;
+      border-radius: 8px;
+      font-family: var(--font-mono);
+      font-size: 14px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    .lookup-input:focus {
+      border-color: var(--gold-primary);
+      box-shadow: 0 0 10px rgba(245, 158, 11, 0.2);
+    }
+    .lookup-btn {
+      background: var(--gold-primary);
+      color: #000;
+      border: none;
+      padding: 0 24px;
+      border-radius: 8px;
+      font-weight: 700;
+      font-size: 14px;
+      cursor: pointer;
+      transition: background 0.2s;
+      white-space: nowrap;
+    }
+    .lookup-btn:hover {
+      background: var(--gold-light);
+    }
+
+    .miner-personal-panel {
+      display: none;
+      margin-top: 20px;
+      background: rgba(10, 13, 20, 0.6);
+      border: 1px solid var(--border-medium);
+      border-radius: 10px;
+      padding: 20px;
+    }
+    .miner-personal-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+    @media (max-width: 800px) {
+      .miner-personal-grid { grid-template-columns: repeat(2, 1fr); }
+    }
+
+    /* ==================================================================== */
+    /* LIVE WORKERS & BLOCKS TABLES */
+    /* ==================================================================== */
+    .tables-split {
+      display: grid;
+      grid-template-columns: 1.4fr 1fr;
+      gap: 24px;
+      margin-bottom: 28px;
+    }
+    @media (max-width: 1024px) {
+      .tables-split { grid-template-columns: 1fr; }
+    }
+
+    .table-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: 14px;
+      padding: 20px;
+      overflow: hidden;
+    }
+    .table-header-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 14px;
+    }
+    .table-filter-tabs {
+      display: flex;
+      gap: 6px;
+    }
+    .filter-tab {
+      background: transparent;
+      border: 1px solid var(--border-medium);
+      color: var(--text-secondary);
+      font-size: 11px;
+      padding: 4px 10px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-weight: 600;
+      transition: all 0.2s;
+    }
+    .filter-tab:hover, .filter-tab.active {
+      background: var(--border-medium);
+      color: #fff;
+    }
+
+    .pool-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+    .pool-table th {
+      text-align: left;
+      color: var(--text-muted);
+      padding: 10px 12px;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      border-bottom: 1px solid var(--border-subtle);
+      background: rgba(10, 13, 20, 0.4);
+      font-weight: 600;
+    }
+    .pool-table td {
+      padding: 12px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+      color: var(--text-secondary);
+      font-family: var(--font-mono);
+      font-size: 12px;
+    }
+    .pool-table tr:hover td {
+      background: rgba(255, 255, 255, 0.02);
+      color: #fff;
+    }
+    .pool-table tr:last-child td {
+      border-bottom: none;
+    }
+
+    .status-dot-active {
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--emerald-primary);
+      box-shadow: 0 0 8px var(--emerald-primary);
+      margin-right: 6px;
+    }
+    .badge-mode {
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+    .badge-solo {
+      background: rgba(139, 92, 246, 0.18);
+      color: #c4b5fd;
+      border: 1px solid rgba(139, 92, 246, 0.35);
+    }
+    .badge-pplns {
+      background: rgba(6, 182, 212, 0.18);
+      color: #67e8f9;
+      border: 1px solid rgba(6, 182, 212, 0.35);
+    }
+
+    /* Quick Setup Guide */
+    .setup-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: 14px;
+      padding: 24px;
+      margin-bottom: 28px;
+    }
+    .setup-tabs {
+      display: flex;
+      gap: 10px;
+      border-bottom: 1px solid var(--border-subtle);
+      padding-bottom: 12px;
+      margin-bottom: 16px;
+    }
+    .setup-tab-btn {
+      background: transparent;
+      border: 1px solid var(--border-medium);
+      color: var(--text-secondary);
+      padding: 6px 14px;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .setup-tab-btn.active {
+      background: var(--gold-primary);
+      color: #000;
+      border-color: var(--gold-primary);
+    }
+    .config-box {
+      background: var(--bg-base);
+      border: 1px solid var(--border-medium);
+      border-radius: 8px;
+      padding: 16px;
+      font-family: var(--font-mono);
+      font-size: 13px;
+      color: #e2e8f0;
+      line-height: 1.7;
+    }
+    .config-box .comment { color: var(--text-muted); }
+    .config-box .key { color: var(--gold-light); font-weight: 600; }
+    .config-box .val { color: var(--emerald-primary); }
+
+    /* Footer */
+    footer {
+      border-top: 1px solid var(--border-subtle);
+      padding-top: 24px;
+      margin-top: 40px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 16px;
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+    .footer-links {
+      display: flex;
+      gap: 18px;
+    }
+    .footer-links a {
+      color: var(--text-secondary);
+      text-decoration: none;
+      transition: color 0.2s;
+    }
+    .footer-links a:hover {
+      color: var(--gold-light);
+    }
+
+    /* Toast */
+    #toast {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      background: var(--bg-surface-elevated);
+      border: 1px solid var(--emerald-primary);
+      color: #fff;
+      padding: 10px 18px;
+      border-radius: 8px;
+      font-size: 13px;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+      z-index: 999;
+      opacity: 0;
+      transform: translateY(10px);
+      transition: all 0.3s;
+      pointer-events: none;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    #toast.show {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    @keyframes pulse {
+      0% { opacity: 1; }
+      50% { opacity: 0.4; }
+      100% { opacity: 1; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Top Announcement Bar -->
+  <div class="top-promo-bar">
+    <span class="badge">🔥 Time-Decay Fee Schedule</span>
+    <span id="pool-fee-announcement"><strong>Pool fee policy loading…</strong></span>
+    <span style="color: var(--text-muted);">|</span>
+    <span id="promo-hours-left">Loading fee stage…</span>
+    <span style="color: var(--text-muted);">|</span>
+    <span id="telemetry-state" style="color:#f59e0b;">Live data connecting…</span>
+  </div>
+
+  <!-- Header Nav -->
+  <header>
+    <div class="container header-inner">
+      <a href="/" class="brand">
+        <div class="brand-icon">⚡</div>
+        <div class="brand-text">
+          <h1>BTC-K <span>POOL</span></h1>
+          <p>ASIC kHeavyHash BlockDAG</p>
+        </div>
+      </a>
+
+      <!-- Quick Stratum Copy -->
+      <div class="header-stratum">
+        <span class="stratum-tag"><span class="dot"></span> STRATUM</span>
+        <span id="header-stratum-url">pool.bitcoin-k.com:3333</span>
+        <button class="copy-btn" onclick="copyText('stratum+tcp://pool.bitcoin-k.com:3333')">Copy</button>
+      </div>
+
+      <!-- Links -->
+      <div class="header-links">
+        <a href="#section-jackpot" class="nav-btn">Jackpot</a>
+        <a href="#section-combo-policy" class="nav-btn">Combo Rules</a>
+        <a href="#section-miners" class="nav-btn">Workers</a>
+        <a href="#section-blocks" class="nav-btn">Blocks</a>
+        <a href="#section-setup" class="nav-btn">Setup</a>
+        <span class="nav-btn wallet-btn" title="Private keys never enter a browser">Wallet: desktop/CLI only</span>
+      </div>
+    </div>
+  </header>
+
+  <main class="container">
+
+    <!-- ==================================================================== -->
+    <!-- HERO: consensus-authoritative Combo jackpot -->
+    <!-- ==================================================================== -->
+    <section class="hero-jackpot-card" id="section-jackpot">
+      <div class="jackpot-grid">
+        
+        <!-- Left: Countdown & Epoch Info -->
+        <div class="jackpot-timer-col">
+          <div class="jackpot-header-badge">
+            <span>🎰</span>
+            <span id="hero-epoch-label">Loading consensus epoch…</span>
+          </div>
+          
+          <h2 class="jackpot-title">Next Grand Prize Draw In:</h2>
+          
+          <div class="jackpot-countdown-boxes">
+            <div class="countdown-unit">
+              <div class="countdown-val" id="cnt-hours">00</div>
+              <div class="countdown-lbl">Hours</div>
+            </div>
+            <div class="countdown-unit">
+              <div class="countdown-val" id="cnt-mins">00</div>
+              <div class="countdown-lbl">Mins</div>
+            </div>
+            <div class="countdown-unit">
+              <div class="countdown-val" id="cnt-secs">00</div>
+              <div class="countdown-lbl">Secs</div>
+            </div>
+          </div>
+
+          <div class="jackpot-progress-wrap">
+            <div class="jackpot-progress-info">
+              <span>Epoch Progress</span>
+              <span id="jackpot-block-ratio">Loading ledger height…</span>
+            </div>
+            <div class="jackpot-progress-bar">
+              <div class="jackpot-progress-fill" id="jackpot-progress-fill" style="width: 0;"></div>
+            </div>
+            <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">
+              Target Draw Block: <strong id="hero-target-block" style="color: #fff;">—</strong> (Phase 1: every 43,200 blue-order blocks)
+            </div>
+          </div>
+        </div>
+
+        <!-- Center: Prize Pool Counter -->
+        <div class="jackpot-amount-col">
+          <div class="jackpot-pool-tag">Accumulated Prize Pool</div>
+          <div class="jackpot-big-number">
+            <span id="hero-jackpot-number">—</span>
+            <span class="symbol">BTCK</span>
+          </div>
+          <div class="jackpot-usd-sub" id="hero-jackpot-usd">Consensus jackpot UTXO balance</div>
+          
+          <div class="jackpot-boost-pill">
+            <span>✨ 12-Hour Grand Combo Jackpot</span>
+          </div>
+
+          <p style="font-size: 11px; color: var(--text-muted); margin-top: 10px; line-height: 1.4;">
+            In Phase 1, 15% of every canonical blue-order subsidy funds the jackpot and 5% funds the ecosystem reserve. Winner selection uses the committed future beacon and consensus vesting schedule.
+          </p>
+        </div>
+
+        <!-- Right: Recent Jackpot Champions Showcase -->
+        <div class="jackpot-winners-col">
+          <div class="jackpot-winners-header">
+            <h3>🏆 Recent Jackpot Champions</h3>
+            <span style="font-size: 11px; color: var(--text-muted);">Verified On-Chain</span>
+          </div>
+
+          <table class="jackpot-winners-table">
+            <thead>
+              <tr>
+                <th>Height</th>
+                <th>Winner / Address</th>
+                <th style="text-align: right;">Jackpot Won</th>
+              </tr>
+            </thead>
+            <tbody id="jackpot-winners-tbody">
+              <tr><td colspan="3" style="text-align:center;color:var(--text-muted);padding:14px;">Loading consensus draw history…</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- ==================================================================== -->
+    <!-- OFFICIAL POOL COMBO ATTRIBUTION POLICY (not L1 consensus) -->
+    <!-- ==================================================================== -->
+    <section class="combo-policy-card" id="section-combo-policy">
+      <div class="combo-policy-heading">
+        <div>
+          <div class="combo-policy-kicker">Official Pool Policy · Anti-Hopping</div>
+          <h2>Continuous contribution protects pool-side Combo eligibility</h2>
+        </div>
+        <span class="combo-policy-status">POLICY PREVIEW · GUARDIAN ACCESS ONLY</span>
+      </div>
+
+      <p class="combo-policy-summary">
+        Regular block income and Combo attribution are separate. Normal PPLNS income is allocated by accepted-share difficulty and the published pool-fee schedule. If this official pool's on-chain coinbase wins a Combo, the pool attributes that Combo entitlement to one qualified worker identity under the rules below and credits each tranche only after its consensus unlock height.
+      </p>
+
+      <div class="combo-policy-grid">
+        <div class="combo-policy-rule">
+          <strong>1 · Qualification is measured from accepted shares</strong>
+          <p>A worker identity is the exact wallet-address and worker-name pair. It qualifies only when at least 95% of the epoch's slots contain an accepted share and the stage-specific consecutive-miss limit is not exceeded. This ledger rule does not prove a distinct physical machine.</p>
+        </div>
+        <div class="combo-policy-rule">
+          <strong>2 · The same future beacon selects attribution</strong>
+          <p>If the original pool worker is qualified, its winning block remains the attributed block. If not, the pool re-applies the same committed future beacon to blocks contributed by qualified official-pool workers and selects the nearest XOR candidate.</p>
+        </div>
+        <div class="combo-policy-rule">
+          <strong>3 · PPLNS income is not forfeited</strong>
+          <p>Failing the Combo gate removes only official-pool Combo eligibility. Valid accepted shares remain eligible for ordinary PPLNS accounting. If the epoch has no qualified pool candidate, its Combo remains undistributed rather than being promised to an ineligible worker.</p>
+        </div>
+      </div>
+
+      <div class="combo-policy-table-wrap" aria-label="Combo qualification schedule">
+        <table class="combo-policy-table">
+          <thead>
+            <tr>
+              <th>Stage</th>
+              <th>Combo funding</th>
+              <th>Epoch</th>
+              <th>Share slot</th>
+              <th>Minimum duty cycle</th>
+              <th>Max consecutive misses</th>
+              <th>Initial release</th>
+              <th>Full maturity</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td>Year 1</td><td>15%</td><td>12h</td><td>10 min</td><td>95%</td><td>1 slot</td><td>50%</td><td>48h</td></tr>
+            <tr><td>Year 2</td><td>25%</td><td>36h</td><td>10 min</td><td>95%</td><td>2 slots</td><td>25%</td><td>144h</td></tr>
+            <tr><td>Year 3</td><td>35%</td><td>108h</td><td>15 min</td><td>95%</td><td>3 slots</td><td>10%</td><td>432h</td></tr>
+            <tr><td>Year 4</td><td>45%</td><td>324h</td><td>30 min</td><td>95%</td><td>4 slots</td><td>10%</td><td>1,296h</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="combo-policy-boundary">
+        <strong>Scope boundary:</strong> this is an internal payout policy of the official pool, not a BlockDAG consensus rule. Private Stratum shares never enter L1 winner selection. Solo miners and other pools keep the Combo outcomes assigned by their on-chain coinbase; this pool cannot cancel or redirect them. Combo amounts are determined by the actual reserve balance—no fixed return or prize multiple is promised. Current pool fees are shown live above; the schedule is 5% for days 1–7, 3% for days 8–30, and 1% from day 31 onward.
+      </div>
+
+      <div class="combo-policy-motto">Regular rewards follow contributed shares. Pool-side Combo eligibility follows continuous contribution.</div>
+    </section>
+
+    <!-- ==================================================================== -->
+    <!-- GLOBAL POOL STATS GRID (6 Cards - K1Pool Style) -->
+    <!-- ==================================================================== -->
+    <div class="section-title">
+      <div class="accent-bar"></div>
+      <h2>Network & Pool Overview</h2>
+    </div>
+
+    <div class="stats-grid">
+      <!-- 1. Pool Hashrate -->
+      <div class="stat-card">
+        <div class="stat-card-label">Accepted-Share Hashrate</div>
+        <div class="stat-card-value" style="color: var(--emerald-primary);" id="stat-pool-hashrate">Collecting…</div>
+        <div class="stat-card-sub"><span style="color: var(--emerald-primary);">●</span> 10-minute effective estimate; not device telemetry</div>
+      </div>
+
+      <!-- 2. Network Difficulty -->
+      <div class="stat-card">
+        <div class="stat-card-label">Network Difficulty</div>
+        <div class="stat-card-value" style="color: var(--cyan-primary);" id="stat-network-diff">—</div>
+        <div class="stat-card-sub" id="stat-network-diff-note">Consensus DAA (264-block window)</div>
+      </div>
+
+      <!-- 3. BlockDAG Height -->
+      <div class="stat-card">
+        <div class="stat-card-label">Consensus Ledger Height</div>
+        <div class="stat-card-value" id="stat-block-height">—</div>
+        <div class="stat-card-sub">GhostDAG Parallel Ledger</div>
+      </div>
+
+      <!-- 4. Target Cadence -->
+      <div class="stat-card">
+        <div class="stat-card-label">Block Cadence</div>
+        <div class="stat-card-value" id="stat-block-freq">Collecting…</div>
+        <div class="stat-card-sub" id="stat-block-freq-note">Observed blue-order cadence; target: 1.000 BPS</div>
+      </div>
+
+      <!-- 5. Active Workers -->
+      <div class="stat-card">
+        <div class="stat-card-label">Active Miners</div>
+        <div class="stat-card-value" style="color: #fff;" id="stat-active-miners">—</div>
+        <div class="stat-card-sub">SOLO & PPLNS Supported</div>
+      </div>
+
+      <!-- 6. Pool Fee -->
+      <div class="stat-card">
+        <div class="stat-card-label">Pool Fee Rate</div>
+        <div class="stat-card-value" style="color: var(--gold-light);" id="stat-pool-fee">—</div>
+        <div class="stat-card-sub" id="stat-fee-note">Loading accounting ledger…</div>
+      </div>
+    </div>
+
+    <!-- ==================================================================== -->
+    <!-- TRACK A PUBLIC MINER ID (payout addresses remain private) -->
+    <!-- ==================================================================== -->
+    <section class="lookup-card">
+      <div class="section-title" style="margin-bottom: 4px;">
+        <div class="accent-bar"></div>
+        <h2>Track Your Miner & Hashrate</h2>
+      </div>
+      <p style="font-size: 13px; color: var(--text-muted);">
+        Enter the public Miner ID shown in the worker table. Payout addresses and balances are never exposed by the public pool API.
+      </p>
+
+      <div class="lookup-form">
+        <div class="lookup-input-wrap">
+          <input type="text" id="miner-lookup-input" class="lookup-input" placeholder="Miner ID (for example miner-a1b2c3d4e5f6)" onkeyup="handleLookupKeyup(event)">
+        </div>
+        <button class="lookup-btn" onclick="executeMinerLookup()">Lookup Stats</button>
+      </div>
+
+      <!-- Personalized Stats Panel (Toggled on Search) -->
+      <div class="miner-personal-panel" id="miner-personal-panel">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
+          <h3 style="font-size: 15px; color: #fff;" id="mp-title">Worker Statistics</h3>
+          <span class="badge" style="background: rgba(16, 185, 129, 0.2); color: var(--emerald-primary); padding: 4px 10px; border-radius: 4px; font-size: 11px; font-weight: 700;">● Active Hashrate Detected</span>
+        </div>
+
+        <div class="miner-personal-grid">
+          <div style="background: var(--bg-surface); padding: 14px; border-radius: 8px; border: 1px solid var(--border-subtle);">
+            <div style="font-size: 11px; color: var(--text-muted); text-transform: uppercase;">Share Ledger</div>
+            <div style="font-size: 22px; font-weight: 800; color: var(--emerald-primary);" id="mp-shares">Private</div>
+            <div style="font-size: 11px; color: var(--text-muted);">Available only to the authenticated miner</div>
+          </div>
+          <div style="background: var(--bg-surface); padding: 14px; border-radius: 8px; border: 1px solid var(--border-subtle);">
+            <div style="font-size: 11px; color: var(--text-muted); text-transform: uppercase;">Reward History</div>
+            <div style="font-size: 22px; font-weight: 800; color: var(--cyan-primary);" id="mp-blocks">Private</div>
+            <div style="font-size: 11px; color: var(--text-muted);">Not exposed by the public API</div>
+          </div>
+          <div style="background: var(--bg-surface); padding: 14px; border-radius: 8px; border: 1px solid var(--border-subtle);">
+            <div style="font-size: 11px; color: var(--text-muted); text-transform: uppercase;">Payout Privacy</div>
+            <div style="font-size: 22px; font-weight: 800; color: var(--gold-light);" id="mp-payout">Protected</div>
+            <div style="font-size: 11px; color: var(--text-muted);">Address and balance withheld</div>
+          </div>
+          <div style="background: var(--bg-surface); padding: 14px; border-radius: 8px; border: 1px solid var(--border-subtle);">
+            <div style="font-size: 11px; color: var(--text-muted); text-transform: uppercase;">Payment Scheme</div>
+            <div style="font-size: 22px; font-weight: 800; color: #fff;" id="mp-mode">PPLNS</div>
+            <div style="font-size: 11px; color: var(--text-muted);">Stratum Port 3333</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================================================================== -->
+    <!-- TABLES SPLIT: LIVE WORKERS & RECENT BLOCKS (K1Pool / LuckyPool Style) -->
+    <!-- ==================================================================== -->
+    <div class="tables-split">
+      
+      <!-- Table 1: Live Connected Workers -->
+      <div class="table-card" id="section-miners">
+        <div class="table-header-row">
+          <div class="section-title" style="margin-bottom: 0;">
+            <div class="accent-bar"></div>
+            <h2>Active Pool Workers</h2>
+          </div>
+          <div class="table-filter-tabs">
+            <button class="filter-tab active" onclick="filterWorkers('ALL', this)">All (<span id="worker-count-all">5</span>)</button>
+            <button class="filter-tab" onclick="filterWorkers('SOLO', this)">SOLO (<span id="worker-count-solo">2</span>)</button>
+            <button class="filter-tab" onclick="filterWorkers('PPLNS', this)">PPLNS (<span id="worker-count-pplns">3</span>)</button>
+          </div>
+        </div>
+
+        <div style="overflow-x: auto;">
+          <table class="pool-table">
+            <thead>
+              <tr>
+                <th>Status</th>
+                <th>Public Miner ID</th>
+                <th>Scheme</th>
+                <th style="text-align: right;">Hashrate</th>
+                <th style="text-align: right;">Shares</th>
+                <th style="text-align: right;">Rewards</th>
+                <th style="text-align: right;">Privacy</th>
+              </tr>
+            </thead>
+            <tbody id="workers-table-tbody">
+              <!-- Dynamically populated from /api/stats miners_summary -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Table 2: Recent Blocks Found (LuckyPool Style) -->
+      <div class="table-card" id="section-blocks">
+        <div class="table-header-row">
+          <div class="section-title" style="margin-bottom: 0;">
+            <div class="accent-bar"></div>
+            <h2>Recent Blocks Found</h2>
+          </div>
+          <span style="font-size: 11px; color: var(--emerald-primary); font-family: var(--font-mono);">● 1.0s GhostDAG Feed</span>
+        </div>
+
+        <div class="lookup-form" style="margin: 0 0 12px;">
+          <div class="lookup-input-wrap">
+            <input type="text" id="block-search-input" class="lookup-input" placeholder="Search a recent block by height or hash" onkeyup="handleBlockSearchKeyup(event)">
+          </div>
+          <button class="lookup-btn" onclick="searchBlock()">Search Block</button>
+        </div>
+        <div id="block-search-result" style="display:none;margin:0 0 12px;padding:10px;border:1px solid var(--border-subtle);border-radius:6px;color:var(--text-muted);"></div>
+
+        <div style="overflow-x: auto;">
+          <table class="pool-table">
+            <thead>
+              <tr>
+                <th>Height</th>
+                <th>Miner / Finder</th>
+                <th style="text-align: right;">Base Subsidy</th>
+                <th style="text-align: right;">Time</th>
+              </tr>
+            </thead>
+            <tbody id="blocks-table-tbody">
+              <!-- Dynamically populated from /api/stats blocks -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ==================================================================== -->
+    <!-- GETTING STARTED & STRATUM SETUP GUIDE -->
+    <!-- ==================================================================== -->
+    <section class="setup-card" id="section-setup">
+      <div class="section-title">
+        <div class="accent-bar"></div>
+        <h2>Quick Start Mining Guide</h2>
+      </div>
+
+      <div class="setup-tabs">
+        <button class="setup-tab-btn active" onclick="switchSetupTab('tab-iceriver', this)">IceRiver (KS0/KS1/KS2/KS3/KS5)</button>
+        <button class="setup-tab-btn" onclick="switchSetupTab('tab-antminer', this)">Antminer (KS3/KS5)</button>
+      </div>
+
+      <div id="tab-iceriver" class="setup-tab-content">
+        <div class="config-box">
+          <div class="comment"># In your IceRiver Miner WebUI (http://&lt;MINER_IP&gt; -> Mining Settings):</div>
+          <div><span class="key">Pool 1 Address:</span>  <span class="val">stratum+tcp://pool.bitcoin-k.com:3333</span>  <button class="copy-btn" onclick="copyText('stratum+tcp://pool.bitcoin-k.com:3333')" style="margin-left: 8px;">Copy</button></div>
+          <div><span class="key">Pool 1 Worker:</span>   <span class="val">&lt;YOUR_STEALTH_ADDRESS&gt;.&lt;WORKER_NAME&gt;</span></div>
+          <div><span class="key">Pool 1 Password:</span> <span class="val">x</span></div>
+          <div class="comment" style="margin-top: 8px;"># Example Worker Username:</div>
+          <div>&lt;YOUR_STEALTH_ADDRESS&gt;.rig01</div>
+          <div class="comment" style="margin-top: 8px;"># Thermal Best Practice for KS0 Ultra: Lock Fan to 100% full speed (5,900 RPM) to prevent thermal throttling.</div>
+        </div>
+      </div>
+
+      <div id="tab-antminer" class="setup-tab-content" style="display: none;">
+        <div class="config-box">
+          <div class="comment"># In Antminer Dashboard (KS3 / KS5 / KS5 Pro):</div>
+          <div><span class="key">URL:</span>      <span class="val">stratum+tcp://pool.bitcoin-k.com:3333</span></div>
+          <div><span class="key">Worker:</span>   <span class="val">&lt;YOUR_STEALTH_ADDRESS&gt;.antminer01</span></div>
+          <div><span class="key">Password:</span> <span class="val">x</span></div>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- Footer -->
+    <footer>
+      <div>
+        <strong>Bitcoin K (BTCK) Official Mining Pool</strong> — Pure Proof-of-Work • Zero Premine • Deterministic 21M Scarcity
+      </div>
+      <div class="footer-links">
+        <span>Source, checksums and official channels will be linked at public beta release.</span>
+      </div>
+    </footer>
+
+  </main>
+
+  <!-- Toast Notification -->
+  <div id="toast">
+    <span>✓</span>
+    <span id="toast-text">Copied to clipboard!</span>
+  </div>
+
+  <script>
+    // State
+    let currentStats = {};
+    let activeWorkerFilter = "ALL";
+    let countdownInterval = null;
+    let remainingSeconds = 0;
+    let lastStatsAt = 0;
+    let statsRequestInFlight = false;
+
+    function setTelemetryState(ok, message) {
+      const el = document.getElementById("telemetry-state");
+      if (!el) return;
+      el.innerText = message;
+      el.style.color = ok ? "#10b981" : "#ef4444";
+    }
+
+    function copyText(txt) {
+      navigator.clipboard.writeText(txt).then(() => {
+        showToast("Copied to clipboard: " + txt);
+      }).catch(() => {
+        const input = document.createElement("input");
+        input.value = txt;
+        document.body.appendChild(input);
+        input.select();
+        document.execCommand("copy");
+        document.body.removeChild(input);
+        showToast("Copied to clipboard!");
+      });
+    }
+
+    function showToast(msg) {
+      const t = document.getElementById("toast");
+      const tt = document.getElementById("toast-text");
+      tt.innerText = msg;
+      t.classList.add("show");
+      setTimeout(() => t.classList.remove("show"), 2500);
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? "").replace(/[&<>'"]/g, ch => ({
+        "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;"
+      })[ch]);
+    }
+
+    function handleBlockSearchKeyup(e) {
+      if (e.key === "Enter") searchBlock();
+    }
+
+    async function searchBlock() {
+      const input = document.getElementById("block-search-input");
+      const result = document.getElementById("block-search-result");
+      const query = input.value.trim();
+      if (!query) return;
+      result.style.display = "block";
+      result.innerText = "Searching the node's recent block window…";
+      try {
+        const response = await fetch(`/api/search?q=${encodeURIComponent(query)}`);
+        const payload = await response.json();
+        if (!response.ok || !payload.found) {
+          result.innerText = payload.message || "Block not found in the recent node window.";
+          return;
+        }
+        const block = payload.block;
+        const when = block.timestamp ? new Date(block.timestamp * 1000).toISOString() : "unknown";
+        result.innerText = `Height #${block.height} • ${block.full_hash} • ${when}`;
+      } catch (error) {
+        result.innerText = "Search is temporarily unavailable.";
+      }
+    }
+
+    function switchSetupTab(tabId, btn) {
+      document.querySelectorAll(".setup-tab-content").forEach(el => el.style.display = "none");
+      document.querySelectorAll(".setup-tab-btn").forEach(el => el.classList.remove("active"));
+      document.getElementById(tabId).style.display = "block";
+      btn.classList.add("active");
+    }
+
+    function filterWorkers(mode, btn) {
+      activeWorkerFilter = mode;
+      document.querySelectorAll(".filter-tab").forEach(el => el.classList.remove("active"));
+      btn.classList.add("active");
+      renderWorkersTable();
+    }
+
+    function handleLookupKeyup(e) {
+      if (e.key === "Enter") executeMinerLookup();
+    }
+
+    function executeMinerLookup() {
+      const q = document.getElementById("miner-lookup-input").value.trim().toLowerCase();
+      const panel = document.getElementById("miner-personal-panel");
+      if (!q) {
+        panel.style.display = "none";
+        return;
+      }
+      
+      const miners = currentStats.miners_summary || {};
+      let matchedKey = null;
+      let matchedData = null;
+
+      for (const [k, v] of Object.entries(miners)) {
+        if (k.toLowerCase() === q) {
+          matchedKey = k;
+          matchedData = v;
+          break;
+        }
+      }
+
+      if (matchedData) {
+        panel.style.display = "block";
+        document.getElementById("mp-title").innerText = `Worker [${matchedKey}] Statistics`;
+        document.getElementById("mp-shares").innerText = "Private";
+        document.getElementById("mp-blocks").innerText = "Private";
+        document.getElementById("mp-payout").innerText = "Protected";
+        document.getElementById("mp-mode").innerText = matchedData.mode || "SOLO";
+        showToast(`Found worker [${matchedKey}]`);
+      } else {
+        panel.style.display = "block";
+        document.getElementById("mp-title").innerText = `Query: ${q}`;
+        document.getElementById("mp-shares").innerText = "Private";
+        document.getElementById("mp-blocks").innerText = "Private";
+        document.getElementById("mp-payout").innerText = "Protected";
+        document.getElementById("mp-mode").innerText = "Active";
+        showToast("No historical shares found for this query yet.");
+      }
+    }
+
+    function startCountdownTicker(sec) {
+      remainingSeconds = sec;
+      if (countdownInterval) clearInterval(countdownInterval);
+      
+      function updateTimerDOM() {
+        if (remainingSeconds <= 0) {
+          document.getElementById("cnt-hours").innerText = "00";
+          document.getElementById("cnt-mins").innerText = "00";
+          document.getElementById("cnt-secs").innerText = "00";
+          return;
+        }
+        const h = Math.floor(remainingSeconds / 3600);
+        const m = Math.floor((remainingSeconds % 3600) / 60);
+        const s = remainingSeconds % 60;
+        document.getElementById("cnt-hours").innerText = String(h).padStart(2, "0");
+        document.getElementById("cnt-mins").innerText = String(m).padStart(2, "0");
+        document.getElementById("cnt-secs").innerText = String(s).padStart(2, "0");
+        remainingSeconds--;
+      }
+      
+      updateTimerDOM();
+      countdownInterval = setInterval(updateTimerDOM, 1000);
+    }
+
+    function renderWorkersTable() {
+      const tbody = document.getElementById("workers-table-tbody");
+      if (!tbody) return;
+      const miners = currentStats.miners_summary || {};
+      
+      let allCount = 0, soloCount = 0, pplnsCount = 0;
+      let rows = [];
+
+      for (const [k, v] of Object.entries(miners)) {
+        const mode = (v.mode || "SOLO").toUpperCase();
+        allCount++;
+        if (mode === "SOLO") soloCount++;
+        else pplnsCount++;
+
+        if (activeWorkerFilter !== "ALL" && mode !== activeWorkerFilter) continue;
+
+        const isOnline = v.status === "ONLINE";
+        const hr = v.hashrate_str || "N/A";
+
+        rows.push(`
+          <tr>
+            <td>
+              <span class="status-dot-active" style="${isOnline ? "" : "background:#64748b;box-shadow:none;"}"></span>
+              <span style="color: #fff; font-weight: 600;">${isOnline ? "Online" : "Offline"}</span>
+            </td>
+            <td>
+              <strong style="color: #fff;">${escapeHtml(k)}</strong>
+              <div style="font-size: 10px; color: var(--text-muted);">Payout identity withheld</div>
+            </td>
+            <td>
+              <span class="badge-mode ${mode === 'SOLO' ? 'badge-solo' : 'badge-pplns'}">${mode}</span>
+            </td>
+            <td style="text-align: right; color: var(--cyan-primary); font-weight: 700;">${hr}</td>
+            <td style="text-align: right; color: var(--text-muted); font-weight: 700;">Private</td>
+            <td style="text-align: right; color: var(--text-muted); font-weight: 700;">Private</td>
+            <td style="text-align: right; color: var(--emerald-primary); font-weight: 700;">Protected</td>
+          </tr>
+        `);
+      }
+
+      document.getElementById("worker-count-all").innerText = allCount;
+      document.getElementById("worker-count-solo").innerText = soloCount;
+      document.getElementById("worker-count-pplns").innerText = pplnsCount;
+
+      tbody.innerHTML = rows.join("") || `<tr><td colspan="7" style="text-align: center; color: var(--text-muted); padding: 20px;">No workers matched</td></tr>`;
+    }
+
+    function renderBlocksTable() {
+      const tbody = document.getElementById("blocks-table-tbody");
+      if (!tbody) return;
+      const blocks = currentStats.blocks || [];
+      const recent = blocks.slice(-15).reverse();
+
+      let rows = [];
+      for (const b of recent) {
+        const h = b.height;
+        const worker = b.worker || "miner";
+        const reward = (b.reward || 5.04).toFixed(2);
+        const timeStr = b.timestamp
+          ? new Date(b.timestamp * 1000).toLocaleTimeString([], {hour12: false})
+          : "—";
+
+        rows.push(`
+          <tr>
+            <td style="color: var(--cyan-primary); font-weight: 700;">#${h.toLocaleString()}</td>
+            <td>
+              <span style="color: #fff; font-weight: 600;">${escapeHtml(worker)}</span>
+            </td>
+            <td style="text-align: right; color: var(--gold-light); font-weight: 700;">${reward} BTCK</td>
+            <td style="text-align: right; color: var(--text-muted);">${timeStr}</td>
+          </tr>
+        `);
+      }
+
+      tbody.innerHTML = rows.join("") || `<tr><td colspan="4" style="text-align: center; color: var(--text-muted); padding: 20px;">Awaiting newly solved blocks...</td></tr>`;
+    }
+
+    function renderJackpotWinners() {
+      const tbody = document.getElementById("jackpot-winners-tbody");
+      if (!tbody) return;
+      const hof = currentStats.combo_hof || [];
+
+      if (!hof.length) {
+        const nextDraw = currentStats.next_draw_block || 43200;
+        tbody.innerHTML = `<tr><td colspan="3" style="text-align: center; color: var(--text-muted); padding: 14px;">Epoch active • Awaiting draw at ledger height #${nextDraw.toLocaleString()}</td></tr>`;
+        return;
+      }
+
+      let rows = [];
+      for (const item of hof.slice(0, 4)) {
+        const h = item.draw_height || item.height || 43200;
+        const payout = Number(item.payout_btck || 0).toFixed(2);
+        const worker = item.winner_miner || "unattributed";
+        const minerId = item.miner_id || worker;
+
+        rows.push(`
+          <tr>
+            <td style="color: var(--cyan-primary); font-weight: 700;">#${h.toLocaleString()}</td>
+            <td>
+              <div class="winner-highlight">${escapeHtml(worker)}</div>
+              <div class="winner-addr">${escapeHtml(minerId)} · payout address withheld</div>
+            </td>
+            <td style="text-align: right;" class="winner-highlight">${payout} BTCK</td>
+          </tr>
+        `);
+      }
+      tbody.innerHTML = rows.join("");
+    }
+
+    async function fetchStats() {
+      if (statsRequestInFlight) return;
+      statsRequestInFlight = true;
+      try {
+        const res = await fetch("/api/stats");
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        currentStats = data;
+        lastStatsAt = Date.now();
+        const fresh = data.telemetry && data.telemetry.node_fresh && data.telemetry.pool_fresh;
+        setTelemetryState(Boolean(fresh), fresh ? "● LIVE — consensus + pool" : "STALE — upstream telemetry delayed");
+
+        // Global stats
+        const curHeight = data.total_blocks || 0;
+        document.getElementById("stat-block-height").innerText = `#${curHeight.toLocaleString()}`;
+        if (document.getElementById("stat-pool-hashrate")) {
+          document.getElementById("stat-pool-hashrate").innerText = data.total_pool_hashrate_str || "Collecting…";
+        }
+        const networkDiff = Number(data.network_diff || 0);
+        document.getElementById("stat-network-diff").innerText = networkDiff > 0
+          ? `${networkDiff < 10000 ? networkDiff.toFixed(4) : networkDiff.toExponential(4)}×`
+          : "N/A";
+        const diffNote = document.getElementById("stat-network-diff-note");
+        if (diffNote) {
+          const bits = data.network_bits || "unknown bits";
+          diffNote.innerText = data.daa_at_pow_limit
+            ? `DAA floor: 1.0000× network PoW limit (${bits})`
+            : `Consensus DAA target (${bits}; 264-block window)`;
+          diffNote.style.color = data.daa_at_pow_limit ? "#f59e0b" : "";
+        }
+        document.getElementById("stat-block-freq").innerText = data.block_freq_sec
+          ? `${data.block_freq_sec}s / blue blk`
+          : "collecting…";
+        const cadence = Number(data.block_freq_sec || 0);
+        const cadenceNote = document.getElementById("stat-block-freq-note");
+        if (cadenceNote) {
+          const offTarget = cadence > 1.25;
+          cadenceNote.innerText = offTarget
+            ? `Below target: ${(1 / cadence).toFixed(3)} observed BPS vs 1.000 BPS`
+            : "Observed blue-order cadence; target: 1.000 BPS";
+          cadenceNote.style.color = offTarget ? "#ef4444" : "";
+        }
+        
+        // Fee policy
+        const feePol = data.pool_fee_policy || {};
+        const nextStageHours = Number(feePol.next_stage_hours || 0);
+        const feeStage = feePol.stage || "unknown";
+        document.getElementById("promo-hours-left").innerText = nextStageHours > 0
+          ? `${feeStage} stage • ${nextStageHours.toFixed(1)}h to next rate`
+          : `${feeStage} stage • final 1% rate`;
+        const feeRate = Number(feePol.current_fee_rate || 0);
+        const feeTotal = Number(data.accumulated_treasury_fee_btck || 0);
+        document.getElementById("stat-pool-fee").innerText = `${(feeRate * 100).toFixed(2)}%`;
+        const feeBlocks = Number(feePol.fee_blocks || 0);
+        document.getElementById("stat-fee-note").innerText = `Time decay: 5% (days 1–7) → 3% (days 8–30) → 1% (day 31+)`;
+        const feeAnnouncement = document.getElementById("pool-fee-announcement");
+        if (feeAnnouncement) {
+          feeAnnouncement.innerHTML = `<strong>${(feeRate * 100).toFixed(2)}% Pool Fee</strong> in the ${feeStage} stage; ${feeTotal.toFixed(4)} BTCK credited across ${feeBlocks.toLocaleString()} fee blocks.`;
+        }
+
+        // Active miners count
+        const onlineCount = data.active_worker_count !== undefined ? data.active_worker_count : 0;
+        document.getElementById("stat-active-miners").innerText = `${onlineCount} Connected`;
+
+        // Hero Jackpot
+        const poolBal = data.pool_balance_btck || 0.0;
+        document.getElementById("hero-jackpot-number").innerText = poolBal.toLocaleString(undefined, {minimumFractionDigits: 4, maximumFractionDigits: 4});
+        document.getElementById("hero-jackpot-usd").innerText = `On-chain consensus reserve • ${data.total_combos || 0} resolved draw(s)`;
+
+        // Progress bar
+        const nextDraw = data.next_draw_block || 86400;
+        const drawInterval = data.draw_interval_blocks || 43200;
+        const progressInEpoch = drawInterval - (data.blocks_to_draw || 0);
+        const pct = Math.min(100, Math.max(0, (progressInEpoch / drawInterval) * 100));
+        document.getElementById("jackpot-block-ratio").innerText = `Block #${curHeight.toLocaleString()} / #${nextDraw.toLocaleString()} (${pct.toFixed(1)}%)`;
+        document.getElementById("jackpot-progress-fill").style.width = `${pct}%`;
+        document.getElementById("hero-target-block").innerText = `#${nextDraw.toLocaleString()}`;
+        document.getElementById("hero-epoch-label").innerText = `${data.draw_interval_hours || 12}h Combo Jackpot • Epoch ${(data.total_combos || 0) + 1}`;
+
+        // Countdown timer: smooth ticker without jittering on every poll
+        if (data.countdown_seconds !== undefined) {
+          if (remainingSeconds <= 0 || Math.abs(remainingSeconds - data.countdown_seconds) > 1800) {
+            startCountdownTicker(data.countdown_seconds);
+          }
+        }
+
+        // Tables
+        renderWorkersTable();
+        renderBlocksTable();
+        renderJackpotWinners();
+
+      } catch (err) {
+        console.error("fetchStats error:", err);
+        setTelemetryState(false, "OFFLINE — displayed values are not live");
+      } finally {
+        statsRequestInFlight = false;
+      }
+    }
+
+    // Init
+    fetchStats();
+    setInterval(fetchStats, 2000);
+    setInterval(() => {
+      if (!lastStatsAt || Date.now() - lastStatsAt > 10000) {
+        setTelemetryState(false, "OFFLINE — displayed values are not live");
+      }
+    }, 1000);
+  </script>
+</body>
+</html>

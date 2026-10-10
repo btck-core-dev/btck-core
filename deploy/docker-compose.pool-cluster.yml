@@ -1,0 +1,7 @@
+# SECURITY TOMBSTONE
+#
+# The former Go/Redis Stratum cluster accepted unverified shares as blocks and
+# is intentionally not deployable. Use the root docker-compose.yml, whose
+# Python Stratum bridge obtains templates from btckd and submits candidates
+# back to btckd for consensus validation.
+services: {}

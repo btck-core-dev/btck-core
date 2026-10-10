@@ -1,0 +1,22 @@
+[Unit]
+Description=BTC-K off-site public HTTPS probe
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=btck-monitor
+Group=btck-monitor
+EnvironmentFile=/etc/btck/external-probe.env
+ExecStart=/usr/bin/python3 /opt/btck-monitor/external_public_probe.py --url https://btck.network/ --url https://explorer.btck.network/api/stats --url https://pool.btck.network/api/stats --expect=https://btck.network/=BTC-K --expect=https://explorer.btck.network/api/stats=mainnet --expect=https://pool.btck.network/api/stats=mainnet --evidence /var/lib/btck-monitor/external-probe.json
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/btck-monitor
+MemoryMax=128M
+CPUQuota=25%
+TasksMax=32
+
+[Install]
+WantedBy=multi-user.target

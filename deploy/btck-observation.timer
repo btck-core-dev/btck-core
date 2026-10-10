@@ -1,0 +1,12 @@
+[Unit]
+Description=Hourly BTC-K v3 mining observation snapshot
+
+[Timer]
+OnActiveSec=1h
+OnUnitActiveSec=1h
+AccuracySec=30s
+Persistent=true
+Unit=btck-observation.service
+
+[Install]
+WantedBy=timers.target

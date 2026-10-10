@@ -1,0 +1,434 @@
+"""
+BTC-K Canonical Tokenomics & 4-Year Rational Smooth Decay Engine (SSOT v2.4.1)
+------------------------------------------------------------------------------
+Implements the definitive, mathematical consensus specification (Doc 29 & Canonical Whitepaper):
+1. 21,000,000.00000000 BTC-K (2,100,000,000,000,000 SatK) Absolute Hard Cap (0 SatK drift).
+2. 4-Year Total Mining Lifespan (1460 Days, 126,144,000 Blocks @ 1.0 bps).
+3. Rational Smooth Decay: R(t) = R0 / (1 + k * t_day) where k = 0.15 day^-1.
+4. Deterministic uint64 integer SatK daily quota table (No floating-point consensus drift).
+5. Block #0 (Genesis) has strictly 0.00000000 BTC-K coinbase issuance.
+6. Post-4-Year Era (Block 126,144,001+): Subsidy strictly drops to 0 SatK; network transitions to fee-driven continuous BlockDAG.
+7. Tiered 4-Stage Combo Jackpot (Year 1: 15% / 12h, Year 2: 25% / 36h, Year 3: 35% / 108h, Year 4: 45% / 324h) plus a 5% ecosystem reserve.
+8. Future Random Beacon (+100 blocks) + Kademlia XOR Geometric Distance Winner Selection.
+9. Solvency Invariant: Total Minted == Total Miner Payouts + Remaining Pool Balance (Zero inflation).
+"""
+
+import os
+import json
+import hashlib
+import base64
+import struct
+from dataclasses import dataclass
+from typing import Tuple, List, Dict, Any, Optional
+from tokenomics.canonical_daily_quotas import FROZEN_DAILY_QUOTAS_B85
+
+# =====================================================================
+# 1. Global Accounting Constants (Integer SatK, 100M SatK = 1 BTC-K)
+# =====================================================================
+SATK_PER_COIN = 100_000_000
+SATS_PER_COIN = SATK_PER_COIN  # Backward compatibility alias
+TOTAL_HARD_CAP_SATK = 21_000_000 * SATK_PER_COIN  # 2,100,000,000,000,000 SatK (2.1 Quadrillion)
+TOTAL_HARD_CAP_SATS = TOTAL_HARD_CAP_SATK
+
+BLOCKS_PER_DAY = 86_400  # 1.0 second per block
+LIFESPAN_DAYS = 1460     # 4 years (365 * 4 = 1460 days)
+TOTAL_BLOCKS = LIFESPAN_DAYS * BLOCKS_PER_DAY  # 126,144,000 blocks
+BLOCKS_PER_YEAR = 365 * BLOCKS_PER_DAY        # 31,536,000 blocks
+
+# Mathematical Rational Decay Parameters
+K_PER_DAY = 0.15  # Documentation parameter; never used for runtime consensus math.
+
+# Genesis Euler Security Reserve & Hard Checkpoint Target (e = 2.71828...)
+GENESIS_CHECKPOINT_BLOCK = 271_828  # Euler's number homage: 271,828 blocks (75.51h, ~7.16% supply)
+GENESIS_72H_BLOCKS = GENESIS_CHECKPOINT_BLOCK
+
+# =====================================================================
+# 2. Deterministic Integer SatK Issuance Table (SSOT Daily Quotas)
+# =====================================================================
+_quota_bytes = base64.b85decode(FROZEN_DAILY_QUOTAS_B85.encode("ascii"))
+if len(_quota_bytes) != LIFESPAN_DAYS * 8:
+    raise RuntimeError("Canonical daily quota payload length mismatch")
+DAILY_QUOTAS_SATK: List[int] = list(struct.unpack(f">{LIFESPAN_DAYS}Q", _quota_bytes))
+if sum(DAILY_QUOTAS_SATK) != TOTAL_HARD_CAP_SATK:
+    raise RuntimeError("Canonical daily quota hard-cap conservation violated")
+
+# Canonical SHA-256 Checksum of the 1460 daily quota schedule
+CANONICAL_DAILY_QUOTAS_SHA256 = hashlib.sha256(json.dumps(DAILY_QUOTAS_SATK).encode()).hexdigest()
+if CANONICAL_DAILY_QUOTAS_SHA256 != "7896cf36303e123f799c71b4d72b74a684e0079c1e32e57eac34d4ed04913e59":
+    raise RuntimeError("Canonical daily quota fingerprint mismatch")
+
+# =====================================================================
+# 3. Combo Tiered Stages & Draw Schedules (Audit v3 & Doc 29)
+# =====================================================================
+@dataclass
+class ComboStageSpec:
+    stage_id: int
+    year: int
+    start_block: int
+    end_block: int
+    combo_ratio: float
+    draw_interval_blocks: int
+    draw_interval_hours: int
+    maturation_hours: int
+    maturation_blocks: int
+    instant_unlock_ratio: float
+    streaming_tranches: int
+
+# Consensus AI Standby & Hardware Symbiosis Reserve Ratio (Carved from Combo lottery pool)
+ECO_RESERVE_RATIO = 0.05
+ECO_RESERVE_PERCENT = 5
+COMBO_PERCENT_BY_STAGE = {1: 15, 2: 25, 3: 35, 4: 45, 5: 50}
+INSTANT_UNLOCK_PERCENT_BY_STAGE = {1: 50, 2: 25, 3: 10, 4: 10}
+
+# v2.4 frozen post-mining fee split.  At height TOTAL_BLOCKS + 1 the
+# subsidy and ecosystem issuance are both zero; transaction fees continue the
+# stage-4 progression as 50% immediate miner security budget and 50% perpetual
+# Combo funding.  Odd SatK remain with the immediate miner payout.
+POST_MINING_MINER_FEE_PERCENT = 50
+POST_MINING_COMBO_FEE_PERCENT = 50
+if POST_MINING_MINER_FEE_PERCENT + POST_MINING_COMBO_FEE_PERCENT != 100:
+    raise RuntimeError("Post-mining fee split must sum to 100 percent")
+
+COMBO_STAGES: List[ComboStageSpec] = [
+    ComboStageSpec(1, 1, 1, 31_536_000, 0.15, 43_200, 12, 48, 172_800, 0.50, 1),
+    ComboStageSpec(2, 2, 31_536_001, 63_072_000, 0.25, 129_600, 36, 144, 518_400, 0.25, 3),
+    ComboStageSpec(3, 3, 63_072_001, 94_608_000, 0.35, 388_800, 108, 432, 1_555_200, 0.10, 9),
+    ComboStageSpec(4, 4, 94_608_001, 126_144_000, 0.45, 1_166_400, 324, 1296, 4_665_600, 0.10, 15),
+]
+
+def get_regular_coinbase_maturity_blocks(block_height: int) -> int:
+    """
+    Progressive Regular Coinbase Maturity Schedule:
+    - Year 1 (blocks 1 .. 31,536,000): 7,200 blocks (2 hours)
+    - Year 2 (blocks 31,536,001 .. 63,072,000): 21,600 blocks (6 hours)
+    - Year 3 (blocks 63,072,001 .. 94,608,000): 86,400 blocks (24 hours / 1 day)
+    - Year 4 (blocks 94,608,001 .. 126_144_000): 259,200 blocks (72 hours / 3 days)
+    - Post-4-Year: 259,200 blocks (72 hours)
+    """
+    if block_height <= 31_536_000:
+        return 7_200
+    elif block_height <= 63_072_000:
+        return 21_600
+    elif block_height <= 94_608_000:
+        return 86_400
+    else:
+        return 259_200
+
+def get_combo_spec_for_height(block_height: int) -> Tuple[int, float, int]:
+    """
+    Returns (stage_id, combo_ratio, draw_interval_blocks) for a given height.
+    For post-4-year era (block > 126,144,000), returns fee lottery specs.
+    """
+    if block_height <= 0:
+        return (1, 0.15, 43_200)
+    for stage in COMBO_STAGES:
+        if stage.start_block <= block_height <= stage.end_block:
+            return (stage.stage_id, stage.combo_ratio, stage.draw_interval_blocks)
+    # Post-4-Year fee era (Subsidy is 0; transaction fee lottery)
+    return (5, POST_MINING_COMBO_FEE_PERCENT / 100, 1_166_400)
+
+
+def split_post_mining_fees(total_fee_satk: int) -> Tuple[int, int]:
+    """Return the frozen v2.4 (immediate miner, perpetual Combo) fee split."""
+    if total_fee_satk < 0:
+        raise ValueError("Transaction fees cannot be negative")
+    combo_satk = (total_fee_satk * POST_MINING_COMBO_FEE_PERCENT) // 100
+    miner_satk = total_fee_satk - combo_satk
+    return miner_satk, combo_satk
+
+# =====================================================================
+# 4. Block Budget & Subsidy Query Engine
+# =====================================================================
+def get_block_budget_sats(block_height: int) -> int:
+    """
+    Returns the protocol nominal block issuance budget in uint64 integer SatK.
+    
+    Invariants:
+    - Block #0 (Genesis): strictly 0 SatK.
+    - Blocks 1..126,144,000: strictly derived from DAILY_QUOTAS_SATK.
+    - Blocks 126,144,001+: strictly 0 SatK (subsidy fully terminated).
+    """
+    if block_height < 0:
+        raise ValueError("Block height cannot be negative")
+    if block_height == 0:
+        return 0  # Genesis Block #0 has 0 coinbase issuance
+    if block_height > TOTAL_BLOCKS:
+        return 0  # Post-4-year subsidy era is strictly 0
+
+    day_idx = (block_height - 1) // BLOCKS_PER_DAY
+    offset_in_day = (block_height - 1) % BLOCKS_PER_DAY
+    daily_quota = DAILY_QUOTAS_SATK[day_idx]
+    
+    base_per_block = daily_quota // BLOCKS_PER_DAY
+    remainder = daily_quota % BLOCKS_PER_DAY
+    
+    # Deterministic integer distribution of remainder SatK
+    if offset_in_day < remainder:
+        return base_per_block + 1
+    return base_per_block
+
+def get_base_block_reward_sats(block_height: int) -> int:
+    """Nominal block subsidy budget for the given height."""
+    return get_block_budget_sats(block_height)
+
+# =====================================================================
+# 5. Future Random Beacon & XOR Geometric Distance Lottery Selection
+# =====================================================================
+def compute_beacon_xor_winner(
+    candidate_block_hashes: List[bytes],
+    beacon_hash: bytes,
+    epoch_index: int = 1
+) -> Tuple[bytes, int]:
+    """
+    Anti-Monopoly Future Random Beacon with Kademlia XOR Geometric Distance Selection.
+    
+    Properties:
+    1. Distance(BlockHash_i, BeaconSeed) = BlockHash_i XOR BeaconSeed
+    2. Winner = argmin_i(Distance_i) across all valid blocks in drawing epoch window.
+    3. Guarantees uniform geometric probability space for every valid candidate block.
+    """
+    if not candidate_block_hashes:
+        raise ValueError("Candidate block list cannot be empty")
+    
+    # Candidate and beacon block hashes are canonical kHeavyHash PoW values.
+    # The canonical whitepaper then applies one SHA-256 domain step exactly as
+    # SHA256(BlockHash[H_end+100] || EpochIndex_uint64_le).  Do not replace
+    # this with BLAKE3 or add node-local fields: every implementation must
+    # derive the same 256-bit target from public consensus data.
+    beacon_seed = hashlib.sha256(beacon_hash + epoch_index.to_bytes(8, 'little')).digest()
+    beacon_int = int.from_bytes(beacon_seed, 'big')
+    
+    best_dist = -1
+    winning_hash = candidate_block_hashes[0]
+    
+    for block_hash in candidate_block_hashes:
+        block_int = int.from_bytes(block_hash, 'big')
+        dist = block_int ^ beacon_int
+        if best_dist == -1 or dist < best_dist:
+            best_dist = dist
+            winning_hash = block_hash
+            
+    return winning_hash, best_dist
+
+def is_combo_block(block_height: int, block_hash: bytes = b"") -> bool:
+    """
+    Evaluates whether the given block is a Combo Jackpot draw block.
+    Aligns to the start of each stage, and triggers a final liquidation draw at the final block of Year 4.
+    """
+    if block_height <= 0:
+        return False
+    if block_height > TOTAL_BLOCKS:
+        # The fee-funded era continues the Stage-4 cadence, aligned to the
+        # first post-subsidy block so every implementation derives identical
+        # draw heights without wall-clock state.
+        return ((block_height - TOTAL_BLOCKS) % COMBO_STAGES[-1].draw_interval_blocks) == 0
+    for stage in COMBO_STAGES:
+        if stage.start_block <= block_height <= stage.end_block:
+            # Close each stage at its exact boundary.  Without this liquidation
+            # the remainder of an interval crosses into the next stage and is
+            # paid under the previous year's vesting rules.
+            if block_height == stage.end_block:
+                return True
+            offset = block_height - stage.start_block + 1
+            return (offset % stage.draw_interval_blocks) == 0
+    return False
+
+def compute_jackpot_vesting_tranches(
+    stage_id: int,
+    jackpot_amount_satk: int,
+    draw_block_height: int
+) -> List[Dict[str, Any]]:
+    """
+    Generates the streaming vesting schedule for jackpot payouts to eliminate secondary market dumps.
+    Total of all tranches amounts strictly equals jackpot_amount_satk.
+    """
+    for spec in COMBO_STAGES:
+        if spec.stage_id == stage_id:
+            tranches = []
+            instant_amount = (
+                jackpot_amount_satk * INSTANT_UNLOCK_PERCENT_BY_STAGE[stage_id]
+            ) // 100
+            streaming_amount = jackpot_amount_satk - instant_amount
+            
+            # Initial instant unlock at draw_block_height
+            tranches.append({
+                "tranche_index": 0,
+                "unlock_block_height": draw_block_height,
+                "amount_satk": instant_amount,
+                "is_instant": True
+            })
+            
+            if spec.streaming_tranches >= 1 and streaming_amount > 0:
+                tranche_interval = spec.maturation_blocks // spec.streaming_tranches
+                per_tranche = streaming_amount // spec.streaming_tranches
+                rem = streaming_amount % spec.streaming_tranches
+                
+                for t in range(1, spec.streaming_tranches + 1):
+                    amt = per_tranche + (1 if t <= rem else 0)
+                    tranches.append({
+                        "tranche_index": t,
+                        "unlock_block_height": draw_block_height + t * tranche_interval,
+                        "amount_satk": amt,
+                        "is_instant": False
+                    })
+            return tranches
+
+    if stage_id == 5:
+        # Perpetual fee Combo inherits the mature Stage-4 release policy.
+        spec = COMBO_STAGES[-1]
+        instant_amount = jackpot_amount_satk * INSTANT_UNLOCK_PERCENT_BY_STAGE[4] // 100
+        streaming_amount = jackpot_amount_satk - instant_amount
+        tranches = [{
+            "tranche_index": 0,
+            "unlock_block_height": draw_block_height,
+            "amount_satk": instant_amount,
+            "is_instant": True,
+        }]
+        per_tranche, remainder = divmod(streaming_amount, spec.streaming_tranches)
+        interval = spec.maturation_blocks // spec.streaming_tranches
+        for index in range(1, spec.streaming_tranches + 1):
+            tranches.append({
+                "tranche_index": index,
+                "unlock_block_height": draw_block_height + index * interval,
+                "amount_satk": per_tranche + (1 if index <= remainder else 0),
+                "is_instant": False,
+            })
+        return tranches
+    raise ValueError(f"Unknown Combo stage: {stage_id}")
+
+# =====================================================================
+# 6. Consensus Issuance & Jackpot Accounting Result
+# =====================================================================
+@dataclass
+class BlockIssuanceResult:
+    block_height: int
+    is_combo: bool
+    budget_sats: int               # Protocol nominal budget
+    minted_sats: int               # Actual newly minted amount (strictly <= remaining cap)
+    miner_base_sats: int           # Immediate base payout to miner (budget - pool_deposit - eco_deposit)
+    pool_deposit_sats: int         # Ratio deposit into consensus jackpot pool
+    eco_deposit_sats: int          # Consensus AI Standby & Hardware Symbiosis Reserve (5%)
+    miner_fee_sats: int            # Transaction fees paid immediately to miner
+    combo_fee_deposit_sats: int     # Transaction fees deposited into perpetual Combo
+    combo_payout_sats: int         # Jackpot bonus paid out of pool balance
+    miner_total_payout_sats: int   # miner_base_sats + combo_payout_sats
+    new_pool_balance_sats: int     # Updated consensus jackpot pool balance
+    new_issued_supply_sats: int    # Updated cumulative issued supply
+
+def compute_block_issuance(
+    block_height: int,
+    block_hash: bytes,
+    current_issued_sats: int,
+    current_pool_balance_sats: int,
+    force_combo: bool = False,
+    total_fee_sats: int = 0,
+) -> BlockIssuanceResult:
+    """
+    Core issuance partition engine.
+
+    Jackpot payouts are intentionally NOT performed here. The future-beacon
+    ComboStateMachine freezes a draw and releases the matching pool UTXOs only
+    when its later beacon block resolves. ``force_combo`` is retained only for
+    API compatibility and never authorizes an immediate payout.
+    
+    Mathematical Rules:
+    1. minted_sats = min(get_block_budget_sats(height), TOTAL_HARD_CAP_SATK - current_issued_sats)
+    2. stage_id, combo_ratio, draw_interval = get_combo_spec_for_height(height)
+    3. eco_deposit_sats = minted_sats * 5 // 100 (integer-only consensus)
+    4. pool_deposit_sats = minted_sats * stage_percent // 100 (15% -> 45%)
+    5. miner_base_sats = minted_sats - pool_deposit_sats - eco_deposit_sats (strictly 80% / 70% / 60% / 50%)
+    6. available_pool = current_pool_balance_sats + pool_deposit_sats
+    7. is_combo marks a scheduled draw only; payout waits for the future beacon
+    8. combo_payout_sats = 0
+    9. new_pool_balance_sats = available_pool
+    10. miner_total_payout_sats = miner_base_sats
+    11. new_issued_supply_sats = current_issued_sats + minted_sats
+    
+    Strict Consensus Invariants:
+    - minted_sats is INDEPENDENT of combo! Zero tokens are ever created from thin air.
+    - miner_base_sats + pool_deposit_sats + eco_deposit_sats == minted_sats
+    - miner_total_payout_sats + new_pool_balance_sats + eco_deposit_sats == current_pool_balance_sats + minted_sats
+    - new_issued_supply_sats <= TOTAL_HARD_CAP_SATK
+    - new_pool_balance_sats >= 0
+    """
+    if block_height < 0:
+        raise ValueError("Block height cannot be negative")
+    if total_fee_sats < 0:
+        raise ValueError("Transaction fees cannot be negative")
+    
+    budget = get_block_budget_sats(block_height)
+    remaining_cap = max(0, TOTAL_HARD_CAP_SATK - current_issued_sats)
+    minted = min(budget, remaining_cap)
+    
+    stage_id, _, _ = get_combo_spec_for_height(block_height)
+    eco_deposit = (minted * ECO_RESERVE_PERCENT) // 100 if (0 < block_height <= TOTAL_BLOCKS) else 0
+    subsidy_pool_deposit = (minted * COMBO_PERCENT_BY_STAGE[stage_id]) // 100
+    miner_base = minted - subsidy_pool_deposit - eco_deposit
+    if block_height > TOTAL_BLOCKS:
+        miner_fee, combo_fee_deposit = split_post_mining_fees(total_fee_sats)
+    else:
+        miner_fee, combo_fee_deposit = total_fee_sats, 0
+    pool_deposit = subsidy_pool_deposit + combo_fee_deposit
+    
+    available_pool = current_pool_balance_sats + pool_deposit
+    is_combo = force_combo or is_combo_block(block_height, block_hash)
+    
+    combo_payout = 0
+    new_pool_balance = available_pool
+    miner_total = miner_base + miner_fee
+    new_issued_supply = current_issued_sats + minted
+    
+    # Assert consensus invariants
+    if miner_base + subsidy_pool_deposit + eco_deposit != minted:
+        raise ValueError("Minted partition invariant breached")
+    if miner_fee + combo_fee_deposit != total_fee_sats:
+        raise ValueError("Fee partition invariant breached")
+    if new_issued_supply > TOTAL_HARD_CAP_SATK:
+        raise ValueError("Total hard cap breached")
+    if new_pool_balance < 0:
+        raise ValueError("Negative pool balance detected")
+    
+    return BlockIssuanceResult(
+        block_height=block_height,
+        is_combo=is_combo,
+        budget_sats=budget,
+        minted_sats=minted,
+        miner_base_sats=miner_base,
+        pool_deposit_sats=pool_deposit,
+        eco_deposit_sats=eco_deposit,
+        miner_fee_sats=miner_fee,
+        combo_fee_deposit_sats=combo_fee_deposit,
+        combo_payout_sats=combo_payout,
+        miner_total_payout_sats=miner_total,
+        new_pool_balance_sats=new_pool_balance,
+        new_issued_supply_sats=new_issued_supply
+    )
+
+def get_block_reward_sats(
+    block_height: int,
+    block_hash: bytes,
+    current_pool_balance_sats: Optional[int] = None
+) -> Tuple[int, bool]:
+    """Returns (miner_payout_sats, is_combo)."""
+    budget_sats = get_block_budget_sats(block_height)
+    is_combo = is_combo_block(block_height, block_hash)
+    stage_id, _, _ = get_combo_spec_for_height(block_height)
+    eco_deposit = (budget_sats * ECO_RESERVE_PERCENT) // 100 if (0 < block_height <= TOTAL_BLOCKS) else 0
+    pool_dep = (budget_sats * COMBO_PERCENT_BY_STAGE[stage_id]) // 100
+    miner_base = budget_sats - pool_dep - eco_deposit
+    
+    if current_pool_balance_sats is not None:
+        available = current_pool_balance_sats + pool_dep
+        payout = miner_base + (available if is_combo else 0)
+        return payout, is_combo
+        
+    return budget_sats, is_combo
+
+def get_block_reward_btck(
+    block_height: int,
+    block_hash: bytes,
+    current_pool_balance_sats: Optional[int] = None
+) -> Tuple[float, bool]:
+    """Returns (miner_payout_btck, is_combo) in human-readable coin units."""
+    sats, is_combo = get_block_reward_sats(block_height, block_hash, current_pool_balance_sats)
+    return sats / SATK_PER_COIN, is_combo

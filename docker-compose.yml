@@ -1,0 +1,134 @@
+x-json-logging: &json-logging
+  driver: json-file
+  options:
+    max-size: "25m"
+    max-file: "10"
+    compress: "true"
+
+services:
+  btck-node:
+    build: .
+    container_name: btck-full-node
+    restart: unless-stopped
+    mem_limit: 6g
+    cpus: 3.0
+    pids_limit: 512
+    command: ["python3", "/app/src/node/daemon.py", "--host", "0.0.0.0", "--p2p-host", "0.0.0.0", "--p2p-port", "16112", "--network", "${BTCK_NETWORK:-devnet}", "--data-root", "/app/data"]
+    environment:
+      BTCK_NETWORK: "${BTCK_NETWORK:-devnet}"
+      BTCK_RPC_TOKEN: "${BTCK_RPC_TOKEN:?BTCK_RPC_TOKEN is required}"
+    ports:
+      - "127.0.0.1:16110:16110"  # authenticated RPC, host-loopback only
+      - "16112:16112"  # P2P Gossip
+    volumes:
+      - btck-data:/app/data
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: ["ALL"]
+    security_opt:
+      - no-new-privileges:true
+    logging: *json-logging
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:16110/info', timeout=4).read()"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60m
+
+  btck-stratum:
+    build: .
+    container_name: btck-stratum-pool
+    restart: unless-stopped
+    mem_limit: 2g
+    cpus: 2.0
+    pids_limit: 512
+    environment:
+      BTCK_NETWORK: "${BTCK_NETWORK:-devnet}"
+      BTCK_RPC_TOKEN: "${BTCK_RPC_TOKEN:?BTCK_RPC_TOKEN is required}"
+      BTCK_STRATUM_HOST: "0.0.0.0"
+      BTCK_STRATUM_STATUS_HOST: "0.0.0.0"
+      BTCK_STRATUM_STATUS_PORT: "3337"
+      BTCK_STRATUM_LATE_BLOCK_GRACE: "16"
+      BTCK_STRATUM_TEMPLATE_REFRESH_SECONDS: "4"
+      BTCK_NODE_RPC_URL: "http://btck-node:16110/rpc"
+      BTCK_PPLNS_DB_PATH: "/app/pool-data/pool_accounting.db"
+      BTCK_POOL_LAUNCH_TIME: "${BTCK_POOL_LAUNCH_TIME:-0}"
+      BTCK_POOL_FEE_ADDRESS: "${BTCK_POOL_FEE_ADDRESS:-btck1s0353a08a9263ba19edb82bca91a1d324374266155de26e49b29d79d4ff649d23ae02ae340cac030e7d04376e7094b3ce22d8ba83cac6a03bfe1d29dc3bf4850964424247f7af}"
+    command: ["python3", "/app/src/stratum/stratum_server.py"]
+    ports:
+      - "3333:3333"    # Entry / KS0 / GPU
+      - "3334:3334"    # Mid / KS1 / KS2
+      - "3335:3335"    # High / KS3 / KS3L
+      - "3336:3336"    # Ultra / KS5 / KS7
+    volumes:
+      - btck-pool-data:/app/pool-data
+    depends_on:
+      - btck-node
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: ["ALL"]
+    security_opt:
+      - no-new-privileges:true
+    logging: *json-logging
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:3337/status', timeout=4).read()"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 65m
+
+  btck-explorer:
+    build: .
+    container_name: btck-explorer
+    restart: unless-stopped
+    mem_limit: 1g
+    cpus: 1.0
+    pids_limit: 256
+    command: ["python3", "/app/src/web_explorer_server.py", "8088"]
+    environment:
+      BTCK_NETWORK: "${BTCK_NETWORK:-devnet}"
+      BTCK_EXPLORER_HOST: "0.0.0.0"
+      BTCK_NODE_INFO_URL: "http://btck-node:16110/dashboard"
+      BTCK_NODE_RPC_URL: "http://btck-node:16110/rpc"
+      BTCK_STRATUM_STATUS_URL: "http://btck-stratum:3337/status"
+    ports:
+      - "127.0.0.1:8088:8088"  # public access must go through the explicit TLS edge overlay
+    depends_on:
+      - btck-node
+      - btck-stratum
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: ["ALL"]
+    security_opt:
+      - no-new-privileges:true
+    logging: *json-logging
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8088/api/stats', timeout=4).read()"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 65m
+
+  btck-ai-gateway:
+    build: .
+    container_name: btck-ai-rpc-gateway
+    restart: unless-stopped
+    mem_limit: 1g
+    cpus: 1.0
+    pids_limit: 256
+    profiles: ["unsafe-prototypes"]
+    environment:
+      BTCK_NETWORK: "${BTCK_NETWORK:-devnet}"
+    command: ["python3", "-c", "import sys; sys.path.insert(0, '/app/src'); from config.network import require_feature; require_feature('ai_payments'); from gateway.ai_rpc_gateway import AIRPCGateway; print('AI-RPC Gateway Active')"]
+    ports:
+      - "8080:8080"    # HTTP 402 AI-RPC Gateway
+    depends_on:
+      - btck-node
+    logging: *json-logging
+
+volumes:
+  btck-data:
+  btck-pool-data:

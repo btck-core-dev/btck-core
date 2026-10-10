@@ -1,0 +1,11 @@
+[Unit]
+Description=Run BTC-K MAINNET guardian health checks every minute
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=60s
+AccuracySec=5s
+Unit=btck-mainnet-health.service
+
+[Install]
+WantedBy=timers.target

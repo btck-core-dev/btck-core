@@ -1,0 +1,53 @@
+{
+  "chain_id": "btck-mainnet-v1",
+  "consensus": {
+    "block_version": 2,
+    "daa": {
+      "initial_bits": "0x1c017668",
+      "max_adjustment_factor": 2,
+      "median_time_blocks": 11,
+      "progress": "blue-score-v1",
+      "target_interval_ms": 1000,
+      "window_blocks": 264
+    },
+    "eco_fund_output": [
+      "0218c8a8b18a55da9f1aeb1d60baebfe176419eca4fdf5549ffcb9c0190060d55c",
+      "0263bf9a23d411aad1e3e5a9c71414895ac32122ff8f7a68ac651cba5c5d0dfd4d"
+    ],
+    "ghostdag_k": 18,
+    "hard_checkpoints": {},
+    "max_future_seconds": 120,
+    "max_merge_set_size": 1024,
+    "max_parents": 8,
+    "pow_limit_bits": "0x1c176680"
+  },
+  "data_subdir": "mainnet",
+  "features": {
+    "ai_payments": false,
+    "bridge": false,
+    "dex": false,
+    "exchange_adapter": false,
+    "stratum": true,
+    "web_wallet_send": false
+  },
+  "genesis": {
+    "bits": 469857896,
+    "coinbase_output": [
+      "03b51092a259bf7ef34de4585ab779e7504f4d984ffe3a47bfcaa96a0c1efb47a1",
+      "0219a04205e31791a2cfdc8368d75b6cec8020b2da106328a18b85323227e0aef7"
+    ],
+    "expected_hash": "b9249be0f1b57021a9cfef8241a499c6e975a91e24d6a3fc22ce850000000000",
+    "headline": "2026-10-06 Euronews: Belgian physicist wins Nobel for turning Antarctic ice into a telescope",
+    "nonce": "0x2012b6eb6bc9c",
+    "timestamp": 1791442800.0,
+    "version": 2
+  },
+  "manifest_version": 1,
+  "network": "mainnet",
+  "p2p_magic": "4254434d",
+  "release": {
+    "approval_id": "BTCK-GUARDIAN-20261008-1500-CST-DAA2",
+    "approved": true,
+    "note": "Approved only for the private 271,828-block guardian phase. Public release requires the independently replayed height-271828 checkpoint and a new approval."
+  }
+}

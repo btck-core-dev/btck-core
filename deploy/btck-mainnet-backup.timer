@@ -1,0 +1,11 @@
+[Unit]
+Description=Hourly BTC-K MAINNET guardian state backup
+
+[Timer]
+OnBootSec=10min
+OnUnitActiveSec=1h
+Persistent=true
+RandomizedDelaySec=2min
+
+[Install]
+WantedBy=timers.target

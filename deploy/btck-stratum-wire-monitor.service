@@ -1,0 +1,14 @@
+[Unit]
+Description=Passive BTC-K Stratum rejection-code monitor
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+Environment=BTCK_OBSERVATION_DIR=/home/ubuntu/btck-observation
+ExecStart=/home/ubuntu/btck-devnet/deploy/capture_stratum_rejections.sh
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,359 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "meta": {
+    "title": "BTC-K Protocol Canonical Parameters (SSOT - Single Source of Truth)",
+    "version": "2.4.1",
+    "last_updated": "2026-10-09T00:00:00+08:00",
+    "license": "MIT",
+    "audit_alignment": "Doc 29 - Canonical 4-Year Rational Decay & Exact Integer Quotas"
+  },
+  "tokenomics": {
+    "ticker": "BTC-K",
+    "full_name": "Bitcoin K",
+    "base_unit": "SatK",
+    "decimals": 8,
+    "sats_per_coin": 100000000,
+    "max_supply": 21000000,
+    "genesis_premine": 0,
+    "lifespan_years": 4,
+    "total_blocks": 126144000,
+    "emission_model": "4-Year Rational Smooth Decay (有理函数平滑衰减)",
+    "decay_function": {
+      "type": "Rational Decay",
+      "formula": "R(t) = R0 / (1 + k * t_day)",
+      "R0_btck_per_block": 6.759520011349248,
+      "k_per_day": 0.15,
+      "k_per_hour": 0.00625,
+      "integral_formula": "C(t) = (R0 * 86400 / k) * ln(1 + k * t_day) = 3893500 * ln(1 + 0.15 * t_day)",
+      "euler_genesis_security_reserve": {
+        "duration_hours": 75.50777778,
+        "total_blocks": 271828,
+        "emission_btck": 1502695.03742804,
+        "percentage_of_total": 7.15569065,
+        "monopoly_hashrate_target_ths": 2.0,
+        "naming": "创世护网安全储备 (Genesis Security Reserve / Patoshi Reserve)",
+        "emission_satk": 150269503742804,
+        "regular_miner_base_btck": 1202156.03246208,
+        "combo_pool_deposit_btck": 225404.25391484,
+        "ecosystem_reserve_btck": 75134.75105112,
+        "checkpoint_height": 271828,
+        "checkpoint_hash_status": "TO_BE_FILLED_FROM_CANONICAL_MAINNET_BLOCK_271828_BEFORE_PUBLIC_RELEASE"
+      },
+      "canonical_daily_quotas_sha256": "7896cf36303e123f799c71b4d72b74a684e0079c1e32e57eac34d4ed04913e59",
+      "day_0_block_1_satk": 629815765,
+      "day_0_total_satk": 54416082027452,
+      "day_1459_total_satk": 265555326416,
+      "day_1459_block_126144000_satk": 3073557,
+      "cumulative_126144000_blocks_satk": 2100000000000000,
+      "cumulative_drift_satk": 0
+    },
+    "combo": {
+      "mechanism": "Geometric Tiered Delay Jackpot (3x 等比延时奖池)",
+      "stages": [
+        {
+          "stage": 1,
+          "year": 1,
+          "days": [
+            0,
+            365
+          ],
+          "blocks": [
+            1,
+            31536000
+          ],
+          "combo_ratio": 0.15,
+          "draw_interval_hours": 12,
+          "draw_interval_blocks": 43200,
+          "draws_per_year": 730,
+          "annual_total_btck": 15655219.9593851,
+          "annual_jackpot_pool_btck": 2348282.99390777,
+          "avg_jackpot_btck": 3216.82601905,
+          "genesis_first_jackpot_btck": 40812.061248
+        },
+        {
+          "stage": 2,
+          "year": 2,
+          "days": [
+            365,
+            730
+          ],
+          "blocks": [
+            31536001,
+            63072000
+          ],
+          "combo_ratio": 0.25,
+          "draw_interval_hours": 36,
+          "draw_interval_blocks": 129600,
+          "draws_per_year": 244,
+          "scheduled_interval_draws": 243,
+          "boundary_liquidation_draws": 1,
+          "annual_total_btck": 2663680.46356581,
+          "annual_jackpot_pool_btck": 665920.11589145,
+          "avg_jackpot_btck": 2729.18080283
+        },
+        {
+          "stage": 3,
+          "year": 3,
+          "days": [
+            730,
+            1095
+          ],
+          "blocks": [
+            63072001,
+            94608000
+          ],
+          "combo_ratio": 0.35,
+          "draw_interval_hours": 108,
+          "draw_interval_blocks": 388800,
+          "draws_per_year": 82,
+          "scheduled_interval_draws": 81,
+          "boundary_liquidation_draws": 1,
+          "annual_total_btck": 1566908.91994744,
+          "annual_jackpot_pool_btck": 548418.1219816,
+          "avg_jackpot_btck": 6688.02587782
+        },
+        {
+          "stage": 4,
+          "year": 4,
+          "days": [
+            1095,
+            1460
+          ],
+          "blocks": [
+            94608001,
+            126144000
+          ],
+          "combo_ratio": 0.45,
+          "draw_interval_hours": 324,
+          "draw_interval_blocks": 1166400,
+          "draws_per_year": 28,
+          "scheduled_interval_draws": 27,
+          "boundary_liquidation_draws": 1,
+          "annual_total_btck": 1114190.65710165,
+          "annual_jackpot_pool_btck": 501385.79569574,
+          "avg_jackpot_btck": 17906.63556056
+        }
+      ],
+      "jackpot_maturity_blocks": 172800,
+      "regular_block_maturity_blocks": 7200,
+      "progressive_regular_maturation": {
+        "description": "Progressive Regular Coinbase Maturity Schedule by Year (2h -> 6h -> 24h -> 72h)",
+        "stage_rules": [
+          {"stage": 1, "year": 1, "maturation_hours": 2, "maturation_blocks": 7200, "rationale": "Prevents NiceHash 1h flash-rental attacks while ensuring swift 2h cash flow for real miners"},
+          {"stage": 2, "year": 2, "maturation_hours": 6, "maturation_blocks": 21600, "rationale": "Moderate intraday settlement (4 batches/day) as emissions drop"},
+          {"stage": 3, "year": 3, "maturation_hours": 24, "maturation_blocks": 86400, "rationale": "Daily settlement matching mature crypto financial standards"},
+          {"stage": 4, "year": 4, "maturation_hours": 72, "maturation_blocks": 259200, "rationale": "3-day batch settlement for final scarce emission phase"}
+        ]
+      },
+      "lottery_algorithm": {
+        "name": "Future Random Beacon with Kademlia XOR Geometric Distance (未来随机信标异或几何距离法)",
+        "beacon_offset_blocks": 100,
+        "pow_hash_source": "Canonical 32-byte kHeavyHash block PoW values",
+        "beacon_seed_formula": "H_beacon = SHA256(KHeavyHash(Block[H_end+100]) || EpochIndex_uint64_le)",
+        "distance_metric": "Distance(i) = BlockHash_i XOR H_beacon",
+        "winning_criterion": "argmin_i(Distance_i) across all valid blocks in drawing epoch window [H_start, H_end]",
+        "anti_monopoly_properties": [
+          "Zero predictive advantage for high-hashrate pools: H_beacon is determined 100 blocks AFTER window closure",
+          "Uniformly distributed geometric probability space: each single valid block has an equal cryptographic chance to be the minimum XOR distance",
+          "Probabilistic finality: 100 later blue-order blocks increase the cost of beacon reorganization but do not make reorgs mathematically impossible",
+          "Sybil-immune: Does not rely on wallet addresses or miner identity, completely neutral to PPLNS vs Solo structure"
+        ]
+      },
+      "progressive_maturation": {
+        "formula": "Lock_Duration = 4 * Draw_Interval",
+        "stage_rules": [
+          {
+            "stage": 1,
+            "year": 1,
+            "maturation_hours": 48,
+            "maturation_blocks": 172800,
+            "instant_unlock_ratio": 0.5,
+            "streaming_tranches": 1,
+            "tranche_interval_hours": 48,
+            "daily_inflow_btck": 1072.0,
+            "rationale": "Fast liquidity for founder genesis launch (72h) and early community bootstrap with 50% instant"
+          },
+          {
+            "stage": 2,
+            "year": 2,
+            "maturation_hours": 144,
+            "maturation_blocks": 518400,
+            "instant_unlock_ratio": 0.25,
+            "streaming_tranches": 3,
+            "tranche_interval_hours": 48,
+            "daily_inflow_btck": 411.0
+          },
+          {
+            "stage": 3,
+            "year": 3,
+            "maturation_hours": 432,
+            "maturation_blocks": 1555200,
+            "instant_unlock_ratio": 0.1,
+            "streaming_tranches": 9,
+            "tranche_interval_hours": 48,
+            "daily_inflow_btck": 386.0
+          },
+          {
+            "stage": 4,
+            "year": 4,
+            "maturation_hours": 1296,
+            "maturation_blocks": 4665600,
+            "instant_unlock_ratio": 0.1,
+            "streaming_tranches": 15,
+            "tranche_interval_hours": 86.4,
+            "daily_inflow_btck": 343.0,
+            "rationale": "Eliminates secondary market crash from 20,620 BTC-K mega jackpot by smoothing inflow over 54 days (15 tranches)"
+          }
+        ]
+      }
+    },
+    "max_supply_sats": 2100000000000000,
+    "accounting_standard": "uint64 integer SatK (No floating-point in consensus)",
+    "post_mining_era": {
+      "status": "Fee-Driven Continuous Block Generation (永续出块·手续费驱动时代)",
+      "block_subsidy": 0,
+      "block_rate_bps": 1.0,
+      "fee_combo_jackpot": {
+        "enabled": true,
+        "miner_split_ratio": 0.5,
+        "jackpot_pool_ratio": 0.5,
+        "consensus_status": "FROZEN_V2_4_PERMANENT",
+        "activation_height": 126144001,
+        "draw_interval_hours": 324,
+        "draw_interval_blocks": 1166400,
+        "lottery_algorithm": "Future Random Beacon with Kademlia XOR Metric"
+      }
+    },
+    "post_4_years_security_budget": {
+      "block_subsidy_satk": 0,
+      "revenue_source": "Transaction Gas Fees & AI-RPC Micro-payments",
+      "consensus_frozen_split": {
+        "miner_immediate_packing_ratio": 0.5,
+        "perpetual_lottery_pool_ratio": 0.5,
+        "activation_height": 126144001,
+        "permanent": true,
+        "rationale": "v2.4 continuation of the annual Combo progression: 15% -> 25% -> 35% -> 45%, then 50% after the 5% ecosystem issuance ends"
+      }
+    }
+  },
+  "consensus": {
+    "dag_type": "1.0s GHOSTDAG (PHANTOM variant)",
+    "target_block_rate_bps": 1.0,
+    "anticone_k": 18,
+    "pow_algorithm": "kHeavyHash (Kaspa byte-compatible)",
+    "network_identity_source": "params/networks/{simnet,devnet,testnet,mainnet}.json",
+    "genesis_block": {
+      "network_specific": true,
+      "source": "params/networks/<network>.json",
+      "status": "Never copy a DEVNET genesis identity into this network-neutral parameter index"
+    },
+    "daa": {
+      "window_blocks": 264,
+      "initial_bits": "network manifest consensus.daa.initial_bits",
+      "method": "Virtual blue-score progress with median-time sliding window",
+      "target_interval_sec": 1.0,
+      "median_time_blocks": 11,
+      "damping_factor_clamp": [
+        0.5,
+        2.0
+      ]
+    },
+    "finality": {
+      "soft_finality_blocks": 3,
+      "soft_finality_sec": 3.0,
+      "standard_finality_blocks": 100,
+      "hard_reorg_depth_blocks": 86400
+    }
+  },
+  "privacy": {
+    "scheme": "secp256k1 Dual-Key Stealth Address",
+    "standard": "Vitalik EIP-5564 / BIP-47 adaptation",
+    "address_prefix": "btck1s",
+    "keys": {
+      "view_key": "v, V = v * G (Read-only blockchain scanning & audit, no spend privilege)",
+      "spend_key": "s, S = s * G (Unique signing & spending privilege)"
+    },
+    "one_time_output_derivation": "P = S + Hash(r * V) * G",
+    "ephemeral_pubkey": "R = r * G"
+  },
+  "stratum_protocol": {
+    "port": 3333,
+    "variant": "Kaspa Stratum V1 (IceRiver & Antminer ASIC ready)",
+    "notify_format": "params: [job_id_str, pre_pow_hash_hex(64) + timestamp_ms_hex(16)] (80 characters total)",
+    "default_diff_ks0": 128,
+    "job_history_per_client": 128,
+    "job_ttl_seconds": 120,
+    "late_block_grace_seconds": 16,
+    "template_refresh_seconds": 4.0,
+    "template_broadcast_hz": 0.25,
+    "max_dag_submissions_per_congested_template": 1,
+    "max_dag_submissions_per_clear_template": 8,
+    "vardiff": {
+      "target_share_time_sec": 8.0,
+      "min_diff": 128,
+      "max_diff": 65536,
+      "minimum_pool_candidate_rate_hz": 1.25,
+      "network_target_cap": false
+    }
+  },
+  "ecosystem_architecture": {
+    "layer1_consensus_guardian": {
+      "role": "Physical Security & Immutable Settlement (物理安全与主权记账)",
+      "hardware": "Kaspa kHeavyHash ASIC (IceRiver / Antminer)",
+      "block_interval_sec": 1.0,
+      "core_properties": [
+        "Deterministic 0/1 verification",
+        "Extreme sunk cost commitment",
+        "Microsecond validation"
+      ]
+    },
+    "layer2_application_economy": {
+      "role": "High-Value Commercial Consumer & Execution Layer (高价值付费客户与商业执行层)",
+      "hardware": "GPU Clusters (Nvidia H100 / RTX 4090 running LLMs & AI Agents)",
+      "protocol": "HTTP 402 AI-RPC Micropayments",
+      "use_cases": [
+        "Autonomous Agent-to-Agent Inference",
+        "Model API Settlement",
+        "Decentralized Compute Marketplace"
+      ]
+    }
+  },
+  "x402_protocol": {
+    "standard": "HTTP 402 + x402 Open Machine Payment Standard (Coinbase / Cloudflare compatible)",
+    "challenge_headers": {
+      "status_code": 402,
+      "authenticate": "WWW-Authenticate: L402 invoice=\"{invoice_id}\", currency=\"SatK\", amount=\"{amount}\", address=\"{stealth_address}\"",
+      "x_payment_address": "X-Payment-Address: {stealth_address}",
+      "x_payment_amount": "X-Payment-Amount: {amount_satk}",
+      "x_payment_token": "X-Payment-Token: SatK",
+      "x_payment_invoice": "X-Payment-Invoice: {invoice_id}",
+      "x_payment_network": "X-Payment-Network: BTCK-BlockDAG",
+      "x_payment_expires": "X-Payment-Expires: {unix_timestamp}"
+    },
+    "proof_headers": [
+      "Authorization: x402 <receipt_json_or_txhash>",
+      "Authorization: BTCK-SatK <receipt_json>",
+      "X-Payment-Receipt: <receipt_json>"
+    ],
+    "audit_remediation": "Fully resolves Audit Report 09 Line 93: RFC 9110 compliant quote, proof of payment, anti-replay nonce, and streaming metering"
+  },
+  "embodied_robotics_subwallet": {
+    "standard": "BIP-44 Hierarchical Machine Derivation & TEE Delegated Pacts",
+    "purpose_index": 44,
+    "coin_type": 9999,
+    "derivation_path": "m/44'/9999'/0'/machine_index'/0",
+    "hardware_abstraction": {
+      "enclave_support": [
+        "NVIDIA Jetson TPM 2.0",
+        "ARM TrustZone",
+        "ROS2 Secure Node Enclave"
+      ],
+      "signing_algorithm": "BIP-340 Schnorr on secp256k1"
+    },
+    "security_invariants": {
+      "master_isolation": "Physical theft of robot hardware only exposes machine sub-key; master cold vault remains completely unreachable",
+      "daily_allowance_lock": "Enforceable spending ceiling (e.g. 50 SatK/day) with auto-reset and owner revocation",
+      "trajectory_anti_tracking": "Dual-Key Stealth Addresses (btck1s...) dynamically randomize payment outputs, cryptographically preventing third parties from reconstructing the physical movement trajectory of the robot"
+    }
+  }
+}
