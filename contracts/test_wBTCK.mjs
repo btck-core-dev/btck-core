@@ -247,20 +247,22 @@ async function runTestSuite() {
 
     // 8. Test Circuit Breaker (Pause / Unpause)
     console.log("\n[Test 7: Emergency Circuit Breaker (Pause/Unpause)]");
-    const pauseTx = await wbtck.pause({ nonce: await provider.getTransactionCount(deployer.address) });
+    const pauseTx = await wbtck.pause({ nonce: await provider.getTransactionCount(deployer.address, "pending") });
     await pauseTx.wait();
     const isPaused = await wbtck.paused();
     if (!isPaused) throw new Error("Contract should be paused");
     console.log("✓ Contract successfully PAUSED by Owner");
 
     try {
-        await userWbtck.bridgeBurn(ethers.parseEther("0.1"), stealthTarget, { nonce: await provider.getTransactionCount(user.address) });
+        await userWbtck.bridgeBurn(ethers.parseEther("0.1"), stealthTarget, { nonce: await provider.getTransactionCount(user.address, "pending") });
         throw new Error("FAILED: Burn succeeded while contract is paused");
     } catch (err) {
         console.log("✓ Bridge Burn during Pause correctly REVERTED: 'wBTCK: contract is paused'");
     }
 
-    const unpauseTx = await wbtck.unpause({ nonce: await provider.getTransactionCount(deployer.address) });
+    // BrowserProvider caches transaction counts briefly; derive the next nonce from
+    // the mined owner transaction so this test stays deterministic across ethers 6.x.
+    const unpauseTx = await wbtck.unpause({ nonce: pauseTx.nonce + 1 });
     await unpauseTx.wait();
     console.log("✓ Contract successfully UNPAUSED by Owner");
 
@@ -270,7 +272,7 @@ async function runTestSuite() {
     const overCapAmount = ethers.parseEther("21000001");
     const overCapSigs = await signBridgeMint(user.address, overCapAmount, depositTxid3, 120502n, [val1, val2]);
     try {
-        await wbtck.bridgeMintWithProof(user.address, overCapAmount, depositTxid3, 120502n, overCapSigs, { nonce: await provider.getTransactionCount(deployer.address) });
+        await wbtck.bridgeMintWithProof(user.address, overCapAmount, depositTxid3, 120502n, overCapSigs, { nonce: unpauseTx.nonce + 1 });
         throw new Error("FAILED: Hard cap exceeded");
     } catch (err) {
         console.log("✓ Hard cap overflow (21,000,001 wBTCK) correctly REVERTED: 'wBTCK: exceeds 21M hard cap'");
