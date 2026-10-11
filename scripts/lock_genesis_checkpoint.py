@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import multiprocessing
 import os
 import sqlite3
 import sys
@@ -27,6 +28,20 @@ from node.blockdag import BlockDAG
 from node.chain_store import ChainStore, deserialize_block
 
 TARGET_HEIGHT = 271_828
+_VERIFY_NETWORK = None
+
+
+def init_hash_verifier(network) -> None:
+    """Give each isolated worker the immutable Stage-B network definition."""
+    global _VERIFY_NETWORK
+    _VERIFY_NETWORK = network
+
+
+def verify_persisted_block_hash(payload_json: str) -> str:
+    """Recompute one canonical kHeavyHash in an isolated worker process."""
+    if _VERIFY_NETWORK is None:
+        raise RuntimeError("hash verifier was not initialized")
+    return deserialize_block(json.loads(payload_json), _VERIFY_NETWORK).hash
 
 
 def atomic_json(path: Path, payload: dict) -> None:
@@ -62,7 +77,15 @@ def main() -> None:
     parser.add_argument("--evidence", type=Path, required=True)
     parser.add_argument("--environment-id", required=True)
     parser.add_argument("--target-height", type=int, default=TARGET_HEIGHT)
+    parser.add_argument(
+        "--hash-workers",
+        type=int,
+        default=min(8, os.cpu_count() or 1),
+        help="processes used to independently recompute persisted kHeavyHash values",
+    )
     args = parser.parse_args()
+    if args.hash_workers < 1:
+        parser.error("--hash-workers must be positive")
 
     candidate = json.loads(args.candidate.read_text(encoding="utf-8"))
     if candidate.get("status") != "PENDING-INDEPENDENT-REPLAY":
@@ -123,16 +146,35 @@ def main() -> None:
     if target_db.exists() or target_db.with_name("chain.snapshot.v1.json.zlib").exists():
         raise SystemExit("output replay database already exists; use a fresh output-data-root")
     dag = BlockDAG(network=target_network)
-    store = ChainStore(target_db, target_network)
+    ChainStore(target_db, target_network)
     started = time.monotonic()
+    hashes_verified = 0
+    with sqlite3.connect(args.source_db) as connection:
+        rows = connection.execute("SELECT payload_json FROM accepted_blocks ORDER BY sequence")
+        context = multiprocessing.get_context("spawn")
+        with context.Pool(
+            processes=args.hash_workers,
+            initializer=init_hash_verifier,
+            initargs=(target_network,),
+        ) as workers:
+            while batch := rows.fetchmany(4096):
+                for _ in workers.imap_unordered(
+                    verify_persisted_block_hash,
+                    (str(row[0]) for row in batch),
+                    chunksize=128,
+                ):
+                    hashes_verified += 1
+
     records = 0
     checkpoint_seen = False
-    with sqlite3.connect(args.source_db) as connection:
+    with sqlite3.connect(args.source_db) as connection, sqlite3.connect(target_db) as target:
+        target.execute("PRAGMA synchronous=FULL")
+        target.execute("BEGIN IMMEDIATE")
         rows = connection.execute(
             "SELECT payload_json, state_root FROM accepted_blocks ORDER BY sequence"
         )
         for payload_json, source_state_root in rows:
-            block = deserialize_block(json.loads(payload_json), target_network)
+            block = deserialize_block(json.loads(payload_json), target_network, verify_hash=False)
             if not dag.replay_block(block):
                 raise SystemExit(f"duplicate block during Stage-B replay: {block.hash}")
             records += 1
@@ -144,7 +186,14 @@ def main() -> None:
             state_root = dag.state_root() if source_state_root else ""
             if source_state_root and state_root != source_state_root:
                 raise SystemExit(f"state-root mismatch while replaying {block.hash}")
-            store.append_block(block, state_root)
+            target.execute(
+                "INSERT INTO accepted_blocks(block_hash, payload_json, state_root, accepted_at) "
+                "VALUES(?, ?, ?, ?)",
+                (block.hash, payload_json, state_root, time.time()),
+            )
+
+    if hashes_verified != records:
+        raise SystemExit(f"hash verification count mismatch: {hashes_verified} != {records}")
 
     if not checkpoint_seen:
         raise SystemExit("source journal did not reach the checkpoint height")
@@ -169,6 +218,8 @@ def main() -> None:
         "captured_at": int(time.time()),
         "elapsed_seconds": round(time.monotonic() - started, 3),
         "records_replayed": records,
+        "hashes_verified": hashes_verified,
+        "hash_workers": args.hash_workers,
         "checkpoint_height": args.target_height,
         "checkpoint_hash": checkpoint_hash,
         "genesis_hash": target_network.genesis.expected_hash,
