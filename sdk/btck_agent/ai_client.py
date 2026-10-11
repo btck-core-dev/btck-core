@@ -22,7 +22,10 @@ from .delegation import DelegationReceipt, EnforceableBudgetTracker, DelegationS
 from .state_machine import TaskState, AgentTaskContext, InvalidStateTransitionError
 
 import sys
-sys.path.insert(0, '/Users/a1234/btck-core/src')
+from pathlib import Path
+_project_src = str(Path(__file__).resolve().parent.parent.parent / "src")
+if _project_src not in sys.path:
+    sys.path.insert(0, _project_src)
 from privacy.wallet_engine import schnorr_verify
 
 class DeliveryVerificationError(Exception):

@@ -2,7 +2,7 @@
 """
 watch_and_diagnose_4070.py
 ==========================
-Continuously polls 4070 server over Tailscale (100.73.134.73).
+Continuously polls 4070 server over Tailscale (127.0.0.1).
 The moment Tailscale/SSH becomes reachable:
 1. Logs in with a configured SSH key and verified known-host entry
 2. Captures real-time GPU thermals, VRAM junction temp, fan speed (nvidia-smi)
@@ -20,8 +20,8 @@ import sys
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 LOG_FILE = os.path.join(REPO_ROOT, "logs", "4070_hardware_diagnosis.log")
-TARGET_IP = "100.73.134.73"
-SSH_USER = "jczhang"
+TARGET_IP = "127.0.0.1"
+SSH_USER = "ubuntu"
 SSH_KEY = os.environ.get("BTCK_4070_SSH_KEY")
 
 def log(msg):

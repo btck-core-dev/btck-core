@@ -26,7 +26,7 @@
 - **本地审计控制端**：
   - 终端环境：MacBook Pro / macOS
   - 认证密钥：`~/.ssh/btck_deploy_ed25519`
-  - 矿工钱包文件：`/Users/a1234/Projects/crypto_mining/wallets/miner_ks0_devnet_wallet.json`
+  - 矿工钱包文件：仓库外受限目录中的 `miner_ks0_devnet_wallet.json`（不随源码发布）
 
 ---
 
@@ -83,7 +83,7 @@
 ## 四、 钱包架构、隐身地址与链上即时结算实证
 
 ### 1. 矿工双密钥隐蔽钱包（Dual-Key Stealth Address）
-- **钱包规范**：BIP-340 / secp256k1 双密钥隐身地址体系（[`miner_ks0_devnet_wallet.json`](file:///Users/a1234/Projects/crypto_mining/wallets/miner_ks0_devnet_wallet.json)）
+- **钱包规范**：BIP-340 / secp256k1 双密钥隐身地址体系（钱包文件保存在仓库外，不公开）
 - **矿工地址**：
   `btck1s0292a9d14fccf988b55ed20ed32c684d8012206cb1c428480428cc9a44580185db027e45c1689d4036750a15f6d5ea5514037cfce344dad2f2b7535c2ee11532503e727ed12f`
 - **公私钥参数配置**：
@@ -109,7 +109,7 @@
 
 ## 五、 L1 代币经济学与共识守恒全量复核（严谨纠偏）
 
-在此前讨论中，曾有临时口误将生态基金与奖池比例误记为旧版测试数值（2%、3%及单块10x连号）。本次审计依据白皮书终稿（[`docs/tokenomics_v2_canonical.md`](file:///Users/a1234/Projects/crypto_mining/btck-core/docs/tokenomics_v2_canonical.md)）及共识执行代码（[`src/tokenomics/emission_schedule.py`](file:///Users/a1234/Projects/crypto_mining/btck-core/src/tokenomics/emission_schedule.py)）完成了彻底核准：
+在此前讨论中，曾有临时口误将生态基金与奖池比例误记为旧版测试数值（2%、3%及单块10x连号）。本次审计依据白皮书终稿（[`docs/tokenomics_v2_canonical.md`](tokenomics_v2_canonical.md)）及共识执行代码（[`src/tokenomics/emission_schedule.py`](../src/tokenomics/emission_schedule.py)）完成了彻底核准：
 
 ### 1. 核心经济学机制三要素权威定义
 1. **生态发展基金（Eco Fund Reserve）**：

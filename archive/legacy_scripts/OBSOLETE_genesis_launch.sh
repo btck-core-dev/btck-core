@@ -8,7 +8,7 @@
 # ==============================================================================
 set -e
 
-PROJECT_DIR="/Users/a1234/btck-core"
+PROJECT_DIR="/opt/btck-core"
 LOG_DIR="${PROJECT_DIR}/logs"
 mkdir -p "${LOG_DIR}"
 

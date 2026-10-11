@@ -16,7 +16,10 @@ import threading
 from typing import List, Dict, Any, Optional
 
 import sys
-sys.path.insert(0, '/Users/a1234/btck-core/src')
+from pathlib import Path
+_project_src = str(Path(__file__).resolve().parent.parent.parent / "src")
+if _project_src not in sys.path:
+    sys.path.insert(0, _project_src)
 from privacy.stealth_address import StealthKeyPair, sha256
 from privacy.wallet_engine import schnorr_sign, schnorr_verify
 

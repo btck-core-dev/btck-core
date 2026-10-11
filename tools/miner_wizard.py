@@ -462,7 +462,7 @@ class MinerWizardCLI:
         target_dir = os.path.expanduser("~/btck_miner_node")
         os.makedirs(target_dir, exist_ok=True)
 
-        conda_prefix = os.environ.get("CONDA_PREFIX", "/home/jczhang/miniconda3/envs/vllm")
+        conda_prefix = os.environ.get("CONDA_PREFIX", "/opt/conda/envs/vllm")
         model_path = "/mnt/ai-data/vllm_install/models/Qwen3.6-35B-A3B-FP8"
         if not os.path.exists(model_path):
             model_path = "/mnt/ai-data/AI_SYSTEM/models/Qwen3.6-35B-A3B-FP8"

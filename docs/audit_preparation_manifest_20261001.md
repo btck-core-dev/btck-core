@@ -53,10 +53,10 @@ graph TD
 
 ### 1. 密码学与隐私层（Cryptography & Privacy）
 - **核心文件**：
-  - [`src/privacy/stealth_address.py`](file:///Users/a1234/Projects/crypto_mining/btck-core/src/privacy/stealth_address.py)
-  - [`src/privacy/wallet_engine.py`](file:///Users/a1234/Projects/crypto_mining/btck-core/src/privacy/wallet_engine.py)
-  - [`src/privacy/bip39.py`](file:///Users/a1234/Projects/crypto_mining/btck-core/src/privacy/bip39.py)
-  - [`tools/generate_bip39_wallets.py`](file:///Users/a1234/Projects/crypto_mining/btck-core/tools/generate_bip39_wallets.py)
+  - [`src/privacy/stealth_address.py`](src/privacy/stealth_address.py)
+  - [`src/privacy/wallet_engine.py`](src/privacy/wallet_engine.py)
+  - [`src/privacy/bip39.py`](src/privacy/bip39.py)
+  - [`tools/generate_bip39_wallets.py`](tools/generate_bip39_wallets.py)
 - **重点审计项**：
   - **双密钥隐身地址（DKSAP）实现**：
     - 一次性公钥派生：$P_{\text{onetime}} = P_{\text{spend}} + \text{SHA256}(r \cdot P_{\text{view}}) \cdot G$。
@@ -72,10 +72,10 @@ graph TD
 
 ### 2. 共识与区块 DAG 层（Consensus & BlockDAG）
 - **核心文件**：
-  - [`src/consensus/kheavyhash.py`](file:///Users/a1234/Projects/crypto_mining/btck-core/src/consensus/kheavyhash.py)
-  - [`src/consensus/pow.py`](file:///Users/a1234/Projects/crypto_mining/btck-core/src/consensus/pow.py)
-  - [`src/node/blockdag.py`](file:///Users/a1234/Projects/crypto_mining/btck-core/src/node/blockdag.py)
-  - [`src/consensus/genesis.py`](file:///Users/a1234/Projects/crypto_mining/btck-core/src/consensus/genesis.py)
+  - [`src/consensus/kheavyhash.py`](src/consensus/kheavyhash.py)
+  - [`src/consensus/pow.py`](src/consensus/pow.py)
+  - [`src/node/blockdag.py`](src/node/blockdag.py)
+  - [`src/consensus/genesis.py`](src/consensus/genesis.py)
 - **重点审计项**：
   - **kHeavyHash 硬件级矩阵 PoW**：
     - SHA256 预哈希 -> $64 \times 64$ 矩阵乘法 -> 256 位最终哈希比对。
@@ -88,7 +88,7 @@ graph TD
 
 ### 3. 经济模型与通缩释放（Tokenomics）
 - **核心文件**：
-  - [`src/tokenomics/emission_schedule.py`](file:///Users/a1234/Projects/crypto_mining/btck-core/src/tokenomics/emission_schedule.py)
+  - [`src/tokenomics/emission_schedule.py`](src/tokenomics/emission_schedule.py)
 - **重点审计项**：
   - **总供给量硬顶（Max Supply Limit）**：21,000,000.00000000 BTC-K 守恒校验。
   - **衰减模型**：4 年指数平滑平稳减半曲线，无跳跃式硬断崖。
@@ -96,8 +96,8 @@ graph TD
 
 ### 4. Stratum 矿池与 PPLNS 分账引擎（Stratum & PPLNS Engine）
 - **核心文件**：
-  - [`src/stratum/stratum_server.py`](file:///Users/a1234/Projects/crypto_mining/btck-core/src/stratum/stratum_server.py)
-  - [`src/stratum/pplns.py`](file:///Users/a1234/Projects/crypto_mining/btck-core/src/stratum/pplns.py)
+  - [`src/stratum/stratum_server.py`](src/stratum/stratum_server.py)
+  - [`src/stratum/pplns.py`](src/stratum/pplns.py)
 - **重点审计项**：
   - **双模设计（Dual-Mode Protocol）**：
     - `SOLO` 模式：Coinbase 直打矿工 Stealth 地址（私盘 72 小时保护）。
@@ -116,17 +116,17 @@ graph TD
 
 ### 5. 节点服务与网络边界安全（Node & Network Security）
 - **核心文件**：
-  - [`src/node/daemon.py`](file:///Users/a1234/Projects/crypto_mining/btck-core/src/node/daemon.py)
-  - [`src/node/rpc_client.py`](file:///Users/a1234/Projects/crypto_mining/btck-core/src/node/rpc_client.py)
-  - [`src/p2p/p2p_network.py`](file:///Users/a1234/Projects/crypto_mining/btck-core/src/p2p/p2p_network.py)
+  - [`src/node/daemon.py`](src/node/daemon.py)
+  - [`src/node/rpc_client.py`](src/node/rpc_client.py)
+  - [`src/p2p/p2p_network.py`](src/p2p/p2p_network.py)
 - **重点审计项**：
   - **RPC 鉴权与敏感方法防护**：Bearer Token 鉴权（`submitBlock`, `submitTransaction` 等）。
   - **VPS Linux 防火墙隔离**：iptables `DOCKER-USER` 链强制丢弃外部探测，物理隔离矿池端口。
 
 ### 6. 物理矿机守护者与自愈监控（Guardian Daemons）
 - **核心文件**：
-  - [`tools/ks0_power_guardian.py`](file:///Users/a1234/Projects/crypto_mining/btck-core/tools/ks0_power_guardian.py)
-  - [`scripts/hourly_inspector_daemon.py`](file:///Users/a1234/Projects/crypto_mining/btck-core/scripts/hourly_inspector_daemon.py)
+  - [`tools/ks0_power_guardian.py`](tools/ks0_power_guardian.py)
+  - [`scripts/hourly_inspector_daemon.py`](scripts/hourly_inspector_daemon.py)
 - **重点审计项**：
   - 断电自动重拨与冷启动恢复。
   - 风扇 100% 极速锁死，芯片温控安全保障。
@@ -162,8 +162,8 @@ graph TD
 - **主网高度**：区块高度已越过 **#8,418+**。
 - **累计产出**：主网产出沉淀 **42,336+ 枚 BTC-K**。
 - **物理算力状态**：
-  - `ks01` (`192.168.50.236`)：风扇 100% 满转，锁定 Diff 256.0，稳定产块，拒率 0.00%。
-  - `ks02` (`192.168.50.154`)：风扇 100% 满转，锁定 Diff 256.0，稳定产块，拒率 0.00%。
+  - `ks01` (`192.168.x.x`)：风扇 100% 满转，锁定 Diff 256.0，稳定产块，拒率 0.00%。
+  - `ks02` (`192.168.x.x`)：风扇 100% 满转，锁定 Diff 256.0，稳定产块，拒率 0.00%。
 - **网络防线**：VPS 瑞典服务器 `DOCKER-USER` 策略持续生效，全网扫描流量静默阻断。
 
 ---

@@ -14,6 +14,8 @@ tools/ks0_power_guardian.py
 *.tar.gz
 *.tar.gz.sha256
 backups/
+evidence/sampler/*.json
+evidence/sampler/*.json.sha256
 .env
 
 # Logs & Runtime

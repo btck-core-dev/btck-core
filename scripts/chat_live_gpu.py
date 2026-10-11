@@ -34,7 +34,7 @@ C_BOLD = "\033[1m"
 C_DIM = "\033[2m"
 C_RESET = "\033[0m"
 
-GPU_CLUSTER_URL = os.getenv("BTCK_AI_CLUSTER_URL", "http://100.73.134.73:8000/v1/chat/completions")
+GPU_CLUSTER_URL = os.getenv("BTCK_AI_CLUSTER_URL", "http://127.0.0.1:8000/v1/chat/completions")
 MODEL_NAME = os.getenv("BTCK_MODEL_NAME", "qwen3.6-35b")
 MINER_STEALTH_ADDR = os.getenv("BTCK_MINER_ADDR", "btck1sqqfounderstealthwallet4070cluster98234")
 NETWORK_HEIGHT = int(os.getenv("BTCK_L1_HEIGHT", "0"))
@@ -45,7 +45,7 @@ def print_banner():
     print(f"{C_CYAN}║ {C_BOLD}{C_WHITE}⚡ BTC-K AI-RPC 物理大模型实机对话与 SatK 经济结算测试终端{C_RESET}{C_CYAN}                   ║{C_RESET}")
     print(f"{C_CYAN}║ {C_DIM}物理集群: 4x RTX 4070 Ti SUPER (64GB VRAM) │ 模型: Qwen3.6-35B-A3B-FP8{C_RESET}{C_CYAN}    ║{C_RESET}")
     print(f"{C_CYAN}╚══════════════════════════════════════════════════════════════════════════════╝{C_RESET}")
-    print(f"  {C_BOLD}挂载节点:{C_RESET} {C_GREEN}http://100.73.134.73:8000{C_RESET} (4卡 Tensor Parallelism = 4)")
+    print(f"  {C_BOLD}挂载节点:{C_RESET} {C_GREEN}http://127.0.0.1:8000{C_RESET} (4卡 Tensor Parallelism = 4)")
     print(f"  {C_BOLD}共生状态:{C_RESET} {C_YELLOW}Pearl (PRL) 满速共生中{C_RESET} (DAG 4.8G 驻留，AI 抢占调度)")
     print(f"  {C_BOLD}分级定位:{C_RESET} {C_MAGENTA}Tier 2 (Advanced: 35B MoE 高阶复杂推理){C_RESET}")
     print(f"  {C_BOLD}矿工钱包:{C_RESET} {C_DIM}{MINER_STEALTH_ADDR[:16]}...{MINER_STEALTH_ADDR[-8:]} [🔒 Zero-Key 公开隐形]{C_RESET}")

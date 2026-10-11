@@ -7,19 +7,19 @@
   <key>ProgramArguments</key>
   <array>
     <string>/bin/bash</string>
-    <string>/Users/a1234/Projects/crypto_mining/btck-core/scripts/pull_mainnet_backup.sh</string>
+    <string>/opt/btck-core/scripts/pull_mainnet_backup.sh</string>
   </array>
   <key>WorkingDirectory</key>
-  <string>/Users/a1234/Projects/crypto_mining/btck-core</string>
+  <string>/opt/btck-core</string>
   <key>RunAtLoad</key>
   <true/>
   <key>StartInterval</key>
-  <integer>21600</integer>
+  <integer>3600</integer>
   <key>ThrottleInterval</key>
   <integer>300</integer>
   <key>StandardOutPath</key>
-  <string>/Users/a1234/Projects/crypto_mining/btck-core/logs/guardian-backup-pull.log</string>
+  <string>/opt/btck-core/logs/guardian-backup-pull.log</string>
   <key>StandardErrorPath</key>
-  <string>/Users/a1234/Projects/crypto_mining/btck-core/logs/guardian-backup-pull.err.log</string>
+  <string>/opt/btck-core/logs/guardian-backup-pull.err.log</string>
 </dict>
 </plist>

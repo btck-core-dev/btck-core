@@ -1,0 +1,12 @@
+[Unit]
+Description=Sample BTC-K mainnet evidence every five minutes near checkpoint
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+AccuracySec=15s
+Persistent=true
+Unit=btck-mainnet-checkpoint-sampler.service
+
+[Install]
+WantedBy=timers.target

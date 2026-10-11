@@ -6,8 +6,8 @@ import os
 import sys
 import paramiko
 
-TARGET_IP = "100.73.134.73"
-SSH_USER = "jczhang"
+TARGET_IP = "127.0.0.1"
+SSH_USER = "ubuntu"
 SSH_KEY = os.environ.get("BTCK_4070_SSH_KEY")
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 LOG_FILE = os.path.join(REPO_ROOT, "logs", "emergency_recovery_4070.log")

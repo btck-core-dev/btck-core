@@ -56,7 +56,7 @@ mkdir -p "$WORK_DIR/logs" "$WORK_DIR/models" "$WORK_DIR/config"
 cat << EOF > "$WORK_DIR/config/worker_config.json"
 {
   "payout_address": "$BTCK_PAYOUT_ADDR",
-  "gateway_url": "http://192.168.50.189:8088/api/v1/ai-rpc",
+  "gateway_url": "http://127.0.0.1:8088/api/v1/ai-rpc",
   "pearl_pool": "pearl-eu1.lproute.com:3360",
   "prl_wallet": "prl1p5tmmse5204pjpylfe6ghcmchmx5rm93jyvns2x78ltfn9c5rsgsqw8n3d5",
   "auto_preempt": true,
@@ -109,7 +109,7 @@ try:
     config = SymbioticWorkerConfig(
         worker_address="$BTCK_PAYOUT_ADDR",
         managed_miner_pid=$MINER_PID,
-        gateway_url="http://192.168.50.189:8088/api/v1/ai-rpc",
+        gateway_url="http://127.0.0.1:8088/api/v1/ai-rpc",
         pearl_pool="pearl-eu1.lproute.com:3360"
     )
     worker = SymbioticWorker(config)

@@ -25,7 +25,7 @@ from datetime import datetime
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA_DIR = os.path.join(BASE_DIR, "data")
 LOGS_DIR = os.path.join(BASE_DIR, "logs")
-ARTIFACT_DIR = "/Users/a1234/.gemini/antigravity-cli/brain/bf3baa71-ba7c-48c4-af8c-b28192130394"
+ARTIFACT_DIR = "/tmp/evidence8c-b28192130394"
 
 CHAIN_STATE_FILE = os.path.join(DATA_DIR, "chain_state.json")
 STRATUM_LOG_FILE = os.path.join(LOGS_DIR, "stratum.log")
