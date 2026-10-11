@@ -16,6 +16,9 @@ from urllib.request import Request, urlopen
 
 
 STATE_PATH = Path("/run/btck-mainnet-health.json")
+MINING_FREEZE_MARKER = Path(
+    "/home/ubuntu/btck-mainnet-guardian/evidence/guardian-mining-frozen.json"
+)
 NODE_RPC_URL = "http://127.0.0.1:17110/rpc"
 CHAIN_ID = "btck-mainnet-v1"
 
@@ -121,6 +124,10 @@ def main() -> None:
     ]
     state = load_state()
     for name, check, threshold, service in checks:
+        if name == "stratum" and MINING_FREEZE_MARKER.exists():
+            state[name] = 0
+            print("stratum: intentionally stopped for checkpoint freeze")
+            continue
         try:
             check()
             if state.get(name, 0):

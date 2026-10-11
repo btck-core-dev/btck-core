@@ -68,6 +68,15 @@ def main() -> None:
     candidate_path = args.root / "evidence/checkpoint-271828-candidate.json"
     if candidate_path.exists():
         return
+    atomic_json(
+        args.root / "evidence/guardian-mining-frozen.json",
+        {
+            "format": "btck-guardian-mining-freeze-v1",
+            "captured_at": int(time.time()),
+            "checkpoint_height": args.target_height,
+            "reason": "checkpoint-reached",
+        },
+    )
     subprocess.run(["systemctl", "stop", "btck-mainnet-stratum.service"], check=True)
 
     sys.path.insert(0, str(args.root / "src"))

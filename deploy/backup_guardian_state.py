@@ -110,6 +110,14 @@ def main() -> None:
         pool_status = fetch_json_or_status("http://127.0.0.1:3337/status")
         (temporary / "node-info.json").write_text(json.dumps(node_info, indent=2, sort_keys=True) + "\n")
         (temporary / "pool-status.json").write_text(json.dumps(pool_status, indent=2, sort_keys=True) + "\n")
+        for evidence_name in (
+            "checkpoint-271828-candidate.json",
+            "guardian-heartbeat.json",
+            "guardian-mining-frozen.json",
+        ):
+            evidence_source = args.root / "evidence" / evidence_name
+            if evidence_source.is_file():
+                shutil.copyfile(evidence_source, temporary / evidence_name)
         files = sorted(path for path in temporary.iterdir() if path.is_file())
         (temporary / "SHA256SUMS").write_text(
             "".join(f"{sha256(path)}  {path.name}\n" for path in files), encoding="utf-8"
