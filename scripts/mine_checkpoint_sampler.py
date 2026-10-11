@@ -82,6 +82,12 @@ def main() -> None:
             remaining = TARGET_CHECKPOINT_HEIGHT - height
             print(f"[{datetime.now(timezone.utc).strftime('%H:%M:%S UTC')}] Current Ledger Height: {height} | Remaining: {remaining} blocks")
 
+            if height >= TARGET_CHECKPOINT_HEIGHT and any(
+                args.output_dir.glob("evidence_h*_FINAL_271828_CANDIDATE.json")
+            ):
+                print("Final checkpoint sampler evidence already exists; nothing to do.")
+                break
+
             if args.force_sample:
                 record_evidence(stats, args.output_dir, tag="manual_snapshot")
                 if not sys.stdin.isatty():
