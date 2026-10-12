@@ -28,15 +28,21 @@ FINALIZE_SPEC.loader.exec_module(FINALIZE_MODULE)
 
 class TestMainnetGenesisMiner(unittest.TestCase):
     def test_locked_manifest_builds_exact_asic_payload_without_mutation(self):
-        manifest = PROJECT_ROOT / "params" / "networks" / "mainnet.json"
-        before = manifest.read_bytes()
-        job = MODULE.load_job(manifest, 1_791_417_600, None)
+        source = json.loads(
+            (PROJECT_ROOT / "params" / "networks" / "mainnet.json").read_text()
+        )
+        source["release"] = {"approved": False, "approval_id": ""}
+        with tempfile.TemporaryDirectory() as root:
+            manifest = Path(root) / "locked.json"
+            manifest.write_text(json.dumps(source), encoding="utf-8")
+            before = manifest.read_bytes()
+            job = MODULE.load_job(manifest, 1_791_417_600, None)
+            self.assertEqual(manifest.read_bytes(), before)
 
         self.assertEqual(job.bits, 0x1C017668)
         self.assertEqual(job.version, 2)
         self.assertEqual(len(job.pre_pow_hash), 32)
         self.assertEqual(len(job.kaspa_payload), 80)
-        self.assertEqual(manifest.read_bytes(), before)
 
     def test_non_mainnet_or_approved_manifest_is_rejected(self):
         source = json.loads(
@@ -64,6 +70,8 @@ class TestMainnetGenesisMiner(unittest.TestCase):
         source = json.loads(
             (PROJECT_ROOT / "params" / "networks" / "mainnet.json").read_text()
         )
+        source["release"] = {"approved": False, "approval_id": ""}
+        source["consensus"]["hard_checkpoints"] = {}
         source["consensus"]["pow_limit_bits"] = "0x207fffff"
         source["consensus"]["daa"]["initial_bits"] = "0x207fffff"
         timestamp = 1_791_442_800

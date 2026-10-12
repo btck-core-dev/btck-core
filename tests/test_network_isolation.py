@@ -12,7 +12,7 @@ from unittest import mock
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
 
 from config.network import (
-    DisabledFeatureError, MainnetReleaseError, NetworkConfigurationError,
+    DisabledFeatureError, NetworkConfigurationError,
     load_network, require_feature,
 )
 from node.blockdag import BlockDAG
@@ -65,11 +65,16 @@ class TestNetworkIsolation(unittest.TestCase):
         self.assertEqual(dev_path.name, "devnet")
         self.assertEqual(test_path.name, "testnet")
 
-    def test_mainnet_is_locked_without_approved_manifest(self):
-        with self.assertRaises(MainnetReleaseError):
-            load_network("mainnet")
+    def test_mainnet_uses_approved_stage_b_manifest(self):
+        mainnet = load_network("mainnet")
+        self.assertTrue(mainnet.release_approved)
+        self.assertEqual(mainnet.release_approval_id, "BTCK-STAGEB-20261012-AGY-001")
+        self.assertEqual(
+            mainnet.hard_checkpoints[271_828],
+            "02ecd7521f806a88cd8d688416edd1bc67c3a535a45d97b7bd5a910000000000",
+        )
 
-    def test_locked_mainnet_candidate_uses_frozen_public_wallet_outputs(self):
+    def test_approved_mainnet_uses_frozen_public_wallet_outputs(self):
         project = Path(__file__).resolve().parents[1]
         manifest = json.loads(
             (project / "params/networks/mainnet.json").read_text(encoding="utf-8")
@@ -77,7 +82,7 @@ class TestNetworkIsolation(unittest.TestCase):
         wallets = json.loads(
             (project / "params/mainnet_wallets_public.json").read_text(encoding="utf-8")
         )
-        self.assertFalse(manifest["release"]["approved"])
+        self.assertTrue(manifest["release"]["approved"])
         self.assertEqual(manifest["chain_id"], "btck-mainnet-v1")
         self.assertEqual(manifest["consensus"]["pow_limit_bits"], "0x1c176680")
         self.assertEqual(manifest["consensus"]["daa"]["initial_bits"], "0x1c017668")

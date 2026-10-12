@@ -5,9 +5,13 @@
   "p2p_magic": "4254434d",
   "data_subdir": "mainnet",
   "release": {
-    "approved": false,
-    "approval_id": "",
-    "note": "LOCKED MAINNET CANDIDATE. Public wallet outputs, Euronews headline, PoW floor, DAA initial target and genesis bits are frozen; genesis timestamp, nonce and expected hash remain pending."
+    "approved": true,
+    "approval_id": "BTCK-STAGEB-20261012-AGY-001",
+    "note": "Public Stage-B approval bound to two independent replay records.",
+    "replay_evidence_sha256": {
+      "replay-a-mac-a1234-20261011": "4896e9990bf5a983b2499629bbc797ccab17ef49980ad8d843bd73491cee919d",
+      "replay-b-jczhang-super-server-20261011": "b4ce01c2c286408ff6639d232be51df1a27820babe0d2bf14153df740a2b31a7"
+    }
   },
   "consensus": {
     "block_version": 2,
@@ -28,7 +32,9 @@
       "0218c8a8b18a55da9f1aeb1d60baebfe176419eca4fdf5549ffcb9c0190060d55c",
       "0263bf9a23d411aad1e3e5a9c71414895ac32122ff8f7a68ac651cba5c5d0dfd4d"
     ],
-    "hard_checkpoints": {},
+    "hard_checkpoints": {
+      "271828": "02ecd7521f806a88cd8d688416edd1bc67c3a535a45d97b7bd5a910000000000"
+    },
     "tokenomics": {
       "version": "2.4.1",
       "daily_quotas_sha256": "7896cf36303e123f799c71b4d72b74a684e0079c1e32e57eac34d4ed04913e59",
@@ -42,18 +48,18 @@
   },
   "genesis": {
     "version": 2,
-    "timestamp": 1.0,
+    "timestamp": 1791442800.0,
     "bits": 469857896,
-    "nonce": "0x0",
+    "nonce": "0x2012b6eb6bc9c",
     "headline": "2026-10-06 Euronews: Belgian physicist wins Nobel for turning Antarctic ice into a telescope",
     "coinbase_output": [
       "03b51092a259bf7ef34de4585ab779e7504f4d984ffe3a47bfcaa96a0c1efb47a1",
       "0219a04205e31791a2cfdc8368d75b6cec8020b2da106328a18b85323227e0aef7"
     ],
-    "expected_hash": "0000000000000000000000000000000000000000000000000000000000000000"
+    "expected_hash": "b9249be0f1b57021a9cfef8241a499c6e975a91e24d6a3fc22ce850000000000"
   },
   "features": {
-    "stratum": false,
+    "stratum": true,
     "ai_payments": false,
     "web_wallet_send": false,
     "dex": false,

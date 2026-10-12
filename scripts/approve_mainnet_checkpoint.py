@@ -81,7 +81,11 @@ def main() -> None:
         "approval_id": args.approval_id.strip(),
         "note": "Public Stage-B approval bound to two independent replay records.",
         "replay_evidence_sha256": {
-            path.name: digest(path) for path in sorted(args.replay_evidence, key=lambda item: item.name)
+            str(record["environment_id"]): digest(path)
+            for path, record in sorted(
+                zip(args.replay_evidence, records),
+                key=lambda item: str(item[1]["environment_id"]),
+            )
         },
     }
     atomic_json(args.output, manifest)

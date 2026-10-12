@@ -39,7 +39,9 @@ class TestCheckpointReleaseTools(unittest.TestCase):
             }
             evidence = []
             for index, environment in enumerate(("isolated-a", "isolated-b"), 1):
-                path = root / f"replay-{index}.json"
+                evidence_dir = root / f"replay-{index}"
+                evidence_dir.mkdir()
+                path = evidence_dir / "replay-evidence.json"
                 path.write_text(json.dumps({**common, "environment_id": environment}), encoding="utf-8")
                 evidence.append(path)
             output = root / "approved.json"
@@ -55,6 +57,10 @@ class TestCheckpointReleaseTools(unittest.TestCase):
             approved = json.loads(output.read_text(encoding="utf-8"))
             self.assertTrue(approved["release"]["approved"])
             self.assertEqual(approved["release"]["approval_id"], "BTCK-PUBLIC-UNIT-TEST-0001")
+            self.assertEqual(
+                set(approved["release"]["replay_evidence_sha256"]),
+                {"isolated-a", "isolated-b"},
+            )
 
             duplicate = json.loads(evidence[1].read_text(encoding="utf-8"))
             duplicate["environment_id"] = "isolated-a"
