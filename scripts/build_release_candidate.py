@@ -25,7 +25,8 @@ NODE_PREFIXES = (
 NODE_FILES = {
     "Dockerfile", "README.md", "requirements.txt", "docker-compose.yml", "bin/btck-cli",
     "src/web_explorer_server.py",
-    "deploy/btckd.service", "deploy/install_seed_node.sh", "deploy/launch_mainnet_guardian.sh",
+    "deploy/btckd.service", "deploy/install_seed_node.sh", "deploy/run_seed_node.sh",
+    "deploy/launch_mainnet_guardian.sh",
     "deploy/verify_chain_replay.py", "deploy/backup_guardian_state.py",
     "scripts/backup_genesis_state.sh", "scripts/mainnet_preflight.py",
     "scripts/finalize_mainnet_genesis.py", "scripts/mainnet_genesis_rehearsal.py",

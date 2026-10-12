@@ -117,6 +117,7 @@ def main() -> None:
         "scripts/sign_mainnet_release.py", "scripts/verify_mainnet_release.py",
         "scripts/verify_public_ibd.py", "scripts/public_launch_gate.py",
         "deploy/capture_node_readiness.py", "deploy/external_public_probe.py",
+        "deploy/install_seed_node.sh", "deploy/run_seed_node.sh", "deploy/btckd.service",
         "packaging/reproducible_tar.py", "packaging/verify_wallet_reproducibility.py",
         "packaging/build_wallet_macos.sh", "packaging/WALLET_README.txt",
         "deploy/btck-external-public-probe.service", "deploy/btck-external-public-probe.timer",

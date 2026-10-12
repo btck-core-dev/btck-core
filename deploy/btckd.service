@@ -1,25 +1,32 @@
 [Unit]
-Description=BTC-K Sovereign BlockDAG Seed Node Daemon
+Description=BTC-K checkpoint-bound MAINNET seed node
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=simple
 User=btck
-WorkingDirectory=/opt/btck-core
-Environment=BTCK_NETWORK=devnet
-EnvironmentFile=-/etc/btck/btckd.env
-ExecStart=/usr/bin/python3 /opt/btck-core/src/node/daemon.py --host 127.0.0.1 --p2p-host 0.0.0.0 --port 16110 --p2p-port 16111 --data-root /var/lib/btck
+Group=btck
+WorkingDirectory=/opt/btck/current
+EnvironmentFile=/etc/btck/btckd.env
+ExecStart=/opt/btck/current/deploy/run_seed_node.sh
 Restart=on-failure
 RestartSec=5s
 LimitNOFILE=65535
+UMask=0027
 NoNewPrivileges=true
 PrivateTmp=true
+PrivateDevices=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/var/lib/btck
-CapabilityBoundingSet=
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
 LockPersonality=true
+CapabilityBoundingSet=
+ReadWritePaths=/var/lib/btck
 
 [Install]
 WantedBy=multi-user.target

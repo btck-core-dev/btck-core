@@ -33,7 +33,8 @@
 
 ```text
 RELEASE_MANIFEST.json
-RELEASE_MANIFEST.json.sig
+RELEASE_SIGNATURE.json
+RELEASE_SIGNING_PUBLIC_KEY.pem
 SHA256SUMS
 SBOM.spdx.json
 mainnet.json
@@ -62,7 +63,16 @@ P2P protocol = 1.2.0
 checkpoint #271828 = approved manifest value
 ```
 
-不得运行已被 fail-closed 的 `deploy/install_seed_node.sh` 旧安装器。它故意退出，用于阻止复制测试密钥和暴露无认证 RPC。正式安装自动化只能在最终 release 形成后，以已验签制品的实际目录结构重新审查并发布。
+先从制品目录独立运行上述验签命令。验签通过后，使用节点包内的安装器；默认只安装并启用服务，不启动节点，也不改变任何防火墙规则：
+
+```bash
+sudo deploy/install_seed_node.sh \
+  --release-dir /path/to/release \
+  --trusted-public-key /offline/trust/btck-release-ed25519.pub \
+  --seed seed-other.example:16111
+```
+
+安装器只接受 `PUBLIC-MAINNET-CHECKPOINT-BOUND` Release，安全检查 tar 路径，将 RPC 固定到 loopback，并使用 `/opt/btck/current/params/networks/mainnet.json`。人工复核 `/etc/btck/btckd.env` 和防火墙后才可显式启动 `btckd.service`；也可在已经批准启动时增加 `--start`。不得从未验签源码目录部署，不得复用 Guardian manifest。
 
 ## 5. 两节点与 Fresh IBD 验收
 
