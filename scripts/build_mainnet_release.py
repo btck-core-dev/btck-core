@@ -98,6 +98,8 @@ def main() -> None:
         raise SystemExit("independent replay records disagree")
 
     wallet_evidence = json.loads(args.wallet_evidence.read_text(encoding="utf-8"))
+    if wallet_evidence.get("version") != args.version:
+        raise SystemExit("wallet evidence version does not match release version")
     if wallet_evidence.get("network") != "mainnet":
         raise SystemExit("wallet evidence network mismatch")
     if wallet_evidence.get("genesis_hash") != network.genesis.expected_hash:

@@ -1,5 +1,3 @@
-import { ethers } from "ethers";
-
 console.log("================================================================");
 console.log("🦄 BTC-K / Uniswap V3 Single-Sided Liquidity Simulation");
 console.log("================================================================");
@@ -13,7 +11,7 @@ const FDV_AT_INITIAL = 21000000 * INITIAL_PRICE_USD;
 
 console.log(`✓ Target Asset: Wrapped BTC-K (wBTCK) on Base / Arbitrum`);
 console.log(`✓ Initial Liquidity Deposit: ${INITIAL_WBTCK_SUPPLY.toLocaleString()} wBTCK`);
-console.log(`✓ Initial USDC Capital Required: $0.00 (Zero Capital Risk)`);
+console.log(`✓ Initial USDC side of this arithmetic example: $0.00`);
 console.log(`✓ Concentrated Range: [ $${PRICE_MIN_USD.toFixed(2)}, $${PRICE_MAX_USD.toFixed(2)} ]`);
 console.log(`✓ Implied Fully Diluted Valuation (FDV): $${FDV_AT_INITIAL.toLocaleString()} USD`);
 
@@ -41,19 +39,28 @@ let totalUsdcCollected = 0;
 let remainingWbtck = INITIAL_WBTCK_SUPPLY;
 
 tradeScenarios.forEach(t => {
-  const tokensBought = t.buyAmtUsdc / t.price;
+  const requestedTokens = t.buyAmtUsdc / t.price;
+  const tokensBought = Math.min(requestedTokens, remainingWbtck);
+  const acceptedUsdc = tokensBought * t.price;
   remainingWbtck -= tokensBought;
-  totalUsdcCollected += t.buyAmtUsdc;
-  console.log(`  Scenario #${t.step}: [${t.trader}] bought with $${t.buyAmtUsdc.toLocaleString()} USDC @ $${t.price}`);
+  totalUsdcCollected += acceptedUsdc;
+  console.log(`  Scenario #${t.step}: [${t.trader}] requested $${t.buyAmtUsdc.toLocaleString()} USDC @ $${t.price}`);
   console.log(`    -> wBTCK Delivered: ${tokensBought.toFixed(2)} wBTCK | Remaining LP: ${remainingWbtck.toFixed(2)} wBTCK`);
+  if (acceptedUsdc < t.buyAmtUsdc) {
+    console.log(`    -> Partial fill: only $${acceptedUsdc.toFixed(2)} USDC accepted because inventory was exhausted`);
+  }
   console.log(`    -> Cumulative Vault USDC Collected: $${totalUsdcCollected.toLocaleString()} USDC`);
 });
 
-console.log(`\n[Step 3: Post-Execution Valuation & Zero-Loss Verification]`);
+if (remainingWbtck < 0) {
+  throw new Error("Simulation invariant violated: remaining inventory is negative");
+}
+
+console.log(`\n[Step 3: Post-Execution Arithmetic Check]`);
 console.log(`✓ Pure USDC Cash Collected in Treasury: $${totalUsdcCollected.toLocaleString()} USDC`);
 console.log(`✓ Remaining wBTCK in Liquidity Pool: ${remainingWbtck.toFixed(2)} wBTCK (valued at $${(remainingWbtck * 0.18).toFixed(2)})`);
-console.log(`✓ Net Strategic Gain: $${(totalUsdcCollected + remainingWbtck * 0.18).toLocaleString()} USD`);
-console.log(`✓ Downside Risk: 0.00% (No initial USDC was deposited; zero impermanent loss risk)`);
+console.log(`✓ Illustrative marked value: $${(totalUsdcCollected + remainingWbtck * 0.18).toLocaleString()} USD`);
+console.log(`⚠ This arithmetic example is not a market, liquidity, security, or profit guarantee.`);
 console.log("\n================================================================");
-console.log("🎉 UNISWAP V3 SINGLE-SIDED DEPLOYMENT MODEL VALIDATED & READY");
+console.log("UNISWAP V3 INVENTORY ARITHMETIC: PASS (L2 DEPLOYMENT REMAINS DISABLED)");
 console.log("================================================================");

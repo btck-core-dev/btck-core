@@ -1,4 +1,3 @@
-import ganache from 'ganache';
 import { ethers } from 'ethers';
 import fs from 'fs';
 import path from 'path';
@@ -8,6 +7,15 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 async function runTestSuite() {
+    let ganache;
+    try {
+        ({ default: ganache } = await import('ganache'));
+    } catch {
+        throw new Error(
+            "Legacy Ganache execution is disabled because Ganache 7.9.2 carries " +
+            "unpatched bundled dependencies. L2/wBTCK remains outside the public L1 launch."
+        );
+    }
     console.log("================================================================");
     console.log("🔒 Running BTC-K wBTCK Cross-Chain Bridge Hardened Security Test Suite");
     console.log("================================================================");

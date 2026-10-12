@@ -4,15 +4,15 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "node test_uniswap_v3_single_sided.mjs",
+    "compile": "solcjs --bin --abi wBTCK.sol -o build"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "type": "commonjs",
-  "dependencies": {
+  "devDependencies": {
     "ethers": "^6.13.2",
-    "ganache": "^7.9.2",
     "solc": "^0.8.20"
   },
   "overrides": {
