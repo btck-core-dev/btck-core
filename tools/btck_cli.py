@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 """Fail-closed node-backed BTC-K wallet CLI.
 
-Every usable network identity is embedded at build time.  The private guardian
-MAINNET identity is intentionally versioned separately from the future public
-checkpoint identity, so this wallet will reject that later identity until a
-new public wallet release is built.
+Every usable network identity is embedded at build time. Public MAINNET wallet
+packages carry the approved checkpoint-bound identity in an authenticated
+adjacent sidecar and reject nodes advertising any other identity.
 """
 
 from __future__ import annotations
@@ -26,7 +25,7 @@ from urllib.request import Request, urlopen
 BASE_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(BASE_DIR / "src"))
 
-WALLET_VERSION = "3.2.3-guardian1"
+WALLET_VERSION = "3.2.3"
 RECOVERY_SCHEME = "bip39-btck-dksap-v1"
 DEFAULT_SYNC_URL = "https://wallet.bitcoin-k.com/api/wallet/sync"
 

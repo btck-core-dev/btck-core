@@ -17,7 +17,7 @@ fi
 while true; do
   clear
   echo "=============================================="
-  echo " BTC-K Wallet 3.2.3-guardian1"
+  echo " BTC-K Wallet __BTCK_WALLET_VERSION__"
   echo "=============================================="
   echo "1. Create the three mainnet wallets"
   echo "2. View an encrypted wallet address"
@@ -47,7 +47,7 @@ while true; do
       if [ ! -f "$wallet_path" ]; then
         echo "Personal wallet not found: $wallet_path"
       else
-        echo "Syncing through the private HTTPS endpoint. Keys always remain on this Mac..."
+        echo "Syncing through the public HTTPS endpoint. Keys always remain on this Mac..."
         "$WALLET_BIN" balance "$wallet_path" --unit "$display_unit" || \
           echo "Balance lookup failed. The wallet file was not modified."
       fi

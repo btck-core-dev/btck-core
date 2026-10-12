@@ -6,8 +6,8 @@ BUILD_ROOT="${BTCK_WALLET_BUILD_ROOT:-$PROJECT_DIR/build/wallet-macos}"
 RELEASE_DIR="${BTCK_WALLET_RELEASE_DIR:-$PROJECT_DIR/dist/wallet}"
 VENV_DIR="$BUILD_ROOT/venv"
 ARCH="$(uname -m)"
-VERSION="${BTCK_WALLET_VERSION:-3.2.3-guardian1}"
-NETWORK_MANIFEST="${BTCK_WALLET_NETWORK_MANIFEST:-$PROJECT_DIR/params/networks/mainnet.guardian.json}"
+VERSION="${BTCK_WALLET_VERSION:-3.2.3}"
+NETWORK_MANIFEST="${BTCK_WALLET_NETWORK_MANIFEST:-$PROJECT_DIR/params/networks/mainnet.json}"
 SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH:-$(git -C "$PROJECT_DIR" show -s --format=%ct HEAD)}"
 export SOURCE_DATE_EPOCH
 export PYTHONHASHSEED="${PYTHONHASHSEED:-0}"
@@ -94,8 +94,10 @@ PY
 
 install -m 0644 "$PROJECT_DIR/packaging/WALLET_README.txt" \
   "$BUILD_ROOT/package/$PACKAGE_NAME/README.txt"
-install -m 0755 "$PROJECT_DIR/packaging/btck_wallet_launcher.command" \
-  "$BUILD_ROOT/package/$PACKAGE_NAME/Open BTC-K Wallet.command"
+sed "s/__BTCK_WALLET_VERSION__/$VERSION/g" \
+  "$PROJECT_DIR/packaging/btck_wallet_launcher.command" \
+  > "$BUILD_ROOT/package/$PACKAGE_NAME/Open BTC-K Wallet.command"
+chmod 0755 "$BUILD_ROOT/package/$PACKAGE_NAME/Open BTC-K Wallet.command"
 
 "$WALLET_COMMAND" --version
 tmp_wallet="$BUILD_ROOT/package/smoke-wallet.json"

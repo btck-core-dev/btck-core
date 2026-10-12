@@ -9,7 +9,7 @@ genesis hash, or consensus fingerprint differs. Guardian and public post-checkpo
 separate artifacts and must never be substituted for one another.
 
 Private keys, view keys, and transaction signing always remain on this Mac. Balance lookup downloads
-address-neutral chain output pages through the private HTTPS endpoint; the server receives no wallet
+address-neutral chain output pages through the public HTTPS endpoint; the server receives no wallet
 address or key. The incremental sync cursor and identified UTXOs are stored beside the wallet in an
 encrypted .sync.json file protected by the wallet password.
 
@@ -42,8 +42,8 @@ Select option 3 in the launcher, or run:
   ./btck-wallet balance ~/Documents/BTC-K-Mainnet-Wallets/personal_wallet.json --unit satk
 
 The first scan shows height progress. Later scans download only new blocks. Deleting the encrypted
-.sync.json cache causes a full rescan but does not affect private keys or on-chain assets. The private
-endpoint is reachable only from the approved management IP; no SSH account or full local node is used.
+.sync.json cache causes a full rescan but does not affect private keys or on-chain assets. The public
+endpoint requires no wallet address, SSH account, or full local node.
 
 Offline transaction workflow
 ----------------------------
