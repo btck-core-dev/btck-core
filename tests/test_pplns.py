@@ -244,6 +244,28 @@ class MockNodeRPC:
 
 
 class TestAutoPayoutWorker(unittest.IsolatedAsyncioTestCase):
+    async def test_empty_payout_cycle_does_not_scan_chain_utxos(self):
+        temp_dir = tempfile.mkdtemp()
+        db_path = os.path.join(temp_dir, "test_empty_worker_pool.db")
+        try:
+            engine = PPLNSEngine(db_path=db_path, window_size=100)
+            treasury = StealthWallet.generate("PoolTreasury")
+            mock_rpc = MockNodeRPC(utxos=[])
+            worker = AutoPayoutWorker(
+                engine=engine,
+                treasury_wallet=treasury,
+                node_rpc=mock_rpc,
+                default_threshold_satk=int(5.0 * SATK_PER_COIN),
+            )
+
+            async def fail_if_called(method: str, params: dict = None):
+                self.fail(f"unexpected RPC call with no eligible payout: {method}")
+
+            mock_rpc.call = fail_if_called
+            self.assertEqual(await worker.run_payout_cycle(), [])
+        finally:
+            shutil.rmtree(temp_dir)
+
     async def test_auto_payout_cycle(self):
         temp_dir = tempfile.mkdtemp()
         db_path = os.path.join(temp_dir, "test_worker_pool.db")

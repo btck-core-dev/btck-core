@@ -1025,7 +1025,11 @@ class AutoPayoutWorker:
         try:
             utxo_resp = await self.node_rpc.call("getUTXOSet")
             raw_outputs = utxo_resp.get("outputs", [])
-            self.treasury_wallet.scan_chain_outputs(raw_outputs)
+            # A public chain can contain hundreds of thousands of outputs.
+            # Scanning them on the asyncio thread starves Stratum clients and
+            # the status server for minutes, so keep the CPU-bound wallet scan
+            # off the mining event loop.
+            await asyncio.to_thread(self.treasury_wallet.scan_chain_outputs, raw_outputs)
             bal = self.treasury_wallet.get_balance_satk()
             return bal
         except Exception as exc:
@@ -1037,11 +1041,17 @@ class AutoPayoutWorker:
         if not self.treasury_wallet:
             return []
 
-        await self.sync_treasury_utxos()
-        available_satk = self.treasury_wallet.get_balance_satk()
-        eligible = self.engine.get_pending_payouts(self.default_threshold_satk)
+        # Do not request and scan the full UTXO set when there is nothing to
+        # pay. This is the normal state of a newly launched PPLNS pool.
+        eligible = await asyncio.to_thread(
+            self.engine.get_pending_payouts,
+            self.default_threshold_satk,
+        )
         if not eligible:
             return []
+
+        await self.sync_treasury_utxos()
+        available_satk = self.treasury_wallet.get_balance_satk()
 
         payout_results = []
         for item in eligible:
