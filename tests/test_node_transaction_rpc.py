@@ -91,6 +91,30 @@ class TestNodeTransactionRPC(unittest.IsolatedAsyncioTestCase):
         result = await self.rpc.call("submitTransaction", {"transaction": transaction_to_dict(tx)})
         self.assertEqual(result["status"], "mempool")
 
+    async def test_wallet_page_does_not_walk_lifetime_spent_values_when_outputs_are_live(self):
+        class GuardedUndo(dict):
+            def values(self):
+                raise AssertionError("wallet page performed a lifetime undo scan")
+
+        genesis = self.daemon.dag.genesis_hash
+        outpoint = ("22" * 32, 0)
+        entry = UTXOEntry(
+            amount_satk=123,
+            P_onetime_hex="03" + "22" * 32,
+            R_ephem_hex="02" + "11" * 32,
+            block_height=0,
+        )
+        self.daemon.dag.utxo_set.utxos[outpoint] = entry
+        self.daemon.dag.utxo_set._block_created_undo.setdefault(genesis, []).append(outpoint)
+        self.daemon.dag.utxo_set._block_spent_undo = GuardedUndo(
+            self.daemon.dag.utxo_set._block_spent_undo
+        )
+
+        page = self.daemon.get_wallet_sync_page({
+            "from_height": 0, "limit": 1, "anchor_hash": "",
+        })
+        self.assertTrue(any(item["txid"] == outpoint[0] for item in page["blocks"][0]["created"]))
+
 
 if __name__ == "__main__":
     unittest.main()

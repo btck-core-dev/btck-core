@@ -122,6 +122,7 @@ def main() -> None:
         "deploy/install_seed_node.sh", "deploy/run_seed_node.sh", "deploy/btckd.service",
         "packaging/reproducible_tar.py", "packaging/verify_wallet_reproducibility.py",
         "packaging/build_wallet_macos.sh", "packaging/WALLET_README.txt",
+        "tools/btck_wallet_gui.py", "src/privacy/wallet_registry.py",
         "deploy/btck-external-public-probe.service", "deploy/btck-external-public-probe.timer",
         "deploy/verify_chain_replay.py", "src/tokenomics/canonical_daily_quotas.py",
     }

@@ -1,11 +1,10 @@
 [Unit]
-Description=Hourly BTC-K MAINNET guardian state backup
+Description=Daily low-impact BTC-K MAINNET state backup
 
 [Timer]
-OnBootSec=10min
-OnUnitActiveSec=1h
+OnCalendar=*-*-* 03:30:00 UTC
 Persistent=true
-RandomizedDelaySec=2min
+RandomizedDelaySec=15min
 
 [Install]
 WantedBy=timers.target

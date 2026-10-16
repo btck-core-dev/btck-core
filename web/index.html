@@ -930,6 +930,7 @@
       50% { opacity: 0.4; }
       100% { opacity: 1; }
     }
+
   </style>
 </head>
 <body>
@@ -1176,7 +1177,7 @@
     </div>
 
     <!-- ==================================================================== -->
-    <!-- TRACK A PUBLIC MINER ID (payout addresses remain private) -->
+    <!-- ADDRESS-SCOPED MINER LOOKUP -->
     <!-- ==================================================================== -->
     <section class="lookup-card">
       <div class="section-title" style="margin-bottom: 4px;">
@@ -1184,12 +1185,12 @@
         <h2>Track Your Miner & Hashrate</h2>
       </div>
       <p style="font-size: 13px; color: var(--text-muted);">
-        Enter the public Miner ID shown in the worker table. Payout addresses and balances are never exposed by the public pool API.
+        Enter the BTC-K payout address used in your miner configuration. View the combined hashrate and every worker registered under that address.
       </p>
 
       <div class="lookup-form">
         <div class="lookup-input-wrap">
-          <input type="text" id="miner-lookup-input" class="lookup-input" placeholder="Miner ID (for example miner-a1b2c3d4e5f6)" onkeyup="handleLookupKeyup(event)">
+          <input type="text" id="miner-lookup-input" class="lookup-input" placeholder="BTC-K payout address (btck1s...)" onkeyup="handleLookupKeyup(event)" autocomplete="off" spellcheck="false">
         </div>
         <button class="lookup-btn" onclick="executeMinerLookup()">Lookup Stats</button>
       </div>
@@ -1198,31 +1199,32 @@
       <div class="miner-personal-panel" id="miner-personal-panel">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
           <h3 style="font-size: 15px; color: #fff;" id="mp-title">Worker Statistics</h3>
-          <span class="badge" style="background: rgba(16, 185, 129, 0.2); color: var(--emerald-primary); padding: 4px 10px; border-radius: 4px; font-size: 11px; font-weight: 700;">● Active Hashrate Detected</span>
+          <span class="badge" id="mp-status" style="background: rgba(16, 185, 129, 0.2); color: var(--emerald-primary); padding: 4px 10px; border-radius: 4px; font-size: 11px; font-weight: 700;">● Active Hashrate Detected</span>
         </div>
 
         <div class="miner-personal-grid">
           <div style="background: var(--bg-surface); padding: 14px; border-radius: 8px; border: 1px solid var(--border-subtle);">
-            <div style="font-size: 11px; color: var(--text-muted); text-transform: uppercase;">Share Ledger</div>
-            <div style="font-size: 22px; font-weight: 800; color: var(--emerald-primary);" id="mp-shares">Private</div>
-            <div style="font-size: 11px; color: var(--text-muted);">Available only to the authenticated miner</div>
+            <div style="font-size: 11px; color: var(--text-muted); text-transform: uppercase;">Total Hashrate</div>
+            <div style="font-size: 22px; font-weight: 800; color: var(--emerald-primary);" id="mp-hashrate">—</div>
+            <div style="font-size: 11px; color: var(--text-muted);">10-minute accepted-share estimate</div>
           </div>
           <div style="background: var(--bg-surface); padding: 14px; border-radius: 8px; border: 1px solid var(--border-subtle);">
-            <div style="font-size: 11px; color: var(--text-muted); text-transform: uppercase;">Reward History</div>
-            <div style="font-size: 22px; font-weight: 800; color: var(--cyan-primary);" id="mp-blocks">Private</div>
-            <div style="font-size: 11px; color: var(--text-muted);">Not exposed by the public API</div>
+            <div style="font-size: 11px; color: var(--text-muted); text-transform: uppercase;">Active Workers</div>
+            <div style="font-size: 22px; font-weight: 800; color: var(--cyan-primary);" id="mp-workers">—</div>
+            <div style="font-size: 11px; color: var(--text-muted);">Online / registered workers</div>
           </div>
           <div style="background: var(--bg-surface); padding: 14px; border-radius: 8px; border: 1px solid var(--border-subtle);">
-            <div style="font-size: 11px; color: var(--text-muted); text-transform: uppercase;">Payout Privacy</div>
-            <div style="font-size: 22px; font-weight: 800; color: var(--gold-light);" id="mp-payout">Protected</div>
-            <div style="font-size: 11px; color: var(--text-muted);">Address and balance withheld</div>
+            <div style="font-size: 11px; color: var(--text-muted); text-transform: uppercase;">Lookup Privacy</div>
+            <div style="font-size: 22px; font-weight: 800; color: var(--gold-light);">Protected</div>
+            <div style="font-size: 11px; color: var(--text-muted);">Address is not echoed in results</div>
           </div>
           <div style="background: var(--bg-surface); padding: 14px; border-radius: 8px; border: 1px solid var(--border-subtle);">
             <div style="font-size: 11px; color: var(--text-muted); text-transform: uppercase;">Payment Scheme</div>
             <div style="font-size: 22px; font-weight: 800; color: #fff;" id="mp-mode">PPLNS</div>
-            <div style="font-size: 11px; color: var(--text-muted);">Stratum Port 3333</div>
+            <div style="font-size: 11px; color: var(--text-muted);">Detected from connected workers</div>
           </div>
         </div>
+        <div id="mp-worker-list" style="overflow-x:auto;"></div>
       </div>
     </section>
 
@@ -1342,7 +1344,7 @@
     <!-- Footer -->
     <footer>
       <div>
-        <strong>Bitcoin K (BTCK) Official Mining Pool</strong> — Pure Proof-of-Work • Zero Premine • Deterministic 21M Scarcity
+        <strong>Bitcoin K (BTCK) Official Mining Pool</strong> — Proof-of-Work • Disclosed Guardian Phase • Deterministic 21M Scarcity
       </div>
       <div class="footer-links">
         <span>Source, checksums and official channels will be linked at public beta release.</span>
@@ -1445,42 +1447,48 @@
       if (e.key === "Enter") executeMinerLookup();
     }
 
-    function executeMinerLookup() {
-      const q = document.getElementById("miner-lookup-input").value.trim().toLowerCase();
+    async function executeMinerLookup() {
+      const q = document.getElementById("miner-lookup-input").value.trim();
       const panel = document.getElementById("miner-personal-panel");
       if (!q) {
         panel.style.display = "none";
         return;
       }
       
-      const miners = currentStats.miners_summary || {};
-      let matchedKey = null;
-      let matchedData = null;
-
-      for (const [k, v] of Object.entries(miners)) {
-        if (k.toLowerCase() === q) {
-          matchedKey = k;
-          matchedData = v;
-          break;
-        }
-      }
-
-      if (matchedData) {
+      try {
+        const response = await fetch("/api/miner/lookup", {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({address: q}),
+        });
+        const payload = await response.json();
+        if (!response.ok || !payload.found) throw new Error(payload.message || "Miner not found");
         panel.style.display = "block";
-        document.getElementById("mp-title").innerText = `Worker [${matchedKey}] Statistics`;
-        document.getElementById("mp-shares").innerText = "Private";
-        document.getElementById("mp-blocks").innerText = "Private";
-        document.getElementById("mp-payout").innerText = "Protected";
-        document.getElementById("mp-mode").innerText = matchedData.mode || "SOLO";
-        showToast(`Found worker [${matchedKey}]`);
-      } else {
+        document.getElementById("mp-title").innerText = `Miner [${payload.miner_id}]`;
+        document.getElementById("mp-hashrate").innerText = payload.total_hashrate_str || "N/A";
+        document.getElementById("mp-mode").innerText = (payload.modes || []).join(" + ") || "—";
+        document.getElementById("mp-status").innerText = payload.active_worker_count ? "● Active Hashrate Detected" : "○ Workers Offline";
+        const onlineWorkers = (payload.workers || []).filter(worker => worker.online === true);
+        document.getElementById("mp-workers").innerText = `${onlineWorkers.length} / ${onlineWorkers.length}`;
+        const rows = onlineWorkers.map(worker => `
+          <tr>
+            <td>${worker.online ? "● Online" : "○ Offline"}</td>
+            <td><strong>${escapeHtml(worker.worker_name)}</strong></td>
+            <td>${escapeHtml(worker.mode)}</td>
+            <td style="text-align:right;color:var(--cyan-primary);font-weight:700;">${escapeHtml(worker.hashrate_str)}</td>
+          </tr>`).join("");
+        document.getElementById("mp-worker-list").innerHTML = `
+          <table class="pool-table"><thead><tr><th>Status</th><th>Worker Name</th><th>Scheme</th><th style="text-align:right;">Hashrate</th></tr></thead><tbody>${rows}</tbody></table>`;
+        showToast(`Found ${onlineWorkers.length} online worker(s)`);
+      } catch (error) {
         panel.style.display = "block";
-        document.getElementById("mp-title").innerText = `Query: ${q}`;
-        document.getElementById("mp-shares").innerText = "Private";
-        document.getElementById("mp-blocks").innerText = "Private";
-        document.getElementById("mp-payout").innerText = "Protected";
-        document.getElementById("mp-mode").innerText = "Active";
-        showToast("No historical shares found for this query yet.");
+        document.getElementById("mp-title").innerText = "Miner not found";
+        document.getElementById("mp-hashrate").innerText = "—";
+        document.getElementById("mp-workers").innerText = "0 / 0";
+        document.getElementById("mp-mode").innerText = "—";
+        document.getElementById("mp-status").innerText = "○ No matching workers";
+        document.getElementById("mp-worker-list").innerHTML = `<div style="color:var(--text-muted);">${escapeHtml(error.message)}</div>`;
+        showToast(error.message);
       }
     }
 
@@ -1517,6 +1525,7 @@
       let rows = [];
 
       for (const [k, v] of Object.entries(miners)) {
+        if (v.status !== "ONLINE") continue;
         const mode = (v.mode || "SOLO").toUpperCase();
         allCount++;
         if (mode === "SOLO") soloCount++;
@@ -1601,14 +1610,16 @@
         const h = item.draw_height || item.height || 43200;
         const payout = Number(item.payout_btck || 0).toFixed(2);
         const worker = item.winner_miner || "unattributed";
-        const minerId = item.miner_id || worker;
+        const mode = item.winner_mode && item.winner_mode !== "UNKNOWN" ? item.winner_mode : "";
+        const hashrate = item.winner_hashrate || "N/A";
 
         rows.push(`
           <tr>
             <td style="color: var(--cyan-primary); font-weight: 700;">#${h.toLocaleString()}</td>
             <td>
               <div class="winner-highlight">${escapeHtml(worker)}</div>
-              <div class="winner-addr">${escapeHtml(minerId)} · payout address withheld</div>
+              <div class="winner-addr">${mode ? `${escapeHtml(mode)} · ` : ""}payout address withheld</div>
+              <div class="winner-addr">${escapeHtml(hashrate)} at winning block (10-minute average)</div>
             </td>
             <td style="text-align: right;" class="winner-highlight">${payout} BTCK</td>
           </tr>

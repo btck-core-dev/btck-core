@@ -53,6 +53,15 @@ def transaction_commitment(transactions: List[StealthTransaction]) -> bytes:
     return hashlib.sha256(payload).digest()
 
 class DAGBlock:
+    __slots__ = (
+        "version", "chain_id", "parents", "timestamp", "bits", "nonce",
+        "blue_score", "coinbase_output", "transactions", "payload_hash",
+        "blue_work", "selected_parent", "merge_set", "merge_set_blues",
+        "merge_set_reds", "blue_anticone_sizes", "is_combo", "minted_sats",
+        "reward_sats", "miner_base_sats", "pool_deposit_sats",
+        "eco_deposit_sats", "combo_payout_sats", "fees_sats", "hash",
+    )
+
     def __init__(
         self,
         parents: List[str],
@@ -862,10 +871,36 @@ class BlockDAG:
 
     def state_root(self) -> str:
         """Deterministic commitment used to verify persisted replay results."""
-        blocks = []
-        for block_hash in sorted(self.blocks):
-            block = self.blocks[block_hash]
-            blocks.append({
+        # Preserve the exact canonical JSON byte stream used by the original
+        # implementation, but feed it to SHA-256 incrementally. Materializing
+        # the lifetime block list, UTXO list and final encoded JSON at once
+        # caused multi-gigabyte transient allocations on MAINNET.
+        encoder = json.JSONEncoder(sort_keys=True, separators=(",", ":"))
+        digest = hashlib.sha256()
+
+        def feed(value) -> None:
+            for chunk in encoder.iterencode(value):
+                digest.update(chunk.encode("utf-8"))
+
+        def feed_array(values) -> None:
+            digest.update(b"[")
+            first = True
+            for value in values:
+                if not first:
+                    digest.update(b",")
+                feed(value)
+                first = False
+            digest.update(b"]")
+
+        # json.dumps(..., sort_keys=True) sorts these top-level keys in this
+        # precise order. Keep the framing explicit so the resulting digest is
+        # backward-compatible with every durable checkpoint already written.
+        digest.update(b'{"blocks":')
+
+        def block_payloads():
+            for block_hash in sorted(self.blocks):
+                block = self.blocks[block_hash]
+                yield {
                 "hash": block_hash,
                 "parents": sorted(block.parents),
                 "selected_parent": block.selected_parent,
@@ -882,30 +917,42 @@ class BlockDAG:
                 "combo_payout_sats": block.combo_payout_sats,
                 "fees_sats": block.fees_sats,
                 "accepted_txids": self.utxo_set.get_block_accepted_txids(block_hash),
-            })
-        utxos = []
-        for (txid, vout), entry in sorted(self.utxo_set.utxos.items()):
-            utxos.append({"txid": txid, "vout": vout, **asdict(entry)})
+                }
+
+        feed_array(block_payloads())
+        digest.update(b',"chain_id":')
+        feed(self.network.chain_id)
+        digest.update(b',"combo_active":')
+        feed(self.combo_machine.active_epoch_id)
+        digest.update(b',"combo_epochs":')
         epochs = {
             str(epoch_id): asdict(epoch)
             for epoch_id, epoch in sorted(self.combo_machine.epochs.items())
         }
-        payload = {
-            "chain_id": self.network.chain_id,
-            "blocks": blocks,
-            "tips": sorted(self.tips),
-            "selected_tip": self.selected_tip,
-            "selected_chain": self.virtual_selected_parent_chain,
-            "virtual_blue_order": self.virtual_blue_order,
-            "issued_supply_sats": self.issued_supply_sats,
-            "pool_balance_sats": self.pool_balance_sats,
-            "utxos": utxos,
-            "combo_epochs": epochs,
-            "combo_pending": sorted(self.combo_machine.pending_draws),
-            "combo_active": self.combo_machine.active_epoch_id,
-        }
-        encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
-        return hashlib.sha256(encoded).hexdigest()
+        feed(epochs)
+        digest.update(b',"combo_pending":')
+        feed_array(sorted(self.combo_machine.pending_draws))
+        digest.update(b',"issued_supply_sats":')
+        feed(self.issued_supply_sats)
+        digest.update(b',"pool_balance_sats":')
+        feed(self.pool_balance_sats)
+        digest.update(b',"selected_chain":')
+        feed_array(self.virtual_selected_parent_chain)
+        digest.update(b',"selected_tip":')
+        feed(self.selected_tip)
+        digest.update(b',"tips":')
+        feed_array(sorted(self.tips))
+        digest.update(b',"utxos":')
+
+        def utxo_payloads():
+            for (txid, vout), entry in sorted(self.utxo_set.utxos.items()):
+                yield {"txid": txid, "vout": vout, **asdict(entry)}
+
+        feed_array(utxo_payloads())
+        digest.update(b',"virtual_blue_order":')
+        feed_array(self.virtual_blue_order)
+        digest.update(b"}")
+        return digest.hexdigest()
 
     def get_dag_info(self, *, include_state_root: bool = True) -> dict:
         selected = self.blocks[self.selected_tip]

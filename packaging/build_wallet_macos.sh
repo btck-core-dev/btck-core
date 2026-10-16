@@ -6,7 +6,8 @@ BUILD_ROOT="${BTCK_WALLET_BUILD_ROOT:-$PROJECT_DIR/build/wallet-macos}"
 RELEASE_DIR="${BTCK_WALLET_RELEASE_DIR:-$PROJECT_DIR/dist/wallet}"
 VENV_DIR="$BUILD_ROOT/venv"
 ARCH="$(uname -m)"
-VERSION="${BTCK_WALLET_VERSION:-3.2.5}"
+VERSION="${BTCK_WALLET_VERSION:-3.2.7-dev}"
+MACOS_BUNDLE_VERSION="${VERSION%%-*}"
 NETWORK_MANIFEST="${BTCK_WALLET_NETWORK_MANIFEST:-$PROJECT_DIR/params/networks/mainnet.json}"
 SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH:-$(git -C "$PROJECT_DIR" show -s --format=%ct HEAD)}"
 export SOURCE_DATE_EPOCH
@@ -27,6 +28,26 @@ fi
 
 mkdir -p "$BUILD_ROOT" "$RELEASE_DIR"
 rm -rf "$BUILD_ROOT/pyinstaller" "$BUILD_ROOT/package" "$BUILD_ROOT/zipapp"
+mkdir -p "$BUILD_ROOT/package"
+
+BTCK_PROJECT_DIR="$PROJECT_DIR" BTCK_IDENTITY_OUT="$BUILD_ROOT/network_identity.json" \
+BTCK_IDENTITY_MANIFEST="$NETWORK_MANIFEST" BTCK_IDENTITY_VERSION="$VERSION" python3 - <<'PY'
+import json, os, sys
+from pathlib import Path
+root = Path(os.environ["BTCK_PROJECT_DIR"])
+sys.path.insert(0, str(root / "src"))
+from config.network import load_network
+network = load_network("mainnet", Path(os.environ["BTCK_IDENTITY_MANIFEST"]))
+payload = {
+    "version": os.environ["BTCK_IDENTITY_VERSION"],
+    "name": network.name,
+    "chain_id": network.chain_id,
+    "genesis_hash": network.genesis.expected_hash,
+    "consensus_fingerprint": network.consensus_fingerprint,
+    "release_approval_id": network.release_approval_id,
+}
+Path(os.environ["BTCK_IDENTITY_OUT"]).write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+PY
 
 if xcrun -f lipo >/dev/null 2>&1; then
   PACKAGE_NAME="BTC-K-Wallet-${VERSION}-macOS-${ARCH}"
@@ -49,6 +70,34 @@ if xcrun -f lipo >/dev/null 2>&1; then
     tools/btck_cli.py
   install -m 0755 "$BUILD_ROOT/pyinstaller/dist/btck-wallet" \
     "$BUILD_ROOT/package/$PACKAGE_NAME/btck-wallet"
+  "$PYINSTALLER_BIN" \
+    --noconfirm \
+    --clean \
+    --windowed \
+    --name "BTC-K Wallet" \
+    --osx-bundle-identifier "org.bitcoin-k.wallet" \
+    --paths "$PROJECT_DIR/src" \
+    --paths "$PROJECT_DIR/tools" \
+    --add-data "$BUILD_ROOT/network_identity.json:." \
+    --distpath "$BUILD_ROOT/pyinstaller/gui-dist" \
+    --workpath "$BUILD_ROOT/pyinstaller/gui-work" \
+    --specpath "$BUILD_ROOT/pyinstaller" \
+    tools/btck_wallet_gui.py
+  /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $MACOS_BUNDLE_VERSION" \
+    "$BUILD_ROOT/pyinstaller/gui-dist/BTC-K Wallet.app/Contents/Info.plist"
+  /usr/libexec/PlistBuddy -c "Add :CFBundleVersion string $MACOS_BUNDLE_VERSION" \
+    "$BUILD_ROOT/pyinstaller/gui-dist/BTC-K Wallet.app/Contents/Info.plist" 2>/dev/null || \
+    /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $MACOS_BUNDLE_VERSION" \
+      "$BUILD_ROOT/pyinstaller/gui-dist/BTC-K Wallet.app/Contents/Info.plist"
+  # PyInstaller applies an ad-hoc signature during assembly. Updating the
+  # release metadata invalidates it, so refresh that local signature before
+  # packaging (a Developer ID signature replaces it in signed builds).
+  codesign --force --deep --sign - \
+    "$BUILD_ROOT/pyinstaller/gui-dist/BTC-K Wallet.app"
+  codesign --verify --deep --strict \
+    "$BUILD_ROOT/pyinstaller/gui-dist/BTC-K Wallet.app"
+  cp -R "$BUILD_ROOT/pyinstaller/gui-dist/BTC-K Wallet.app" \
+    "$BUILD_ROOT/package/$PACKAGE_NAME/BTC-K Wallet.app"
   WALLET_COMMAND="$BUILD_ROOT/package/$PACKAGE_NAME/btck-wallet"
 else
   PACKAGE_NAME="BTC-K-Wallet-${VERSION}-portable-python3"
@@ -73,24 +122,8 @@ else
   printf 'Xcode Command Line Tools not found; built portable Python 3 package.\n' >&2
 fi
 
-BTCK_PROJECT_DIR="$PROJECT_DIR" BTCK_IDENTITY_OUT="$BUILD_ROOT/package/$PACKAGE_NAME/network_identity.json" \
-BTCK_IDENTITY_MANIFEST="$NETWORK_MANIFEST" BTCK_IDENTITY_VERSION="$VERSION" python3 - <<'PY'
-import json, os, sys
-from pathlib import Path
-root = Path(os.environ["BTCK_PROJECT_DIR"])
-sys.path.insert(0, str(root / "src"))
-from config.network import load_network
-network = load_network("mainnet", Path(os.environ["BTCK_IDENTITY_MANIFEST"]))
-payload = {
-    "version": os.environ["BTCK_IDENTITY_VERSION"],
-    "name": network.name,
-    "chain_id": network.chain_id,
-    "genesis_hash": network.genesis.expected_hash,
-    "consensus_fingerprint": network.consensus_fingerprint,
-    "release_approval_id": network.release_approval_id,
-}
-Path(os.environ["BTCK_IDENTITY_OUT"]).write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
-PY
+install -m 0644 "$BUILD_ROOT/network_identity.json" \
+  "$BUILD_ROOT/package/$PACKAGE_NAME/network_identity.json"
 
 install -m 0644 "$PROJECT_DIR/packaging/WALLET_README.txt" \
   "$BUILD_ROOT/package/$PACKAGE_NAME/README.txt"
@@ -117,7 +150,11 @@ if [ "${BTCK_WALLET_REQUIRE_SIGNING:-0}" = "1" ]; then
   fi
   codesign --force --options runtime --timestamp --sign "$BTCK_APPLE_SIGN_IDENTITY" \
     "$BUILD_ROOT/package/$PACKAGE_NAME/btck-wallet"
+  codesign --force --deep --options runtime --timestamp --sign "$BTCK_APPLE_SIGN_IDENTITY" \
+    "$BUILD_ROOT/package/$PACKAGE_NAME/BTC-K Wallet.app"
   codesign --verify --strict --verbose=2 "$BUILD_ROOT/package/$PACKAGE_NAME/btck-wallet"
+  codesign --verify --deep --strict --verbose=2 \
+    "$BUILD_ROOT/package/$PACKAGE_NAME/BTC-K Wallet.app"
 fi
 
 archive="$RELEASE_DIR/$PACKAGE_NAME.tar.gz"

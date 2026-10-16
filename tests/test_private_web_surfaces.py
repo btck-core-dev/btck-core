@@ -87,6 +87,14 @@ class TestPrivateWebSurfaces(unittest.TestCase):
         self.assertNotIn("hashrate works for free", pool.lower())
         self.assertNotIn("guaranteed profit", pool.lower())
 
+    def test_wallet_edge_exposes_rate_limited_shared_tip_cursor(self):
+        config = (
+            ROOT / "deploy" / "public-edge" / "guardian-wallet-sync.nginx.conf.template"
+        ).read_text(encoding="utf-8")
+        self.assertIn("location = /api/wallet/tip", config)
+        self.assertIn("limit_req zone=btck_wallet_sync_per_ip", config)
+        self.assertIn("proxy_pass http://127.0.0.1:18088", config)
+
 
 if __name__ == "__main__":
     unittest.main()

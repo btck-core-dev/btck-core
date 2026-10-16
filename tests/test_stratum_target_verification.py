@@ -10,7 +10,7 @@ from unittest.mock import patch
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
 
 from consensus.kheavyhash import hash_to_target_int
-from consensus.pow import compact_to_target
+from consensus.pow import compact_to_target, target_to_compact
 from node.daemon import BTCKDaemon
 from node.rpc_client import InProcessNodeRPCClient
 from privacy.stealth_address import StealthKeyPair
@@ -18,6 +18,7 @@ from stratum.stratum_server import (
     BTCKStratumServer,
     CLIENT_JOB_HISTORY_LIMIT,
     StratumClient,
+    diff_to_kaspa_target,
 )
 
 
@@ -47,6 +48,10 @@ class TestStratumTargetVerification(unittest.IsolatedAsyncioTestCase):
 
     async def _job(self):
         return await self.server.create_new_block_job(self.client)
+
+    async def _drain_block_submissions(self):
+        if self.server._block_submission_tasks:
+            await asyncio.gather(*tuple(self.server._block_submission_tasks))
 
     def test_client_job_history_covers_late_block_window(self):
         self.assertEqual(self.client.job_ids.maxlen, CLIENT_JOB_HISTORY_LIMIT)
@@ -78,11 +83,12 @@ class TestStratumTargetVerification(unittest.IsolatedAsyncioTestCase):
         await self.server.process_message(self.client, {"id": 3, "method": "mining.submit", "params": ["worker", job.job_id, f"{nonce:x}"]})
         self.assertEqual(self.writer.messages[-1]["error"][0], 23)
         await self.server.process_message(self.client, {"id": 4, "method": "mining.submit", "params": ["worker", job.job_id, f"{nonce:x}"]})
-        self.assertEqual(self.writer.messages[-1]["error"][0], 22)
+        self.assertEqual(self.writer.messages[-1]["error"][0], 23)
         counters = self.server.get_status_payload()["share_counters"]
         self.assertEqual(counters["rejected"], 2)
-        self.assertEqual(counters["rejected_by_reason"]["low_difficulty"], 1)
-        self.assertEqual(counters["rejected_by_reason"]["duplicate"], 1)
+        self.assertEqual(counters["rejected_by_reason"]["low_difficulty"], 2)
+        self.assertEqual(counters["rejected_by_reason"]["duplicate"], 0)
+        self.assertEqual(counters["duplicate_retries"], 0)
 
     def test_status_payload_never_queries_accounting_database_inline(self):
         class ExplodingAccounting:
@@ -113,10 +119,13 @@ class TestStratumTargetVerification(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(self._response(10)["result"])
         self.assertIsNone(self._response(10)["error"])
 
-        # Second submit with exact same nonce from same ASIC client must be rejected as duplicate
+        # The exact accepted request is idempotent: acknowledge a firmware retry
+        # as success without crediting or submitting the share twice.
         await self.server.process_message(self.client, {"id": 11, "method": "mining.submit", "params": ["worker", job.job_id, f"{nonce:016x}"]})
-        self.assertFalse(self._response(11)["result"])
-        self.assertEqual(self._response(11)["error"][0], 22)
+        self.assertTrue(self._response(11)["result"])
+        self.assertIsNone(self._response(11)["error"])
+        self.assertEqual(self.server._share_counters["duplicate_retries"], 1)
+        self.assertEqual(self.client.shares_accepted, 1)
 
         # Different nonce on same job from same ASIC must succeed (never falsely flagged as duplicate)
         # A block submission may trigger VarDiff, so restore the deliberately permissive
@@ -166,26 +175,96 @@ class TestStratumTargetVerification(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(self._response(20)["result"])
         self.assertTrue(self._response(21)["result"])
 
+    async def test_asic_reconnect_can_finish_owned_job_without_double_credit(self):
+        self.client.is_kaspa = True
+        self.client.share_target = (1 << 256) - 1
+        job = await self._job()
+        nonce = 0x0003000000000043
+
+        reconnect_writer = MockWriter()
+        reconnect = StratumClient(None, reconnect_writer, "client-reconnected")
+        reconnect.authorized = True
+        reconnect.is_kaspa = True
+        reconnect.wallet_address = self.client.wallet_address
+        reconnect.worker_name = self.client.worker_name
+        reconnect.share_target = (1 << 256) - 1
+        self.server.clients[reconnect.client_id] = reconnect
+
+        submit = {
+            "id": 22,
+            "method": "mining.submit",
+            "params": ["worker", job.job_id, f"{nonce:016x}"],
+        }
+        await self.server.process_message(reconnect, submit)
+        self.assertTrue(reconnect_writer.messages[-1]["result"])
+        self.assertEqual(self.server._share_counters["accepted"], 1)
+
+        retry_writer = MockWriter()
+        retry = StratumClient(None, retry_writer, "client-reconnected-again")
+        retry.authorized = True
+        retry.is_kaspa = True
+        retry.wallet_address = self.client.wallet_address
+        retry.worker_name = self.client.worker_name
+        await self.server.process_message(retry, {**submit, "id": 23})
+        self.assertTrue(retry_writer.messages[-1]["result"])
+        self.assertEqual(self.server._share_counters["accepted"], 1)
+        self.assertEqual(self.server._share_counters["duplicate_retries"], 1)
+
+    async def test_reconnect_cannot_submit_another_identity_job(self):
+        self.client.is_kaspa = True
+        self.client.share_target = (1 << 256) - 1
+        job = await self._job()
+
+        impostor_writer = MockWriter()
+        impostor = StratumClient(None, impostor_writer, "client-impostor")
+        impostor.authorized = True
+        impostor.is_kaspa = True
+        impostor.wallet_address = StealthKeyPair().get_public_stealth_address()
+        impostor.worker_name = self.client.worker_name
+        await self.server.process_message(
+            impostor,
+            {"id": 24, "method": "mining.submit", "params": ["worker", job.job_id, "1"]},
+        )
+        self.assertEqual(impostor_writer.messages[-1]["error"][0], 21)
+
     async def test_job_pow_is_identical_to_node_block_pow(self):
         job = await self._job()
         nonce = 0x0003000012345678
         self.assertEqual(job.calculate_pow(nonce).hex(), job.build_block(nonce).hash)
 
-    async def test_easy_network_target_does_not_reduce_share_difficulty(self):
+    async def test_pow_limit_forces_common_asic_bootstrap_difficulty(self):
         self.client.is_kaspa = True
-        self.client.share_diff = 64.0
-        self.client.min_diff = 16.0
-        self.client.max_diff = 65536.0
+        self.client.share_diff = 8192.0
+        self.client.min_diff = 8192.0
+        self.client.max_diff = 262144.0
         await self.server._issue_job(self.client)
-        self.assertEqual(self.client.share_diff, 64.0)
-        self.assertEqual(self.client.min_diff, 16.0)
-        self.assertEqual(self.client.max_diff, 65536.0)
+        self.assertEqual(self.client.share_diff, 128.0)
+        self.assertEqual(self.client.share_target, diff_to_kaspa_target(128.0))
+
+    async def test_vardiff_never_becomes_harder_than_l1_target(self):
+        self.client.is_kaspa = True
+        self.client.share_diff = 8192.0
+        bits = target_to_compact(diff_to_kaspa_target(512.0))
+
+        await self.server._enforce_network_safe_difficulty(self.client, bits)
+
+        self.assertGreaterEqual(self.client.share_diff, 500.0)
+        self.assertLessEqual(
+            self.client.share_diff,
+            self.server.active_network_share_diff,
+        )
+        self.assertGreaterEqual(
+            self.client.share_target,
+            compact_to_target(bits),
+        )
 
     async def test_vardiff_change_does_not_reject_work_from_previous_job(self):
+        self.server.asic_min_share_diff = 0.000001
         self.client.is_kaspa = True
         self.client.share_target = (1 << 256) - 1
         self.client.share_diff = 64.0
         job = await self._job()
+        job.share_target = (1 << 256) - 1
         self.client.share_target = 1
         self.client.share_diff = 512.0
         await self.server.process_message(
@@ -215,7 +294,7 @@ class TestStratumTargetVerification(unittest.IsolatedAsyncioTestCase):
         self.client.share_diff = 128.0
         self.client.min_diff = 128.0
         self.client.max_diff = 65536.0
-        self.client.vardiff_window_start = time.monotonic() - 16.0
+        self.client.vardiff_window_start = time.monotonic() - 6.0
         self.client.vardiff_shares = 13
         for index in range(2, 9):
             peer = StratumClient(None, MockWriter(), f"client-{index}")
@@ -228,10 +307,12 @@ class TestStratumTargetVerification(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.client.share_diff, 512.0)
 
     async def test_recent_late_block_candidate_is_credited_without_dag_submission(self):
+        self.server.asic_min_share_diff = 0.000001
         self.client.is_kaspa = True
         self.client.share_target = (1 << 256) - 1
         self.client.share_diff = 64.0
         job = await self._job()
+        job.share_target = (1 << 256) - 1
         self.server.active_template_key = ("advanced-template",)
         network_target = compact_to_target(job.bits)
         nonce = next(
@@ -249,12 +330,15 @@ class TestStratumTargetVerification(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.client.blocks_found, 0)
 
     async def test_congested_template_only_submits_one_candidate(self):
+        self.server.asic_min_share_diff = 0.000001
         self.client.is_kaspa = True
         self.client.share_target = (1 << 256) - 1
         self.client.share_diff = 64.0
         self.server.network = replace(self.server.network, max_parents=1)
         first = await self._job()
         second = await self._job()
+        first.share_target = (1 << 256) - 1
+        second.share_target = (1 << 256) - 1
         self.assertEqual(first.template_key, second.template_key)
 
         target = compact_to_target(first.bits)
@@ -275,6 +359,7 @@ class TestStratumTargetVerification(unittest.IsolatedAsyncioTestCase):
             self.client,
             {"id": 34, "method": "mining.submit", "params": ["worker", second.job_id, f"{second_nonce:x}"]},
         )
+        await self._drain_block_submissions()
 
         self.assertTrue(self._response(33)["result"])
         self.assertTrue(self._response(34)["result"])
@@ -283,11 +368,14 @@ class TestStratumTargetVerification(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.client.blocks_found, 1)
 
     async def test_clear_template_submits_bounded_sibling_batch(self):
+        self.server.asic_min_share_diff = 0.000001
         self.client.is_kaspa = True
         self.client.share_target = (1 << 256) - 1
         self.client.share_diff = 64.0
         first = await self._job()
         second = await self._job()
+        first.share_target = (1 << 256) - 1
+        second.share_target = (1 << 256) - 1
         target = compact_to_target(first.bits)
         first_nonce = next(
             nonce for nonce in range(256)
@@ -306,16 +394,19 @@ class TestStratumTargetVerification(unittest.IsolatedAsyncioTestCase):
             self.client,
             {"id": 36, "method": "mining.submit", "params": ["worker", second.job_id, f"{second_nonce:x}"]},
         )
+        await self._drain_block_submissions()
         self.assertTrue(self._response(35)["result"])
         self.assertTrue(self._response(36)["result"])
         self.assertEqual(len(self.daemon.dag.blocks), before + 2)
         self.assertEqual(self.client.blocks_found, 2)
 
     async def test_old_block_candidate_outside_grace_is_only_credited(self):
+        self.server.asic_min_share_diff = 0.000001
         self.client.is_kaspa = True
         self.client.share_target = (1 << 256) - 1
         self.client.share_diff = 64.0
         job = await self._job()
+        job.share_target = (1 << 256) - 1
         job.created_at -= self.server.late_block_grace_seconds + 1.0
         self.server.active_template_key = ("advanced-template",)
         network_target = compact_to_target(job.bits)
@@ -365,6 +456,26 @@ class TestStratumTargetVerification(unittest.IsolatedAsyncioTestCase):
         self.assertGreaterEqual(len(calls), 4)
         intervals = [right - left for left, right in zip(calls, calls[1:])]
         self.assertTrue(all(interval < 0.06 for interval in intervals), intervals)
+
+    async def test_template_broadcast_isolates_one_failed_client(self):
+        second = StratumClient(None, MockWriter(), "client-2")
+        second.authorized = True
+        second.is_kaspa = True
+        second.worker_name = "second"
+        second.wallet_address = StealthKeyPair().get_public_stealth_address()
+        self.server.clients[second.client_id] = second
+        delivered = []
+        original = self.server._issue_job
+
+        async def isolated_issue(client, **kwargs):
+            if client is self.client:
+                raise ConnectionError("closed test socket")
+            delivered.append(client.client_id)
+            return await original(client, **kwargs)
+
+        self.server._issue_job = isolated_issue
+        self.assertTrue(await self.server._broadcast_template(force=True))
+        self.assertEqual(delivered, [second.client_id])
 
     async def test_template_refresh_retries_unchanged_parent_without_full_interval(self):
         self.server.template_refresh_seconds = 0.08

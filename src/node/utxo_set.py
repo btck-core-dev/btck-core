@@ -28,7 +28,7 @@ from tokenomics.emission_schedule import get_regular_coinbase_maturity_blocks
 
 COINBASE_MATURITY_CONFIRMATIONS = 7200
 
-@dataclass
+@dataclass(slots=True)
 class UTXOEntry:
     amount_satk: int
     P_onetime_hex: str
@@ -202,6 +202,11 @@ class UTXOSet:
         allow_transaction_skips: bool = False,
     ) -> int:
         """Validate a block transaction sequence without mutating consensus state."""
+        # Mining-only blocks have exactly zero transaction fees. Do not copy
+        # the lifetime UTXO map just to iterate an empty transaction sequence.
+        # Nonempty/other input types retain the existing validation path.
+        if isinstance(transactions, (list, tuple)) and not transactions:
+            return 0
         overlay = dict(self.utxos)
         total_fees_sats = 0
         for tx in transactions:

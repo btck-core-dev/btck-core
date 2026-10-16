@@ -134,6 +134,7 @@ PORT_PROFILES = {
 class MiningJob:
     job_id: str
     owner_id: str
+    owner_wallet_address: str
     worker_name: str
     parents: list[str]
     version: int
@@ -247,10 +248,22 @@ class StratumClient:
         self.template_key: Optional[tuple] = None
         self.submit_tokens = 50.0
         self.submit_token_updated_at = time.monotonic()
+        # Template broadcasts, VarDiff notices and submit replies may originate
+        # from different tasks.  Serialize complete JSON lines so an ASIC never
+        # sees reordered/interleaved writes, and fail a wedged socket quickly
+        # enough for the firmware to reconnect instead of retrying one nonce
+        # forever.
+        self._write_lock = asyncio.Lock()
+        self.write_timeout_seconds = 2.0
 
     async def send_json(self, data: dict) -> None:
-        self.writer.write((json.dumps(data, separators=(",", ":")) + "\n").encode("utf-8"))
-        await self.writer.drain()
+        payload = (json.dumps(data, separators=(",", ":")) + "\n").encode("utf-8")
+        async with self._write_lock:
+            self.writer.write(payload)
+            await asyncio.wait_for(
+                self.writer.drain(),
+                timeout=self.write_timeout_seconds,
+            )
 
 
 class BTCKStratumServer:
@@ -316,10 +329,25 @@ class BTCKStratumServer:
             1.0,
             float(os.getenv("BTCK_VARDIFF_TARGET_SECONDS", "8")),
         )
+        self.vardiff_ramp_seconds = max(
+            2.0,
+            float(os.getenv("BTCK_VARDIFF_RAMP_SECONDS", "5")),
+        )
         self.vardiff_min_pool_share_hz = max(
             0.1,
             float(os.getenv("BTCK_VARDIFF_MIN_POOL_SHARE_HZ", "1.25")),
         )
+        # Stock IceRiver firmware will not mine below Kaspa difficulty 128.
+        # While L1 is easier than that hardware floor, every ASIC must receive
+        # the same target; otherwise port/VarDiff tiers alter block opportunity
+        # rather than merely sampling accounting shares.  Once L1 becomes
+        # harder, VarDiff may resume but may never exceed the L1-equivalent
+        # Kaspa difficulty, because that would hide valid blocks from Stratum.
+        self.asic_min_share_diff = max(
+            1.0,
+            float(os.getenv("BTCK_ASIC_MIN_SHARE_DIFF", "128")),
+        )
+        self.active_network_share_diff = 0.0
         self.max_clients = max_clients
         self.clients: Dict[str, StratumClient] = {}
         self.current_jobs: Dict[str, MiningJob] = {}
@@ -336,6 +364,8 @@ class BTCKStratumServer:
         self._reconcile_task: Optional[asyncio.Task] = None
         self._vardiff_task: Optional[asyncio.Task] = None
         self._status_cache_task: Optional[asyncio.Task] = None
+        self._block_submission_tasks: set[asyncio.Task] = set()
+        self._accounting_lock = asyncio.Lock()
         self._status_server: Optional[asyncio.Server] = None
         self.status_host = os.getenv("BTCK_STRATUM_STATUS_HOST", "127.0.0.1")
         self.status_port = int(os.getenv("BTCK_STRATUM_STATUS_PORT", "0"))
@@ -349,6 +379,7 @@ class BTCKStratumServer:
         self._share_counters = {
             "accepted": 0,
             "rejected": 0,
+            "duplicate_retries": 0,
             "rejected_by_reason": {
                 "stale": 0,
                 "invalid": 0,
@@ -404,6 +435,13 @@ class BTCKStratumServer:
                     engine=self.pplns_engine,
                     treasury_wallet=t_wallet,
                     node_rpc=self.node_rpc,
+                    payout_utc_hours=tuple(
+                        int(value.strip())
+                        for value in os.getenv(
+                            "BTCK_PPLNS_PAYOUT_UTC_HOURS", "0,6,12,18"
+                        ).split(",")
+                        if value.strip()
+                    ),
                     default_threshold_satk=int(self.pplns_payout_threshold_btck * SATK_PER_COIN),
                 )
                 logger.info("🔑 Loaded Pool Treasury wallet: %s", t_wallet.address[:18] + "...")
@@ -440,6 +478,7 @@ class BTCKStratumServer:
             "fee_recipients": [],
             "pool_hashrate_hps": 0.0,
             "recent_blocks": [],
+            "combo_public_winners": [],
         }
 
     def _record_share_rejection(self, client: StratumClient, reason: str) -> None:
@@ -469,7 +508,23 @@ class BTCKStratumServer:
                 logger.warning("Pool status cache refresh failed: %s", exc)
 
     async def _verify_node_identity(self) -> None:
-        info = await self.node_rpc.call("getInfo")
+        attempt = 0
+        while True:
+            attempt += 1
+            try:
+                info = await self.node_rpc.call("getInfo")
+                break
+            except Exception as exc:
+                # Node startup may include snapshot validation and journal
+                # replay. Keep Stratum alive for the entire recovery window;
+                # systemd restart loops cannot make an unavailable RPC ready
+                # any sooner and needlessly churn miner connections.
+                if attempt == 1 or attempt % 30 == 0:
+                    logger.warning(
+                        "Waiting for L1 node RPC on %s:%s (attempt %d): %s",
+                        self.node_rpc.host, self.node_rpc.port, attempt, exc,
+                    )
+                await asyncio.sleep(2)
         identity = info["network"]
         expected = self.network
         if (
@@ -509,6 +564,11 @@ class BTCKStratumServer:
         if template["chain_id"] != self.network.chain_id:
             raise RuntimeError("Node returned a template for another chain")
         template_key = self._template_key(template)
+        if client.is_kaspa:
+            await self._enforce_network_safe_difficulty(
+                client,
+                int(template["target_bits"]),
+            )
 
         client.job_count += 1
         fee_rate = self.get_pool_fee_rate()
@@ -534,6 +594,7 @@ class BTCKStratumServer:
         job = MiningJob(
             job_id=str(self._job_counter),
             owner_id=client.client_id,
+            owner_wallet_address=client.wallet_address,
             worker_name=client.worker_name,
             parents=parents,
             version=int(template["version"]),
@@ -573,6 +634,7 @@ class BTCKStratumServer:
         await client.send_json({"id": msg_id, "method": "mining.notify", "params": job.notify_params(is_kaspa=client.is_kaspa)})
 
     async def update_client_difficulty(self, client: StratumClient, new_diff: float) -> None:
+        new_diff = self._network_safe_share_diff(new_diff)
         if abs(client.share_diff - new_diff) < 1e-6:
             return
         old_diff = client.share_diff
@@ -586,10 +648,51 @@ class BTCKStratumServer:
             "params": [new_diff]
         })
 
+    def _network_share_diff(self, bits: int) -> float:
+        """Return an L1 target expressed in the difficulty units ASICs use."""
+        network_target = compact_to_target(bits)
+        return float(((1 << 224) - 1) / network_target)
+
+    def _network_safe_share_diff(self, requested_diff: float) -> float:
+        """Clamp an ASIC target without filtering any L1-valid block.
+
+        Below the firmware floor all ASICs use one common bootstrap target.
+        Above it, an accounting share may be easier than L1, never harder.
+        """
+        network_diff = self.active_network_share_diff
+        if network_diff <= 0.0:
+            return float(requested_diff)
+        if network_diff < self.asic_min_share_diff:
+            return self.asic_min_share_diff
+        return max(
+            self.asic_min_share_diff,
+            min(float(requested_diff), network_diff),
+        )
+
+    async def _enforce_network_safe_difficulty(
+        self,
+        client: StratumClient,
+        bits: int,
+    ) -> None:
+        self.active_network_share_diff = self._network_share_diff(bits)
+        safe_diff = self._network_safe_share_diff(client.share_diff)
+        if abs(client.share_diff - safe_diff) >= 1e-6:
+            await self.update_client_difficulty(client, safe_diff)
+
     async def _check_client_vardiff(self, client: StratumClient) -> None:
         now = time.monotonic()
         elapsed = now - client.vardiff_window_start
-        if elapsed < 15.0:
+        if elapsed < self.vardiff_ramp_seconds:
+            return
+
+        # Stock IceRiver firmware will not actually mine below its effective
+        # floor.  While L1 is easier than that floor, every ASIC must stay on
+        # the same threshold; allowing VarDiff to separate miners here would
+        # reintroduce the port-dependent block-discovery bias this guard fixes.
+        if 0.0 < self.active_network_share_diff < self.asic_min_share_diff:
+            await self.update_client_difficulty(client, self.asic_min_share_diff)
+            client.vardiff_window_start = now
+            client.vardiff_shares = 0
             return
 
         rate = (client.vardiff_shares / elapsed) * 60.0  # shares per minute
@@ -608,12 +711,20 @@ class BTCKStratumServer:
         target_rate = 60.0 / effective_target_seconds
         if rate > target_rate * 1.5 and client.share_diff < client.max_diff:
             mult = 4.0 if rate > target_rate * 4.0 else 2.0
-            new_diff = min(client.max_diff, client.share_diff * mult)
+            new_diff = self._network_safe_share_diff(
+                min(client.max_diff, client.share_diff * mult)
+            )
             await self.update_client_difficulty(client, new_diff)
             client.vardiff_window_start = now
             client.vardiff_shares = 0
         elif rate < target_rate * 0.67 and elapsed >= 30.0 and client.share_diff > client.min_diff:
-            new_diff = max(client.min_diff, client.share_diff / 2.0)
+            effective_min = min(client.min_diff, max(
+                self.asic_min_share_diff,
+                self.active_network_share_diff,
+            ))
+            new_diff = self._network_safe_share_diff(
+                max(effective_min, client.share_diff / 2.0)
+            )
             await self.update_client_difficulty(client, new_diff)
             client.vardiff_window_start = now
             client.vardiff_shares = 0
@@ -631,7 +742,13 @@ class BTCKStratumServer:
                 elapsed = now - client.vardiff_window_start
                 # If a client hasn't submitted a single share in 45s, difficulty is likely too high
                 if client.vardiff_shares == 0 and elapsed >= 45.0 and client.share_diff > client.min_diff:
-                    new_diff = max(client.min_diff, client.share_diff / 2.0)
+                    effective_min = min(client.min_diff, max(
+                        self.asic_min_share_diff,
+                        self.active_network_share_diff,
+                    ))
+                    new_diff = self._network_safe_share_diff(
+                        max(effective_min, client.share_diff / 2.0)
+                    )
                     await self.update_client_difficulty(client, new_diff)
                     client.vardiff_window_start = now
                     client.vardiff_shares = 0
@@ -643,12 +760,10 @@ class BTCKStratumServer:
         template: Optional[dict] = None,
     ) -> MiningJob:
         job = await self.create_new_block_job(client, is_clean=is_clean, template=template)
-        # Share difficulty is an accounting/sampling threshold and is independent
-        # of the easier network block target. A share target may be harder than
-        # the network target; every such share is simply also a block candidate.
-        # Capping VarDiff to network difficulty destroys share weight accounting
-        # on low-difficulty bootstrap networks and can under-report ASIC hashrate
-        # by orders of magnitude.
+        # create_new_block_job snapshots the network-safe difficulty into the
+        # job before it is announced.  Consequently every hash visible to the
+        # ASIC as an L1 candidate is also visible to Stratum, except during the
+        # unavoidable common firmware-floor bootstrap interval.
         await self.send_job_to_client(client, job)
         return job
 
@@ -660,8 +775,140 @@ class BTCKStratumServer:
         self._activate_template(template_key, len(template.get("parents", [])))
         for connected in list(self.clients.values()):
             if connected.authorized:
-                await self._issue_job(connected, is_clean=True, template=template)
+                try:
+                    await self._issue_job(connected, is_clean=True, template=template)
+                except (ConnectionError, BrokenPipeError, asyncio.TimeoutError) as exc:
+                    # One half-closed ASIC socket must never prevent healthy
+                    # miners later in the client map from receiving the new
+                    # template. handle_client owns final socket cleanup.
+                    logger.info(
+                        "Skipping unavailable miner during template broadcast: %s (%s)",
+                        connected.client_id,
+                        exc,
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        "Template delivery failed for miner %s: %s",
+                        connected.client_id,
+                        exc,
+                    )
         return True
+
+    async def _submit_block_candidate(
+        self,
+        client: StratumClient,
+        job: MiningJob,
+        nonce: int,
+        pow_value: bytes,
+    ) -> None:
+        """Submit and account for a block without blocking the miner reader."""
+        try:
+            candidate = job.build_block(nonce)
+            if candidate.hash != pow_value.hex():
+                raise RuntimeError("Stratum/node canonical PoW mismatch")
+            result = await self.node_rpc.call(
+                "submitBlock",
+                {
+                    "parents": job.parents,
+                    "version": job.version,
+                    "chain_id": job.chain_id,
+                    "timestamp": job.timestamp,
+                    "bits": job.bits,
+                    "nonce": nonce,
+                    "coinbase_output": [job.coinbase_output[0].hex(), job.coinbase_output[1].hex()],
+                    "transactions": [transaction_to_dict(tx) for tx in job.transactions],
+                },
+            )
+            if not result.get("accepted"):
+                logger.info(
+                    "Block candidate reached a superseded DAG tip; share remains credited"
+                )
+                return
+
+            client.blocks_found += 1
+            reward_btck = float(result.get("reward_btck", 5.0))
+            reward_satk = int(reward_btck * SATK_PER_COIN)
+            if self.pool_mode == "pplns":
+                if not self.pplns_engine:
+                    raise RuntimeError("PPLNS accounting engine is unavailable")
+                async with self._accounting_lock:
+                    pplns_summary = await asyncio.to_thread(
+                        self.pplns_engine.process_block,
+                        block_hash=str(result.get("hash")),
+                        height=int(result.get("blue_score", 0)),
+                        reward_satk=reward_satk,
+                        pool_fee_rate=self.get_pool_fee_rate(),
+                        finder_wallet=job.owner_wallet_address,
+                        finder_worker=job.worker_name,
+                        block_timestamp=job.timestamp,
+                    )
+                logger.info(
+                    "[PPLNS] BLOCK ACCEPTED: hash=%s score=%s reward=%.4f BTC-K distributed=%.4f BTC-K miners=%d finder=%s (%s)",
+                    str(result.get("hash"))[:16],
+                    result.get("blue_score"),
+                    reward_btck,
+                    pplns_summary.get("distributed_satk", 0) / SATK_PER_COIN,
+                    pplns_summary.get("miners_paid_count", 0),
+                    job.owner_wallet_address[:16] + "...",
+                    job.worker_name,
+                )
+                return
+
+            if self.pplns_engine:
+                async with self._accounting_lock:
+                    await asyncio.to_thread(
+                        self.pplns_engine.record_solo_block,
+                        block_hash=str(result.get("hash")),
+                        height=int(result.get("blue_score", 0)),
+                        reward_satk=reward_satk,
+                        finder_wallet=job.owner_wallet_address,
+                        finder_worker=job.worker_name,
+                        payout_address=job.assigned_payout_address,
+                        is_pool_fee=bool(getattr(job, "is_pool_fee_job", False)),
+                    )
+            if getattr(job, "is_pool_fee_job", False):
+                logger.info(
+                    "BLOCK ACCEPTED (pool fee %d%%): hash=%s score=%s reward=%s BTC-K treasury=%s",
+                    int(self.get_pool_fee_rate() * 100),
+                    str(result.get("hash"))[:16],
+                    result.get("blue_score"),
+                    result.get("reward_btck"),
+                    self.pool_fee_address[:16] + "...",
+                )
+            else:
+                logger.info(
+                    "BLOCK ACCEPTED: hash=%s score=%s reward=%s BTC-K miner=%s (%s)",
+                    str(result.get("hash"))[:16],
+                    result.get("blue_score"),
+                    result.get("reward_btck"),
+                    job.owner_wallet_address[:16] + "...",
+                    job.worker_name,
+                )
+        except Exception as exc:
+            remaining = self.template_submission_counts.get(job.template_key, 1) - 1
+            if remaining > 0:
+                self.template_submission_counts[job.template_key] = remaining
+            else:
+                self.template_submission_counts.pop(job.template_key, None)
+            logger.warning("Node submitBlock error: %s (share remains credited)", exc)
+
+    async def _record_solo_share_telemetry(
+        self,
+        wallet_address: str,
+        worker_name: str,
+        share_diff: float,
+    ) -> None:
+        """Persist non-financial SOLO telemetry without delaying the share ACK."""
+        try:
+            async with self._accounting_lock:
+                await asyncio.to_thread(
+                    self.pplns_engine.record_share,
+                    wallet_address,
+                    worker_name,
+                    share_diff,
+                )
+        except Exception as exc:
+            logger.warning("SOLO share telemetry write failed: %s", exc)
 
     @staticmethod
     def _parse_nonce(raw_nonce) -> int:
@@ -803,7 +1050,8 @@ class BTCKStratumServer:
             job = self.current_jobs.get(job_id)
             if (
                 job is None
-                or job.owner_id != client.client_id
+                or job.owner_wallet_address != client.wallet_address
+                or job.worker_name != client.worker_name
                 or time.time() - job.created_at > self.job_ttl_seconds
             ):
                 self._record_share_rejection(client, "stale")
@@ -818,16 +1066,19 @@ class BTCKStratumServer:
                 await client.send_json({"id": msg_id, "result": False, "error": [20, str(exc), None]})
                 return
             share_key = (job_id, nonce)
-            is_duplicate = (
-                share_key in client.recent_shares
-                if client.is_kaspa
-                else share_key in self.submitted_shares
-            )
+            # The idempotency cache is server-wide because IceRiver firmware
+            # can reconnect and then retransmit a share from its previous TCP
+            # session. Jobs remain bound to the authenticated wallet+worker,
+            # while an exact retry is acknowledged without double credit.
+            is_duplicate = share_key in self.submitted_shares
 
             if is_duplicate:
-                self._record_share_rejection(client, "duplicate")
-                logger.warning("❌ Duplicate share %s from %s", share_key, client.client_id)
-                await client.send_json({"id": msg_id, "result": False, "error": [22, "Duplicate share", None]})
+                # The exact share was already validated and credited. Treat a
+                # firmware/network retransmission as an idempotent retry: do
+                # not credit it twice, but return the original success result.
+                self._share_counters["duplicate_retries"] += 1
+                logger.info("Idempotent share retry %s from %s", share_key, client.client_id)
+                await client.send_json({"id": msg_id, "result": True, "error": None})
                 return
 
             now = time.monotonic()
@@ -841,14 +1092,6 @@ class BTCKStratumServer:
             client.submit_tokens -= 1.0
             client.last_submit_at = now
 
-            if client.is_kaspa:
-                client.recent_shares[share_key] = None
-                client.recent_shares.move_to_end(share_key)
-                while len(client.recent_shares) > 256:
-                    client.recent_shares.popitem(last=False)
-            else:
-                self.submitted_shares.add(share_key)
-
             pow_value = job.calculate_pow(nonce)
             hash_value = hash_to_target_int(pow_value)
             # Stratum difficulty changes apply to subsequently issued jobs. ASICs
@@ -861,18 +1104,33 @@ class BTCKStratumServer:
                 await client.send_json({"id": msg_id, "result": False, "error": [23, "Low difficulty share", None]})
                 return
 
+            # Only successfully validated shares enter the idempotency cache.
+            # A retry of an invalid share must be validated and rejected again.
+            self.submitted_shares.add(share_key)
+
             # Share is valid! Immediately accept and credit miner.
             client.shares_accepted += 1
             self._share_counters["accepted"] += 1
             client.vardiff_shares += 1
-            if self.pplns_engine:
-                await asyncio.to_thread(
-                    self.pplns_engine.record_share,
-                    client.wallet_address,
-                    client.worker_name,
-                    job.share_diff,
-                )
+            if self.pplns_engine and self.pool_mode == "pplns":
+                async with self._accounting_lock:
+                    await asyncio.to_thread(
+                        self.pplns_engine.record_share,
+                        job.owner_wallet_address,
+                        job.worker_name,
+                        job.share_diff,
+                    )
             await client.send_json({"id": msg_id, "result": True, "error": None})
+            if self.pplns_engine and self.pool_mode != "pplns":
+                task = asyncio.create_task(
+                    self._record_solo_share_telemetry(
+                        job.owner_wallet_address,
+                        job.worker_name,
+                        job.share_diff,
+                    )
+                )
+                self._block_submission_tasks.add(task)
+                task.add_done_callback(self._block_submission_tasks.discard)
 
             network_target = compact_to_target(job.bits)
             is_current_template = job.template_key == self.active_template_key
@@ -908,97 +1166,18 @@ class BTCKStratumServer:
 
             # If it qualifies as a block candidate, submit to node
             if is_block:
-                # Claim synchronously before the RPC await so concurrent client
-                # tasks cannot exceed this topology's bounded wave size. Shares
-                # beyond the cap remain fully credited to the miner.
+                # Claim synchronously, then submit in a bounded background task.
+                # The per-miner reader stays responsive even if node RPC is slow,
+                # so firmware does not retransmit an already accepted share.
                 self.template_submission_counts[job.template_key] = template_submission_count + 1
                 self.template_submission_counts.move_to_end(job.template_key)
                 while len(self.template_submission_counts) > CLIENT_JOB_HISTORY_LIMIT:
                     self.template_submission_counts.popitem(last=False)
-                try:
-                    candidate = job.build_block(nonce)
-                    if candidate.hash != pow_value.hex():
-                        raise RuntimeError("Stratum/node canonical PoW mismatch")
-                    result = await self.node_rpc.call(
-                        "submitBlock",
-                        {
-                            "parents": job.parents,
-                            "version": job.version,
-                            "chain_id": job.chain_id,
-                            "timestamp": job.timestamp,
-                            "bits": job.bits,
-                            "nonce": nonce,
-                            "coinbase_output": [job.coinbase_output[0].hex(), job.coinbase_output[1].hex()],
-                            "transactions": [transaction_to_dict(tx) for tx in job.transactions],
-                        },
-                    )
-                    if result.get("accepted"):
-                        client.blocks_found += 1
-                        reward_btck = float(result.get("reward_btck", 5.0))
-                        reward_satk = int(reward_btck * SATK_PER_COIN)
-
-                        if self.pool_mode == "pplns":
-                            pplns_summary = await asyncio.to_thread(
-                                self.pplns_engine.process_block,
-                                block_hash=str(result.get("hash")),
-                                height=int(result.get("blue_score", 0)),
-                                reward_satk=reward_satk,
-                                pool_fee_rate=self.get_pool_fee_rate(),
-                                finder_wallet=client.wallet_address,
-                                finder_worker=client.worker_name,
-                                block_timestamp=job.timestamp,
-                            )
-                            logger.info(
-                                "💎 [PPLNS] BLOCK ACCEPTED ON CHAIN! Hash: %s, Score: %s, Reward: %.4f BTC-K | Dist: %.4f BTC-K to %d miners | Finder: %s (%s)",
-                                str(result.get("hash"))[:16],
-                                result.get("blue_score"),
-                                reward_btck,
-                                pplns_summary.get("distributed_satk", 0) / SATK_PER_COIN,
-                                pplns_summary.get("miners_paid_count", 0),
-                                client.wallet_address[:16] + "...",
-                                client.worker_name,
-                            )
-                        else:
-                            if self.pplns_engine:
-                                await asyncio.to_thread(
-                                    self.pplns_engine.record_solo_block,
-                                    block_hash=str(result.get("hash")),
-                                    height=int(result.get("blue_score", 0)),
-                                    reward_satk=reward_satk,
-                                    finder_wallet=client.wallet_address,
-                                    finder_worker=client.worker_name,
-                                    payout_address=job.assigned_payout_address,
-                                    is_pool_fee=bool(getattr(job, "is_pool_fee_job", False)),
-                                )
-                            if getattr(job, "is_pool_fee_job", False):
-                                logger.info(
-                                    "💎 BLOCK ACCEPTED (Pool Fee %d%%)! Hash: %s, Score: %s, Reward: %s BTC-K -> Pool Treasury %s",
-                                    int(self.get_pool_fee_rate() * 100),
-                                    str(result.get("hash"))[:16],
-                                    result.get("blue_score"),
-                                    result.get("reward_btck"),
-                                    self.pool_fee_address[:16] + "...",
-                                )
-                            else:
-                                logger.info(
-                                    "🏆 BLOCK ACCEPTED ON CHAIN! Hash: %s, Score: %s, Reward: %s BTC-K -> Miner %s (%s)",
-                                    str(result.get("hash"))[:16],
-                                    result.get("blue_score"),
-                                    result.get("reward_btck"),
-                                    client.wallet_address[:16] + "...",
-                                    client.worker_name,
-                                )
-                        # The bounded refresh loop closes the current wave and
-                        # publishes one successor template for its merged tips.
-                    else:
-                        logger.info("ℹ️ Share was block candidate but DAG tips advanced (stale block, share credited to miner)")
-                except Exception as exc:
-                    remaining = self.template_submission_counts.get(job.template_key, 1) - 1
-                    if remaining > 0:
-                        self.template_submission_counts[job.template_key] = remaining
-                    else:
-                        self.template_submission_counts.pop(job.template_key, None)
-                    logger.warning("Node submitBlock error: %s (share still credited to miner)", exc)
+                task = asyncio.create_task(
+                    self._submit_block_candidate(client, job, nonce, pow_value)
+                )
+                self._block_submission_tasks.add(task)
+                task.add_done_callback(self._block_submission_tasks.discard)
             elif meets_network_target:
                 logger.info(
                     "ℹ️ Block-quality share credited but not submitted: %s (age %.2fs, grace %.2fs)",
@@ -1110,6 +1289,7 @@ class BTCKStratumServer:
                 "epoch": self._share_counter_epoch,
                 "accepted": self._share_counters["accepted"],
                 "rejected": self._share_counters["rejected"],
+                "duplicate_retries": self._share_counters["duplicate_retries"],
                 "rejected_by_reason": dict(
                     self._share_counters["rejected_by_reason"]
                 ),
@@ -1190,6 +1370,10 @@ class BTCKStratumServer:
                     await self.process_message(client, message)
                 except (UnicodeDecodeError, json.JSONDecodeError, ValueError):
                     await client.send_json({"id": None, "result": None, "error": [20, "Malformed request", None]})
+        except (ConnectionError, asyncio.IncompleteReadError):
+            # ASICs commonly reset the TCP socket when rotating pools or jobs.
+            # This is a normal disconnect, not a server failure.
+            pass
         finally:
             self.clients.pop(client_id, None)
             logger.info("🔌 Miner disconnected: %s", client_id)
@@ -1274,6 +1458,10 @@ class BTCKStratumServer:
                     dashboard.get("recent_blocks", []),
                 )
                 await asyncio.to_thread(
+                    self.pplns_engine.record_combo_public_winners,
+                    dashboard.get("combo", {}).get("resolutions", []),
+                )
+                await asyncio.to_thread(
                     self.pplns_engine.reconcile_combo_qualifications,
                     dashboard.get("combo", {}).get("resolutions", []),
                     int(dashboard.get("ledger_height", 0)),
@@ -1344,6 +1532,13 @@ class BTCKStratumServer:
             except asyncio.CancelledError:
                 pass
             self._status_cache_task = None
+        if self._block_submission_tasks:
+            pending = tuple(self._block_submission_tasks)
+            done, still_pending = await asyncio.wait(pending, timeout=10.0)
+            for task in still_pending:
+                task.cancel()
+            if still_pending:
+                await asyncio.gather(*still_pending, return_exceptions=True)
         for srv in self.servers:
             srv.close()
             await srv.wait_closed()

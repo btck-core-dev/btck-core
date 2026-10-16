@@ -7,7 +7,6 @@ Zero external dependencies (uses standard library asyncio).
 """
 
 import asyncio
-import copy
 import hmac
 import json
 import logging
@@ -33,6 +32,32 @@ logging.basicConfig(
     format='[%(asctime)s] [%(levelname)s] [btckd] %(message)s'
 )
 logger = logging.getLogger("btckd")
+
+
+class UTXOOverlay:
+    """Copy-on-write view over the consensus UTXO map for mempool checks."""
+
+    def __init__(self, base):
+        self.base = base
+        self.updates = {}
+        self.spent = set()
+
+    def get(self, outpoint, default=None):
+        if outpoint in self.spent:
+            return default
+        if outpoint in self.updates:
+            return self.updates[outpoint]
+        return self.base.get(outpoint, default)
+
+    def pop(self, outpoint, default=None):
+        value = self.get(outpoint, default)
+        self.updates.pop(outpoint, None)
+        self.spent.add(outpoint)
+        return value
+
+    def __setitem__(self, outpoint, entry):
+        self.spent.discard(outpoint)
+        self.updates[outpoint] = entry
 
 class BTCKDaemon:
     def __init__(
@@ -89,17 +114,27 @@ class BTCKDaemon:
         commit_hook = self._persist_accepted_block if self.chain_store else None
         accepted = self.dag.add_block(block, commit_hook=commit_hook)
         if accepted:
-            selected_hashes = set(self.dag.virtual_selected_parent_chain)
-            if block.hash in selected_hashes:
-                for tx in block.transactions:
-                    self.mempool.pop(tx.txid, None)
+            # With no transactions there is nothing to remove from mempool;
+            # constructing a lifetime selected-chain set is wasted O(height).
+            if block.transactions:
+                selected_hashes = set(self.dag.virtual_selected_parent_chain)
+                if block.hash in selected_hashes:
+                    for tx in block.transactions:
+                        self.mempool.pop(tx.txid, None)
             self._revalidate_mempool()
         return accepted
 
     def _persist_accepted_block(self, block: DAGBlock) -> None:
-        """Persist every block and periodically commit the full consensus state."""
+        """Persist every block without putting lifetime work on the hot path."""
         if not self.chain_store:
             return
+        if not self.chain_store.should_checkpoint_next_block():
+            self.chain_store.append_block(block)
+            return
+
+        # Inline checkpoints are retained only as an explicit development/test
+        # option. Production checkpoints and snapshots are built from a stopped,
+        # immutable database copy by deploy/verify_chain_replay.py.
         state_root = self.dag.state_root() if self.chain_store.should_checkpoint_next_block() else ""
         sequence = self.chain_store.append_block(block, state_root)
         if state_root:
@@ -115,7 +150,11 @@ class BTCKDaemon:
                     logger.exception("Failed to write consensus snapshot at sequence %d", sequence)
 
     def _mempool_overlay(self):
-        overlay = copy.deepcopy(self.dag.utxo_set.utxos)
+        # A full deepcopy is proportional to lifetime UTXO count and blocked
+        # the single-threaded RPC/mining loop for more than ten seconds on
+        # mainnet. Mempool validation needs only point lookups plus its own
+        # spends/outputs, so keep a small copy-on-write delta over consensus.
+        overlay = UTXOOverlay(self.dag.utxo_set.utxos)
         # UTXO heights, coinbase maturity and timelocks are consensus-defined
         # in the canonical virtual blue order.  Selected-parent steps can be
         # dramatically shorter on a busy DAG and must never be used here.
@@ -152,7 +191,12 @@ class BTCKDaemon:
             raise ValueError("Mempool capacity reached")
         if len(tx.inputs) > 100 or len(tx.outputs) > 100:
             raise ValueError("Transaction exceeds input/output limit")
-        for block in self.dag.blocks.values():
+        # Bound duplicate-confirmation lookup. Scanning the lifetime DAG on
+        # every public wallet submission grows linearly and can stall mining.
+        # Mempool duplicates remain fully idempotent; recently confirmed
+        # resubmissions are recognized across a generous 2,048-blue window.
+        for block_hash in reversed(self.dag.virtual_blue_order[-2048:]):
+            block = self.dag.blocks[block_hash]
             if any(existing.txid == tx.txid for existing in block.transactions):
                 return {"accepted": True, "txid": tx.txid, "status": "confirmed"}
         overlay = self._mempool_overlay()
@@ -336,6 +380,7 @@ class BTCKDaemon:
         tip_height = len(order) - 1
         from_height = int(params.get("from_height", 0))
         limit = max(1, min(int(params.get("limit", 250)), 1000))
+        unspent_only = bool(params.get("unspent_only", False))
         if from_height < 0 or from_height > tip_height + 1:
             raise ValueError("from_height is outside the canonical ledger")
         if from_height > 0:
@@ -344,21 +389,40 @@ class BTCKDaemon:
             if anchor_hash != expected_anchor:
                 raise ValueError("wallet sync cursor is stale after a canonical reorganization")
 
-        # Recover entries that were created earlier and spent later.  Current
-        # entries come from the UTXO map; spent entries remain in undo records.
-        spent_entries = {}
-        for spent in self.dag.utxo_set._block_spent_undo.values():
-            for outpoint, entry in spent:
-                spent_entries.setdefault(outpoint, entry)
-
         end_height = min(tip_height + 1, from_height + limit)
+        resolved_entries = {}
+        unresolved = set()
+        for height in range(from_height, end_height):
+            block_hash = order[height]
+            for outpoint in self.dag.utxo_set._block_created_undo.get(block_hash, []):
+                entry = self.dag.utxo_set.utxos.get(outpoint)
+                if entry is not None:
+                    resolved_entries[outpoint] = entry
+                elif not unspent_only and not str(outpoint[0]).startswith("pool_"):
+                    unresolved.add(outpoint)
+
+        # Most mainnet outputs are still present in the O(1) UTXO map.  Only
+        # recover page outputs that were actually spent, walking the canonical
+        # suffix newest-first and stopping as soon as those few entries are
+        # found.  The previous implementation rebuilt a lifetime-wide mapping
+        # for every page, which made wallet sync O(chain length * page count)
+        # and caused large transient allocations on the production node.
+        if unresolved:
+            for spending_hash in reversed(order[from_height:]):
+                for outpoint, entry in self.dag.utxo_set._block_spent_undo.get(spending_hash, []):
+                    if outpoint in unresolved:
+                        resolved_entries[outpoint] = entry
+                        unresolved.remove(outpoint)
+                if not unresolved:
+                    break
+
         blocks = []
         for height in range(from_height, end_height):
             block_hash = order[height]
             created = []
             for txid, vout in self.dag.utxo_set._block_created_undo.get(block_hash, []):
                 outpoint = (txid, vout)
-                entry = self.dag.utxo_set.utxos.get(outpoint) or spent_entries.get(outpoint)
+                entry = resolved_entries.get(outpoint)
                 if entry is None or not entry.R_ephem_hex or not entry.P_onetime_hex:
                     continue
                 created.append({
@@ -372,7 +436,7 @@ class BTCKDaemon:
                     "timelock_until_height": entry.timelock_until_height,
                     "kind": entry.kind,
                 })
-            spent = [
+            spent = [] if unspent_only else [
                 {"txid": outpoint[0], "vout": outpoint[1]}
                 for outpoint, _entry in self.dag.utxo_set._block_spent_undo.get(block_hash, [])
             ]
@@ -399,6 +463,7 @@ class BTCKDaemon:
             "tip_height": tip_height,
             "tip_hash": order[tip_height] if tip_height >= 0 else "",
             "done": next_height > tip_height,
+            "unspent_only": unspent_only,
             "blocks": blocks,
         }
 
