@@ -834,7 +834,7 @@ class BTCKStratumServer:
 
             client.blocks_found += 1
             reward_btck = float(result.get("reward_btck", 5.0))
-            reward_satk = int(reward_btck * SATK_PER_COIN)
+            reward_satk = int(round(reward_btck * SATK_PER_COIN))
             if self.pool_mode == "pplns":
                 if not self.pplns_engine:
                     raise RuntimeError("PPLNS accounting engine is unavailable")
@@ -1471,6 +1471,11 @@ class BTCKStratumServer:
                     self.pplns_engine.reconcile_solo_block_rewards,
                     dashboard.get("recent_blocks", []),
                 )
+                if self.pool_mode == 'pplns':
+                    async with self._accounting_lock:
+                        await asyncio.to_thread(
+                            self.pplns_engine.reconcile_pplns_block_rewards,
+                            dashboard.get('recent_blocks', []))
                 await asyncio.to_thread(
                     self.pplns_engine.record_combo_public_winners,
                     dashboard.get("combo", {}).get("resolutions", []),

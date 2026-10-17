@@ -114,3 +114,55 @@ class PPLNSTCPAcceptance(unittest.IsolatedAsyncioTestCase):
         from stratum.pplns import PPLNSEngine
         reopened = PPLNSEngine(engine.db_path)
         self.assertEqual(reopened.get_miner(self.miner.address).unpaid_satk, distributed)
+
+    async def test_actual_dag_sibling_zero_reward_is_credited_after_merge(self):
+        first_reader, first_writer, response = await self.connect()
+        self.assertTrue(response['result'])
+        first = await self.latest_job()
+        second_reader, second_writer, response = await self.connect()
+        self.assertTrue(response['result'])
+        for _ in range(100):
+            if len(self.server.current_jobs) >= 2:
+                break
+            await asyncio.sleep(.01)
+        second = list(self.server.current_jobs.values())[-1]
+        self.assertEqual(first.parents, second.parents)
+
+        def nonce_for(job, maximum_hash=None):
+            for nonce in range(10000):
+                digest = job.calculate_pow(nonce)
+                if (hash_to_target_int(digest) <= min(job.share_target, compact_to_target(job.bits))
+                        and (maximum_hash is None or digest.hex() < maximum_hash)):
+                    return nonce, digest.hex()
+            self.fail('Simnet sibling nonce search exhausted')
+
+        async def submit(reader, writer, job, nonce, ident):
+            result = await self.request(reader, writer, ident, 'mining.submit',
+                                        [self.miner.address+'.loopback', job.job_id, f'{nonce:x}'])
+            self.assertTrue(result['result'])
+            tasks = tuple(self.server._block_submission_tasks)
+            if tasks:
+                await asyncio.gather(*tasks)
+
+        first_nonce, first_hash = nonce_for(first)
+        second_nonce, second_hash = nonce_for(second, first_hash)
+        await submit(first_reader, first_writer, first, first_nonce, 3)
+        await submit(second_reader, second_writer, second, second_nonce, 4)
+        engine = self.server.pplns_engine
+        with engine._get_connection() as db:
+            self.assertEqual(db.execute('SELECT reward_satk FROM blocks WHERE block_hash=?',
+                                        (second_hash,)).fetchone()[0], 0)
+        client = next(iter(self.server.clients.values()))
+        merged = await self.server.create_new_block_job(client)
+        self.assertGreaterEqual(len(merged.parents), 2)
+        merge_nonce, _ = nonce_for(merged)
+        await submit(first_reader, first_writer, merged, merge_nonce, 5)
+        dashboard = await self.server.node_rpc.call('getDashboardInfo', {'recent_limit': 500})
+        final_reward = next(b['miner_base_sats']+b['fees_sats'] for b in dashboard['recent_blocks']
+                            if b['hash'] == second_hash)
+        self.assertGreater(final_reward, 0)
+        before = engine.get_miner(self.miner.address).unpaid_satk
+        self.assertGreater(engine.reconcile_pplns_block_rewards(dashboard['recent_blocks']), 0)
+        self.assertGreater(engine.get_miner(self.miner.address).unpaid_satk, before)
+        self.assertEqual(engine.reconcile_pplns_block_rewards(dashboard['recent_blocks']), 0)
+        self.assertEqual(engine.get_miner(self.miner.address).paid_satk, 0)

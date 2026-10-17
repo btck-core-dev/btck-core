@@ -7,8 +7,8 @@ BTC-K stability and wallet update
 The update improves bounded node reorganizations, Seed-B native following and
 reconnect recovery, automatic wallet synchronization and multiwallet switching.
 PPLNS accounting and payment-safety changes are included; automatic payouts
-remain disabled pending production payment acceptance. Existing unpaid pool
-balances remain recorded.
+remain disabled pending production payment acceptance. Historical unpaid pool rewards have been reconciled against canonical
+block rewards; this accounting correction is not a payment.
 
 Mining interfaces:
 - PPLNS: stratum+tcp://185.130.45.240:3332 — payouts disabled; onboarding pending.

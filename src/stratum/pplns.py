@@ -27,6 +27,7 @@ import os
 import sqlite3
 import time
 from datetime import datetime, timedelta, timezone
+from contextlib import closing
 from decimal import Decimal, ROUND_DOWN
 from dataclasses import dataclass
 from pathlib import Path
@@ -35,6 +36,8 @@ from typing import Dict, List, Optional, Tuple
 from tokenomics.emission_schedule import SATK_PER_COIN, compute_beacon_xor_winner
 from tokenomics.anti_hopping import AntiHoppingGate
 from privacy.wallet_engine import StealthWallet, transaction_to_dict, transaction_from_dict
+
+from stratum.pplns_rewards import allocate_reward
 
 logger = logging.getLogger("btck-pplns")
 
@@ -121,6 +124,24 @@ class PPLNSEngine:
                     timestamp REAL NOT NULL,
                     shares_in_window INTEGER NOT NULL,
                     window_weight REAL NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS pplns_block_allocations (
+                    block_hash TEXT PRIMARY KEY,
+                    weights_json TEXT NOT NULL,
+                    fee_rate TEXT NOT NULL,
+                    bonus_rate TEXT NOT NULL,
+                    credits_json TEXT NOT NULL,
+                    first_share_id INTEGER NOT NULL,
+                    last_share_id INTEGER NOT NULL,
+                    canonical_height INTEGER,
+                    updated_at REAL NOT NULL,
+                    allocation_kind TEXT NOT NULL DEFAULT 'window'
+                );
+                CREATE TABLE IF NOT EXISTS pplns_reward_holds (
+                    block_hash TEXT PRIMARY KEY,
+                    reason TEXT NOT NULL,
+                    observed_at REAL NOT NULL
                 );
 
                 CREATE TABLE IF NOT EXISTS payouts (
@@ -644,21 +665,9 @@ class PPLNSEngine:
         if not fee_rate.is_finite():
             raise ValueError("Pool fee rate must be finite")
         fee_rate = max(Decimal("0"), min(Decimal("1"), fee_rate))
-        pool_fee_satk = int((Decimal(reward_satk) * fee_rate).to_integral_value(rounding=ROUND_DOWN))
-
-        # Optional finder bonus
-        finder_bonus_satk = 0
-        if finder_wallet and self.finder_bonus_rate > 0.0:
-            finder_bonus_satk = int(
-                (Decimal(reward_satk) * Decimal(str(self.finder_bonus_rate))).to_integral_value(
-                    rounding=ROUND_DOWN
-                )
-            )
-            finder_bonus_satk = min(finder_bonus_satk, reward_satk - pool_fee_satk)
-
-        distributable_satk = max(0, reward_satk - pool_fee_satk - finder_bonus_satk)
-
-        with self._get_connection() as conn:
+        with closing(self._get_connection()) as conn, conn:
+            # Freeze the share window and its credits in the same transaction.
+            conn.execute('BEGIN IMMEDIATE')
             # Check if block already processed
             existing = conn.execute("SELECT block_hash FROM blocks WHERE block_hash = ?", (block_hash,)).fetchone()
             if existing:
@@ -685,62 +694,14 @@ class PPLNSEngine:
                 w = r["wallet_address"]
                 miner_weights[w] = miner_weights.get(w, Decimal("0")) + Decimal(str(r["difficulty"]))
 
-            miner_credits: Dict[str, int] = {}
-            total_distributed = 0
-
-            if total_window_weight_decimal > 0 and distributable_satk > 0:
-                # Hamilton/largest-remainder allocation: pure decimal weights,
-                # deterministic wallet tie-break and exactly zero SatK dust.
-                remainders = []
-                allocated = 0
-                for wallet in sorted(miner_weights):
-                    exact = Decimal(distributable_satk) * miner_weights[wallet] / total_window_weight_decimal
-                    credit = int(exact.to_integral_value(rounding=ROUND_DOWN))
-                    miner_credits[wallet] = credit
-                    allocated += credit
-                    remainders.append((exact - Decimal(credit), wallet))
-                for _, wallet in sorted(remainders, key=lambda item: (-item[0], item[1]))[:distributable_satk - allocated]:
-                    miner_credits[wallet] += 1
-                miner_credits = {wallet: credit for wallet, credit in miner_credits.items() if credit > 0}
-                total_distributed = distributable_satk
-
-                # Credit finder bonus to finder
-                if finder_wallet and finder_bonus_satk > 0:
-                    miner_credits[finder_wallet] = miner_credits.get(finder_wallet, 0) + finder_bonus_satk
-                    total_distributed += finder_bonus_satk
-
-                # Credit miners' unpaid balances
-                for wallet, credit in miner_credits.items():
-                    conn.execute(
-                        """
-                        INSERT INTO miners (wallet_address, unpaid_satk)
-                        VALUES (?, ?)
-                        ON CONFLICT(wallet_address) DO UPDATE SET
-                            unpaid_satk = unpaid_satk + excluded.unpaid_satk
-                        """,
-                        (wallet, credit),
-                    )
-            elif finder_wallet and reward_satk > pool_fee_satk:
-                # If window was completely empty (very rare / cold start), credit all net reward to finder
-                credit = reward_satk - pool_fee_satk
-                miner_credits[finder_wallet] = credit
-                total_distributed = credit
+            pool_fee_satk, finder_bonus_satk, miner_credits = allocate_reward(
+                reward_satk, miner_weights, finder_wallet, fee_rate, self.finder_bonus_rate)
+            total_distributed = sum(miner_credits.values())
+            for wallet, credit in miner_credits.items():
                 conn.execute(
-                    """
-                    INSERT INTO miners (wallet_address, unpaid_satk)
-                    VALUES (?, ?)
-                    ON CONFLICT(wallet_address) DO UPDATE SET
-                        unpaid_satk = unpaid_satk + excluded.unpaid_satk
-                    """,
-                    (finder_wallet, credit),
-                )
-            else:
-                # No eligible share window and no finder: retain the net amount
-                # as an explicitly accounted treasury fee, never silent dust.
-                pool_fee_satk = reward_satk
-
-            if pool_fee_satk + total_distributed != reward_satk:
-                raise RuntimeError("PPLNS settlement conservation invariant breached")
+                    "INSERT INTO miners(wallet_address,unpaid_satk) VALUES(?,?) "
+                    "ON CONFLICT(wallet_address) DO UPDATE SET unpaid_satk=unpaid_satk+excluded.unpaid_satk",
+                    (wallet, credit))
 
             # Record block settlement
             conn.execute(
@@ -765,6 +726,12 @@ class PPLNSEngine:
                     total_window_weight,
                 ),
             )
+
+            conn.execute(
+                "INSERT INTO pplns_block_allocations VALUES(?,?,?,?,?,?,?,NULL,?,'window')",
+                (block_hash, json.dumps({w:str(v) for w,v in miner_weights.items()},sort_keys=True),
+                 str(fee_rate), str(self.finder_bonus_rate), json.dumps(miner_credits,sort_keys=True),
+                 int(rows[-1]['id']) if rows else 0, int(rows[0]['id']) if rows else 0, time.time()))
 
             # Mark window shares with block hash
             if rows:
@@ -801,6 +768,88 @@ class PPLNSEngine:
             len(miner_credits),
         )
         return summary
+
+    def has_reward_reconciliation_hold(self, connection=None) -> bool:
+        if connection is None:
+            with closing(self._get_connection()) as conn, conn:
+                return self.has_reward_reconciliation_hold(conn)
+        # A legacy ledger must not be silently reinterpreted using today's
+        # share window. Operators must import independently verified proofs.
+        missing = connection.execute(
+            "SELECT 1 FROM blocks b LEFT JOIN pplns_block_allocations a "
+            "ON a.block_hash=b.block_hash WHERE b.mode='PPLNS' AND a.block_hash IS NULL LIMIT 1").fetchone()
+        return bool(missing or connection.execute('SELECT 1 FROM pplns_reward_holds LIMIT 1').fetchone())
+
+    def reconcile_pplns_block_rewards(self, canonical_blocks: List[dict]) -> int:
+        """Adjust credits using the ORIGINAL window, never current shares.
+
+        Unknown legacy allocations and debits conflicting with a payment are
+        held for explicit reconciliation. Existing paid balances are untouched.
+        """
+        updated = 0
+        with closing(self._get_connection()) as conn, conn:
+            conn.execute('BEGIN IMMEDIATE')
+            for block in canonical_blocks:
+                block_hash = str(block.get('hash', ''))
+                row = conn.execute(
+                    "SELECT b.*,a.weights_json,a.fee_rate,a.bonus_rate,a.credits_json,a.allocation_kind,a.canonical_height AS reward_verified_height "
+                    "FROM blocks b LEFT JOIN pplns_block_allocations a ON a.block_hash=b.block_hash "
+                    "WHERE b.block_hash=? AND b.mode='PPLNS'", (block_hash,)).fetchone()
+                if row is None:
+                    continue
+                if row['weights_json'] is None:
+                    conn.execute('INSERT OR REPLACE INTO pplns_reward_holds VALUES(?,?,?)',
+                                 (block_hash,'legacy share allocation needs verified reconstruction',time.time()))
+                    continue
+                if any(type(block.get(key)) is not int or block[key] < 0
+                       for key in ('miner_base_sats', 'fees_sats', 'height')):
+                    raise ValueError('Canonical reward fields must be nonnegative integers')
+                amount = block['miner_base_sats'] + block['fees_sats']
+                held = conn.execute('SELECT 1 FROM pplns_reward_holds WHERE block_hash=?',(block_hash,)).fetchone()
+                if amount == row['reward_satk'] and block['height'] == row['reward_verified_height'] and not held:
+                    continue
+                if row['allocation_kind'] == 'legacy_fixed':
+                    # An explicitly approved conservative legacy allocation is
+                    # fixed to its proven canonical amount, never guessed from
+                    # an ambiguous historical window or recalculated later.
+                    if amount != row['reward_satk']:
+                        conn.execute('INSERT OR REPLACE INTO pplns_reward_holds VALUES(?,?,?)',
+                                     (block_hash,'approved legacy reward changed; new proof required',time.time()))
+                    else:
+                        conn.execute('UPDATE pplns_block_allocations SET canonical_height=?,updated_at=? WHERE block_hash=?',
+                                     (int(block.get('height',row['height'])),time.time(),block_hash))
+                        conn.execute('DELETE FROM pplns_reward_holds WHERE block_hash=?',(block_hash,))
+                    continue
+                fee, bonus, credits = allocate_reward(amount,json.loads(row['weights_json']),
+                    row['finder_wallet'],row['fee_rate'],row['bonus_rate'])
+                prior = json.loads(row['credits_json'])
+                if sum(prior.values()) != row['distributed_satk']:
+                    raise RuntimeError('Stored PPLNS allocation disagrees with its block')
+                deltas = {w:credits.get(w,0)-prior.get(w,0) for w in set(credits)|set(prior)}
+                blocked = False
+                for wallet, delta in deltas.items():
+                    if delta >= 0:
+                        continue
+                    account = conn.execute('SELECT unpaid_satk FROM miners WHERE wallet_address=?',(wallet,)).fetchone()
+                    pending = conn.execute("SELECT 1 FROM payout_intents WHERE wallet_address=? AND status!='confirmed' LIMIT 1",(wallet,)).fetchone()
+                    if account is None or account[0]+delta < 0 or pending:
+                        blocked = True
+                        break
+                if blocked:
+                    conn.execute('INSERT OR REPLACE INTO pplns_reward_holds VALUES(?,?,?)',
+                                 (block_hash,'reward debit conflicts with paid or reserved funds',time.time()))
+                    continue
+                for wallet, delta in deltas.items():
+                    if delta:
+                        conn.execute("INSERT INTO miners(wallet_address,unpaid_satk) VALUES(?,?) "
+                                     "ON CONFLICT(wallet_address) DO UPDATE SET unpaid_satk=unpaid_satk+excluded.unpaid_satk",(wallet,delta))
+                conn.execute('UPDATE blocks SET reward_satk=?,pool_fee_satk=?,finder_bonus_satk=?,distributed_satk=?,height=? WHERE block_hash=?',
+                             (amount,fee,bonus,sum(credits.values()),int(block.get('height',row['height'])),block_hash))
+                conn.execute('UPDATE pplns_block_allocations SET credits_json=?,canonical_height=?,updated_at=? WHERE block_hash=?',
+                             (json.dumps(credits,sort_keys=True),int(block.get('height',row['height'])),time.time(),block_hash))
+                conn.execute('DELETE FROM pplns_reward_holds WHERE block_hash=?',(block_hash,))
+                updated += int(amount != row['reward_satk'])
+        return updated
 
     def record_solo_block(
         self,
@@ -1059,6 +1108,8 @@ class PPLNSEngine:
         with self._get_connection() as conn:
             conn.execute('PRAGMA synchronous=FULL')
             conn.execute('BEGIN IMMEDIATE')
+            if self.has_reward_reconciliation_hold(conn):
+                raise ValueError('PPLNS rewards require reconciliation before payment')
             row=conn.execute('SELECT unpaid_satk FROM miners WHERE wallet_address=?',(wallet_address,)).fetchone()
             if not row or not 0<amount_satk<=row[0] or fee_satk<0:
                 raise ValueError('payout exceeds recorded liability')
@@ -1290,6 +1341,17 @@ class AutoPayoutWorker:
         # pay. This is the normal state of a newly launched PPLNS pool.
         settled=[]
         intents=await asyncio.to_thread(self.engine.get_payout_intents,16)
+        if await asyncio.to_thread(self.engine.has_reward_reconciliation_hold):
+            # A previously broadcast payment may still confirm. Observe it,
+            # but do not scan, sign, or send another transaction under a hold.
+            for intent in intents:
+                try:
+                    if await self._confirm_intent(intent):
+                        settled.append({'wallet':intent['wallet_address'],'txid':intent['txid'],'status':'confirmed'})
+                except Exception:
+                    pass
+            logger.warning('PPLNS payment held: block rewards need reconciliation')
+            return settled
         for intent in intents:
             try:
                 if await self._confirm_intent(intent) or await self._broadcast_intent(intent):

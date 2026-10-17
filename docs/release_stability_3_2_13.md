@@ -20,13 +20,24 @@ transaction relay while their production holds remain in place.
   input selection. Durable intents preserve the same transaction after an
   ambiguous response; unpaid balances are settled only after confirmation.
   Native-protocol shares use the actual assigned target for accounting weight.
+- PPLNS freezes the original allocation window even when a new DAG block has
+  no reward yet. Later canonical reward changes update the same allocation
+  atomically and conserve integer SatK. Unknown legacy windows or unsafe debits
+  hold payments rather than guessing or erasing paid balances.
 
 ## Acceptance and current limits
 
 Loopback TCP/simnet checks cover subscription, authorization, credited work,
 reward conservation, duplicate retry, durable accounting and payment
 confirmation. Live external ports 3332-3336 pass subscription probes. These
-checks are distinct from actual production payments.
+checks are distinct from actual production payments. The exact production
+candidate passed 57 focused checks on both macOS and isolated Linux. The
+approved historical accounting migration was verified offline, then applied
+atomically to 2,490 production records with automatic payouts disabled.
+
+The daily mining wallet completed its real history scan and then advanced both
+height and balance automatically without pressing Sync. Real multiwallet
+switching was confirmed after the password-dialog race repair.
 
 PPLNS automatic payouts remain disabled. A configured five-coin threshold and
 six-hour UTC schedule do not mean payments are active. Complete current treasury
@@ -39,8 +50,8 @@ is still under investigation; currently stable direct-IP miners should retain
 their configured endpoints.
 
 The macOS arm64 candidate is locally ad-hoc signed and is not Developer ID
-signed or notarized. Wallet-specific live acceptance must finish before this
-candidate is described as the final wallet release. No private wallet data,
+signed or notarized. The candidate retains the disclosed payment and relay holds; it is not a
+claim of complete production payment acceptance. No private wallet data,
 backup databases, credentials or operational incident archives are included.
 
 See [mining access](mining_pool_access.md) for both modes, exact URLs, ports,

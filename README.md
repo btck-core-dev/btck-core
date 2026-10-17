@@ -1,6 +1,6 @@
 # BTC-K Core
 
-> 当前状态（2026-10-17）：MAINNET 已公开运行。Seed-B 已完成限速持续跟链与断线补齐验收并保持在线。钱包与矿池稳定性修复正在整理发布；PPLNS 自动付款保持关闭，完整生产支付验收尚未完成。
+> 当前状态（2026-10-17）：MAINNET 已公开运行。Seed-B 已完成限速持续跟链与断线补齐验收并保持在线。钱包自动余额更新与切换已完成真实验收，PPLNS计份及历史收益对账修复已上线；PPLNS 自动付款保持关闭，完整生产支付验收尚未完成。
 
 矿工请先读[SOLO/PPLNS接入地址、端口、算力及付款状态](docs/mining_pool_access.md)；中文操作见[ASIC矿机指南](docs/iceriver_mining_setup_guide.md)。SOLO为3333–3336，PPLNS为3332。源码修复推送不等于PPLNS付款已启用。
 
