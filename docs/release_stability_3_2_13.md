@@ -71,3 +71,20 @@ This fix is deployed and passed live mining and bounded-query acceptance.
 Automatic PPLNS payouts remain disabled. The two approved production canaries
 confirmed on chain; this does not mean that unattended automatic payouts or
 the general public transaction relay have been enabled.
+
+## Incremental treasury and pending receipts
+
+Payment preparation requires an authenticated, encrypted checkpoint belonging to
+the configured treasury wallet. It applies at most four pages of canonical
+changes, including spends, and publishes funds only after reaching the reported
+tip. Missing, invalid or stale checkpoints hold payments; this path cannot fall
+back to a genesis scan. Operators must keep the checkpoint fresh with a separate
+resource-limited updater.
+
+The payment worker observes already saved intents every 30 seconds independently
+of the UTC new-payment batches. Confirmed receipts retain their exact canonical
+block locator across restarts. Reorganization recovery rechecks only the bounded
+recent window, and retries preserve the same signed transaction. Reward holds
+allow confirmation observation but prevent rebroadcasts and new payments.
+These changes passed 67 focused checks in the public source tree. Runtime
+activation and payment enablement remain separate operator decisions.

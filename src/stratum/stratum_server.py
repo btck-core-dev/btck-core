@@ -432,6 +432,18 @@ class BTCKStratumServer:
                     require_encryption=self.network.is_mainnet,
                     expected_address=self.pool_treasury_address,
                 )
+                treasury_sync = None
+                if self.network.is_mainnet:
+                    cache_file = os.getenv('BTCK_PPLNS_TREASURY_SYNC_CACHE_FILE', '')
+                    if cache_file:
+                        from stratum.treasury_sync import CachedTreasurySync
+                        treasury_sync = CachedTreasurySync(
+                            cache_file,
+                            os.getenv('BTCK_POOL_TREASURY_WALLET_PASSWORD_FILE', ''),
+                        )
+                    else:
+                        def treasury_sync(_wallet):
+                            raise RuntimeError('Provision a verified encrypted treasury checkpoint before payment')
                 self.payout_worker = AutoPayoutWorker(
                     engine=self.pplns_engine,
                     treasury_wallet=t_wallet,
@@ -444,6 +456,7 @@ class BTCKStratumServer:
                         if value.strip()
                     ),
                     default_threshold_satk=int(self.pplns_payout_threshold_btck * SATK_PER_COIN),
+                    treasury_sync=treasury_sync,
                 )
                 logger.info("🔑 Loaded Pool Treasury wallet: %s", t_wallet.address[:18] + "...")
             except Exception as e:

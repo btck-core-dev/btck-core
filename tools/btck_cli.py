@@ -599,7 +599,8 @@ def _checkpoint_scan_state(args, wallet, state, *, private_changed=False, force=
         wallet._live_sync_dirty = False
 
 
-def scan_wallet(args, wallet: StealthWallet, progress_callback=None):
+def scan_wallet(args, wallet: StealthWallet, progress_callback=None, *,
+                allow_full_rescan=True, max_pages=None):
     live_session = getattr(args, 'live_session_cache', False)
     state = getattr(wallet, '_live_sync_state', None) if live_session else None
     if state is None:
@@ -607,7 +608,10 @@ def scan_wallet(args, wallet: StealthWallet, progress_callback=None):
         if live_session:
             wallet._live_sync_state = state
             wallet._live_sync_saved_at = time.monotonic() if state.get('network') else 0
+    if not allow_full_rescan and int(state['next_height']) <= 0:
+        raise CLIError('A verified encrypted checkpoint is required; full rescan is disabled')
     reset_attempted = False
+    pages = 0
     rewinds = 0
     workers = max(1, min(int(getattr(args, "sync_workers", 1)), os.cpu_count() or 1))
     executor = None
@@ -621,6 +625,9 @@ def scan_wallet(args, wallet: StealthWallet, progress_callback=None):
     utxo_map = {(item.txid, item.vout): item for item in wallet.utxos}
     try:
         while True:
+            if max_pages is not None and pages >= max_pages:
+                raise CLIError('Bounded incremental catch-up is incomplete; payment remains held')
+            pages += 1
             print(
                 f"Syncing chain data from height {state['next_height']}...",
                 file=sys.stderr, flush=True,
@@ -646,6 +653,8 @@ def scan_wallet(args, wallet: StealthWallet, progress_callback=None):
                     and cursor_changed
                     and not state.get('_undo')
                 ):
+                    if not allow_full_rescan:
+                        raise CLIError('Checkpoint needs operator recovery; full rescan is disabled') from exc
                     print("Chain cursor changed; safely resyncing from genesis...", file=sys.stderr, flush=True)
                     wallet.utxos = []
                     utxo_map = {}

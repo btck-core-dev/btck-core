@@ -103,9 +103,9 @@ Security boundaries
 
 Current service status (17 October 2026)
 --------------------------------------
-The public signed-transaction relay is currently held in maintenance. Do not
-interpret local signing or a relay timeout as a confirmed payment. Automatic
-PPLNS payouts remain disabled. This wallet update does not enable pool payments.
+Check the official service notice before transferring funds or joining PPLNS.
+Local signing and relay submission do not prove a confirmed payment; check the
+transaction receipt. Installing this wallet does not change pool payout settings.
 
 Mining modes: PPLNS uses port 3332; SOLO uses ports 3333-3336 by initial difficulty
 tier. Full endpoints, hashrate guidance and current payout status are published at:

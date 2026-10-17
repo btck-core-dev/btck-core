@@ -36,6 +36,7 @@ from typing import Dict, List, Optional, Tuple
 from tokenomics.emission_schedule import SATK_PER_COIN, compute_beacon_xor_winner
 from tokenomics.anti_hopping import AntiHoppingGate
 from privacy.wallet_engine import StealthWallet, transaction_to_dict, transaction_from_dict
+from node.rpc_client import RPCError
 
 from stratum.pplns_rewards import allocate_reward
 
@@ -1095,6 +1096,20 @@ class PPLNSEngine:
             return [dict(row) for row in conn.execute(query+(' LIMIT ?' if limit is not None else ''),
                                                       (int(limit),) if limit is not None else ())]
 
+    def remember_payout_locator(self, txid, height, block_hash):
+        """Retain a canonical receipt locator without settling any liability."""
+        if type(height) is not int or height < 0 or not isinstance(block_hash, str) or len(block_hash) != 64:
+            raise ValueError('invalid payout confirmation locator')
+        bytes.fromhex(block_hash)
+        with closing(self._get_connection()) as conn, conn:
+            conn.execute('BEGIN IMMEDIATE')
+            row = conn.execute("SELECT transaction_json FROM payout_intents WHERE txid=? AND status!='confirmed'", (txid,)).fetchone()
+            if row:
+                body = json.loads(row[0])
+                body['_confirmation_locator'] = {'height': height, 'block_hash': block_hash}
+                conn.execute('UPDATE payout_intents SET transaction_json=? WHERE txid=?',
+                             (json.dumps(body, sort_keys=True), txid))
+
     def prepare_payout(self, tx, wallet_address, amount_satk, fee_satk):
         """Persist the EXACT signed transaction before any network write.
 
@@ -1217,10 +1232,12 @@ class AutoPayoutWorker:
         payout_utc_hours: Tuple[int, ...] = (0, 6, 12, 18),
         default_threshold_satk: int = 500_000_000,
         tx_fee_satk: int = 10_000,
+        treasury_sync=None,
     ):
         self.engine = engine
         self.treasury_wallet = treasury_wallet
         self.node_rpc = node_rpc
+        self.treasury_sync = treasury_sync
         normalized_hours = tuple(sorted(set(int(hour) for hour in payout_utc_hours)))
         if not normalized_hours or any(hour < 0 or hour > 23 for hour in normalized_hours):
             raise ValueError("payout UTC hours must contain values from 0 through 23")
@@ -1241,6 +1258,11 @@ class AutoPayoutWorker:
         if not self.treasury_wallet or not self.node_rpc:
             return 0
         try:
+            if self.treasury_sync is not None:
+                candidate, height = await asyncio.to_thread(self.treasury_sync, self.treasury_wallet)
+                self.treasury_wallet.utxos = candidate.utxos
+                self.synced_height = height
+                return self.treasury_wallet.get_balance_satk()
             # Rebuild from current unspent outputs.  The bounded page size keeps
             # both the node response and the pool's transient allocations small.
             candidate=StealthWallet(self.treasury_wallet.keypair,'isolated-treasury-scan')
@@ -1311,7 +1333,22 @@ class AutoPayoutWorker:
             return await self._run_payout_cycle()
 
     async def _confirm_intent(self,intent):
-        status=await self.node_rpc.call('getTransaction',{'txid':intent['txid']})
+        params = {'txid': intent['txid']}
+        locator = json.loads(intent['transaction_json']).get('_confirmation_locator')
+        if locator:
+            params.update(locator)
+        try:
+            status=await self.node_rpc.call('getTransaction',params)
+        except RPCError as exc:
+            if not locator or str(exc) != 'canonical transaction locator mismatch':
+                raise
+            # A short reorganization invalidates the saved locator. Recheck
+            # only the node's bounded recent window, retaining the same txid.
+            status = await self.node_rpc.call('getTransaction', {'txid': intent['txid']})
+        if (status.get('txid') == intent['txid'] and status.get('status') == 'confirmed'
+                and type(status.get('height')) is int and isinstance(status.get('block_hash'), str)):
+            await asyncio.to_thread(self.engine.remember_payout_locator, intent['txid'],
+                                    status['height'], status['block_hash'])
         if (status.get('txid')==intent['txid'] and status.get('status')=='confirmed'
                 and int(status.get('confirmations',0))>=6):
             await asyncio.to_thread(self.engine.record_payout,intent['txid'],intent['wallet_address'],
@@ -1436,14 +1473,41 @@ class AutoPayoutWorker:
         return (tomorrow - now).total_seconds()
 
     async def _loop(self) -> None:
+        next_batch = time.time() + self.seconds_until_next_utc_batch()
         while self.running:
-            await asyncio.sleep(self.seconds_until_next_utc_batch())
+            try:
+                # Restart recovery and confirmation polling must not wait six
+                # hours. This path only handles already durable intents.
+                await self.observe_pending_payments()
+            except Exception as exc:
+                logger.error('Pending payment observation failed: %s', type(exc).__name__)
+            await asyncio.sleep(min(30.0, max(0.0, next_batch - time.time())))
             if not self.running:
                 break
-            try:
-                await self.run_payout_cycle()
-            except Exception as exc:
-                logger.error("AutoPayout loop encountered error: %s", exc)
+            if time.time() >= next_batch:
+                try:
+                    await self.run_payout_cycle()
+                except Exception as exc:
+                    logger.error('AutoPayout batch failed: %s', type(exc).__name__)
+                next_batch = time.time() + self.seconds_until_next_utc_batch()
+
+    async def observe_pending_payments(self):
+        """Confirm/retry saved transactions without preparing a new payment."""
+        if not self.payout_enabled:
+            return []
+        async with self._cycle_lock:
+            settled = []
+            held = await asyncio.to_thread(self.engine.has_reward_reconciliation_hold)
+            for intent in await asyncio.to_thread(self.engine.get_payout_intents, 16):
+                try:
+                    confirmed = await self._confirm_intent(intent)
+                    if not confirmed and not held:
+                        confirmed = await self._broadcast_intent(intent)
+                    if confirmed:
+                        settled.append(intent['txid'])
+                except Exception as exc:
+                    logger.warning('Saved payout remains reserved: %s', type(exc).__name__)
+            return settled
 
     def start(self) -> None:
         if not self.payout_enabled:
