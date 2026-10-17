@@ -24,7 +24,7 @@ NODE_PREFIXES = (
 )
 NODE_FILES = {
     "Dockerfile", "README.md", "requirements.txt", "docker-compose.yml", "bin/btck-cli",
-    "src/web_explorer_server.py",
+    "src/web_explorer_server.py", "tools/btck_cli.py",
     "deploy/btckd.service", "deploy/install_seed_node.sh", "deploy/run_seed_node.sh",
     "deploy/launch_mainnet_guardian.sh",
     "deploy/verify_chain_replay.py", "deploy/backup_guardian_state.py",
@@ -35,6 +35,7 @@ NODE_FILES = {
 POOL_PREFIXES = NODE_PREFIXES + ("src/stratum/", "web/", "deploy/public-edge/")
 POOL_FILES = NODE_FILES | {
     "src/web_explorer_server.py", "scripts/start_stratum_pool.sh",
+    "deploy/stratum-pplns.env.example", "docs/mining_pool_access.md",
 }
 
 
