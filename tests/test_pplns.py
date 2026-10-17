@@ -228,6 +228,38 @@ class TestPPLNSEngine(unittest.TestCase):
         self.assertEqual(self.engine.get_miner(honest).unpaid_satk, before + 500_000)
         self.assertEqual(self.engine.release_mature_combo_entitlements(43_300), [])
 
+    def test_combo_public_winner_keeps_name_mode_and_historical_hashrate(self):
+        block_time = 1_700_010_000.0
+        wallet = "btck1s_private_winner"
+        self.engine.record_share(wallet, "community-rig", 128.0, timestamp=block_time - 500)
+        self.engine.record_share(wallet, "community-rig", 256.0, timestamp=block_time - 5)
+        winner_hash = "ab" * 32
+        self.engine.process_block(
+            block_hash=winner_hash,
+            height=43_000,
+            reward_satk=5 * SATK_PER_COIN,
+            pool_fee_rate=0.0,
+            finder_wallet=wallet,
+            finder_worker="community-rig",
+            block_timestamp=block_time,
+        )
+        resolution = {
+            "epoch_id": 1,
+            "draw_height": 43_200,
+            "winner_block_hash": winner_hash,
+        }
+
+        first = self.engine.record_combo_public_winners([resolution])
+        self.assertEqual(len(first), 1)
+        self.assertEqual(self.engine.record_combo_public_winners([resolution]), [])
+        stats = self.engine.get_dashboard_stats()
+        winner = stats["combo_public_winners"][0]
+        self.assertEqual(winner["worker_name"], "community-rig")
+        self.assertEqual(winner["mode"], "PPLNS")
+        self.assertAlmostEqual(winner["hashrate_hps"], 384.0 * (2**32) / 600.0)
+        self.assertNotIn("wallet_address", winner)
+        self.assertNotIn(wallet, repr(winner))
+
 
 class MockNodeRPC:
     def __init__(self, utxos):
@@ -235,15 +267,50 @@ class MockNodeRPC:
         self.submitted_txs = []
 
     async def call(self, method: str, params: dict = None):
-        if method == "getUTXOSet":
-            return {"outputs": self.utxos}
+        if method == "getWalletSyncPage":
+            if not params or not params.get("unspent_only"):
+                raise AssertionError("treasury sync must request bounded unspent-only pages")
+            return {
+                "network":{'name':'devnet'},
+                "from_height":0,
+                "tip_height":0,
+                "blocks": [{"height":0,"hash":"11"*32,"created": self.utxos, "spent": []}],
+                "next_height": 1,
+                "anchor_hash": "11" * 32,
+                "done": True,
+                "unspent_only": True,
+            }
         elif method == "submitTransaction":
             self.submitted_txs.append(params["transaction"])
             return {"accepted": True, "txid": params["transaction"]["txid"]}
+        elif method=='getTransaction':
+            return {'txid':params['txid'],'status':'confirmed','confirmations':6}
         raise ValueError(f"Unknown RPC method: {method}")
 
 
 class TestAutoPayoutWorker(unittest.IsolatedAsyncioTestCase):
+    async def test_empty_payout_cycle_does_not_scan_chain_utxos(self):
+        temp_dir = tempfile.mkdtemp()
+        db_path = os.path.join(temp_dir, "test_empty_worker_pool.db")
+        try:
+            engine = PPLNSEngine(db_path=db_path, window_size=100)
+            treasury = StealthWallet.generate("PoolTreasury")
+            mock_rpc = MockNodeRPC(utxos=[])
+            worker = AutoPayoutWorker(
+                engine=engine,
+                treasury_wallet=treasury,
+                node_rpc=mock_rpc,
+                default_threshold_satk=int(5.0 * SATK_PER_COIN),
+            )
+
+            async def fail_if_called(method: str, params: dict = None):
+                self.fail(f"unexpected RPC call with no eligible payout: {method}")
+
+            mock_rpc.call = fail_if_called
+            self.assertEqual(await worker.run_payout_cycle(), [])
+        finally:
+            shutil.rmtree(temp_dir)
+
     async def test_auto_payout_cycle(self):
         temp_dir = tempfile.mkdtemp()
         db_path = os.path.join(temp_dir, "test_worker_pool.db")
@@ -256,7 +323,7 @@ class TestAutoPayoutWorker(unittest.IsolatedAsyncioTestCase):
             from privacy.stealth_address import StealthKeyPair
             r_ephem, p_onetime = StealthKeyPair.generate_one_time_stealth_output(treasury.address)
             mock_utxo = {
-                "txid": "11" * 32,
+                "txid": "cb_" + "11" * 32,
                 "vout": 0,
                 "amount_satk": int(50.0 * SATK_PER_COIN),
                 "R_ephem_hex": r_ephem.hex(),
@@ -279,7 +346,6 @@ class TestAutoPayoutWorker(unittest.IsolatedAsyncioTestCase):
                 engine=engine,
                 treasury_wallet=treasury,
                 node_rpc=mock_rpc,
-                payout_interval_seconds=1.0,
                 default_threshold_satk=int(5.0 * SATK_PER_COIN),
                 tx_fee_satk=10_000,
             )
@@ -296,6 +362,28 @@ class TestAutoPayoutWorker(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(m.unpaid_satk, 0)
             self.assertEqual(m.paid_satk, int(10.0 * SATK_PER_COIN))
 
+        finally:
+            shutil.rmtree(temp_dir)
+
+    async def test_fixed_utc_batch_schedule_is_strictly_future(self):
+        temp_dir = tempfile.mkdtemp()
+        try:
+            worker = AutoPayoutWorker(
+                engine=PPLNSEngine(db_path=os.path.join(temp_dir, "schedule.db")),
+                treasury_wallet=StealthWallet.generate("PoolTreasury"),
+                node_rpc=MockNodeRPC(utxos=[]),
+            )
+            # 2026-10-14 06:00:00 UTC must wait until 12:00, rather than pay
+            # immediately merely because the service restarted on a boundary.
+            self.assertEqual(
+                worker.seconds_until_next_utc_batch(1791957600.0),
+                6 * 60 * 60,
+            )
+            # 17:30 UTC advances to the 18:00 UTC batch.
+            self.assertEqual(
+                worker.seconds_until_next_utc_batch(1791999000.0),
+                30 * 60,
+            )
         finally:
             shutil.rmtree(temp_dir)
 

@@ -53,6 +53,15 @@ def transaction_commitment(transactions: List[StealthTransaction]) -> bytes:
     return hashlib.sha256(payload).digest()
 
 class DAGBlock:
+    __slots__ = (
+        "version", "chain_id", "parents", "timestamp", "bits", "nonce",
+        "blue_score", "coinbase_output", "transactions", "payload_hash",
+        "blue_work", "selected_parent", "merge_set", "merge_set_blues",
+        "merge_set_reds", "blue_anticone_sizes", "is_combo", "minted_sats",
+        "reward_sats", "miner_base_sats", "pool_deposit_sats",
+        "eco_deposit_sats", "combo_payout_sats", "fees_sats", "hash",
+    )
+
     def __init__(
         self,
         parents: List[str],
@@ -131,6 +140,10 @@ class BlockDAG:
         self.virtual_blue_order: List[str] = []
         self.utxo_set = UTXOSet()
         self.combo_machine = ComboStateMachine()
+        self._reorg_accounting_undo = None
+        self._reorg_candidate_hash = None
+        self._reorg_views_undo = None
+        self._canonical_positions = None
         # DAG ancestry is immutable once a block is admitted.  GHOSTDAG merge
         # classification asks the same reachability questions many times, so a
         # bounded cache removes repeated full-past traversals without changing
@@ -259,6 +272,91 @@ class BlockDAG:
                 order.append(block_hash)
                 seen.add(block_hash)
         return order
+
+    def _blue_order_signature(self):
+        order = self.virtual_blue_order
+        return (id(order), len(order), order[-1] if order else None)
+
+    def _canonical_blue_positions(self):
+        signature = self._blue_order_signature()
+        if self._canonical_positions is None or self._canonical_positions[0] != signature:
+            self._canonical_positions = (
+                signature, {value: index for index, value in enumerate(self.virtual_blue_order)}
+            )
+        return self._canonical_positions[1]
+
+    def _selected_view_suffix(self, tip_hash):
+        """Exact canonical changes, walking only the divergent selected branches.
+
+        The position index is derived, never persisted or included in consensus
+        roots. Build it once after loading, then maintain only changed suffixes.
+        Keep the reference reconstruction for an inconsistent derived boundary.
+        """
+        old, new = self.selected_tip, tip_hash
+        old_depth = 0
+        new_reverse = []
+        while old != new and old is not None and new is not None:
+            if self.blocks[old].blue_work >= self.blocks[new].blue_work:
+                old = self.blocks[old].selected_parent
+                old_depth += 1
+            else:
+                new_reverse.append(new)
+                new = self.blocks[new].selected_parent
+        selected_cut = len(self.virtual_selected_parent_chain) - old_depth
+        positions = self._canonical_blue_positions()
+        common_position = positions.get(old)
+        if (old is None or old != new or selected_cut <= 0
+                or self.virtual_selected_parent_chain[selected_cut - 1] != old
+                or common_position is None):
+            selected = self.get_selected_parent_chain(tip_hash)
+            blue = self.get_virtual_blue_order(tip_hash)
+            selected_cut = 0
+            while (selected_cut < min(len(selected), len(self.virtual_selected_parent_chain))
+                   and selected[selected_cut] == self.virtual_selected_parent_chain[selected_cut]):
+                selected_cut += 1
+            blue_cut = 0
+            while (blue_cut < min(len(blue), len(self.virtual_blue_order))
+                   and blue[blue_cut] == self.virtual_blue_order[blue_cut]):
+                blue_cut += 1
+            return selected_cut, selected[selected_cut:], blue_cut, blue[blue_cut:]
+
+        selected_suffix = list(reversed(new_reverse))
+        prefix = common_position + 1
+        blue_suffix = []
+        seen = set()
+        for value in selected_suffix:
+            block = self.blocks[value]
+            for blue_hash in [*block.merge_set_blues[1:], value]:
+                position = positions.get(blue_hash)
+                if ((position is not None and position < prefix) or blue_hash in seen):
+                    continue
+                seen.add(blue_hash)
+                blue_suffix.append(blue_hash)
+        matched = 0
+        old_order = self.virtual_blue_order
+        while (matched < len(blue_suffix) and prefix + matched < len(old_order)
+               and blue_suffix[matched] == old_order[prefix + matched]):
+            matched += 1
+        return selected_cut, selected_suffix, prefix + matched, blue_suffix[matched:]
+
+    def _replace_canonical_suffix(self, selected_cut, selected_suffix, blue_cut, blue_suffix):
+        old_selected = self.virtual_selected_parent_chain[selected_cut:]
+        old_blue = self.virtual_blue_order[blue_cut:]
+        cache = self._canonical_positions
+        valid_cache = cache is not None and cache[0] == self._blue_order_signature()
+        if self._reorg_accounting_undo is not None:
+            self._reorg_views_undo = (selected_cut, old_selected, blue_cut, old_blue)
+        self.virtual_selected_parent_chain[selected_cut:] = selected_suffix
+        self.virtual_blue_order[blue_cut:] = blue_suffix
+        if valid_cache:
+            positions = cache[1]
+            for value in old_blue:
+                positions.pop(value, None)
+            for index, value in enumerate(blue_suffix, start=blue_cut):
+                positions[value] = index
+            self._canonical_positions = (self._blue_order_signature(), positions)
+        else:
+            self._canonical_positions = None
 
     def _is_dag_ancestor(self, ancestor_hash: str, descendant_hash: str) -> bool:
         """Return whether ancestor_hash is in descendant_hash's inclusive DAG past."""
@@ -518,6 +616,7 @@ class BlockDAG:
                 ) = snapshot
                 del self.virtual_selected_parent_chain[old_selected_chain_length:]
                 del self.virtual_blue_order[old_blue_order_length:]
+                self._canonical_positions = None
                 self.combo_machine.revert_to_height(old_blue_order_length - 1)
                 for blue_hash, values in affected_accounting.items():
                     blue = self.blocks[blue_hash]
@@ -525,11 +624,9 @@ class BlockDAG:
                         setattr(blue, field, value)
                 raise
 
-        # A selected-tip reorganization can touch historical issuance fields,
-        # but it never rewrites stored header/GHOSTDAG topology.  Preserve the
-        # small mutable surface explicitly and shallow-copy UTXO maps (entries
-        # and undo records are replaced, not mutated).  Deep-copying every DAG
-        # block here made stale-parent ASIC submissions block RPC for seconds.
+        # Journal only first writes during a selected-tip reorganization.
+        # Stored header/GHOSTDAG topology is immutable. Copying every historical
+        # accounting field/map/Combo candidate for a short reorg was O(height).
         accounting_fields = (
             "is_combo",
             "minted_sats",
@@ -540,31 +637,28 @@ class BlockDAG:
             "combo_payout_sats",
             "fees_sats",
         )
-        accounting_snapshot = {
-            block_hash: tuple(getattr(stored, field) for field in accounting_fields)
-            for block_hash, stored in self.blocks.items()
-        }
-        utxo_snapshot = (
-            dict(self.utxo_set.utxos),
-            dict(self.utxo_set._block_spent_undo),
-            dict(self.utxo_set._block_created_undo),
-            dict(self.utxo_set._block_fees),
-            dict(self.utxo_set._block_accepted_txids),
-        )
+        if self._reorg_accounting_undo is not None:
+            raise RuntimeError('nested DAG reorganization transaction')
+        accounting_snapshot = {}
         snapshot = (
             set(self.tips),
             self.selected_tip,
             self.issued_supply_sats,
             self.pool_balance_sats,
-            list(self.virtual_selected_parent_chain),
-            list(self.virtual_blue_order),
-            copy.deepcopy(self.combo_machine),
+            self.virtual_selected_parent_chain,
+            self.virtual_blue_order,
         )
+        self._reorg_accounting_undo = accounting_snapshot
+        self._reorg_candidate_hash = block.hash
+        utxo_started = combo_started = False
         try:
+            self.utxo_set.begin_rollback()
+            utxo_started = True
+            self.combo_machine.begin_rollback()
+            combo_started = True
             accepted = self._commit_validated_block(block, metadata_ready=True)
             if accepted and commit_hook is not None:
                 commit_hook(block)
-            return accepted
         except Exception:
             self.blocks.pop(block.hash, None)
             (
@@ -574,20 +668,36 @@ class BlockDAG:
                 self.pool_balance_sats,
                 self.virtual_selected_parent_chain,
                 self.virtual_blue_order,
-                self.combo_machine,
             ) = snapshot
-            (
-                self.utxo_set.utxos,
-                self.utxo_set._block_spent_undo,
-                self.utxo_set._block_created_undo,
-                self.utxo_set._block_fees,
-                self.utxo_set._block_accepted_txids,
-            ) = utxo_snapshot
+            if self._reorg_views_undo is not None:
+                selected_cut, selected_tail, blue_cut, blue_tail = self._reorg_views_undo
+                self.virtual_selected_parent_chain[selected_cut:] = selected_tail
+                self.virtual_blue_order[blue_cut:] = blue_tail
+            self._canonical_positions = None
+            if utxo_started:
+                self.utxo_set.finish_rollback(rollback=True)
+            if combo_started:
+                self.combo_machine.finish_rollback(rollback=True)
             for block_hash, values in accounting_snapshot.items():
                 stored = self.blocks[block_hash]
                 for field, value in zip(accounting_fields, values):
                     setattr(stored, field, value)
             raise
+        else:
+            self.utxo_set.finish_rollback()
+            self.combo_machine.finish_rollback()
+            return accepted
+        finally:
+            self._reorg_accounting_undo = None
+            self._reorg_candidate_hash = None
+            self._reorg_views_undo = None
+
+    def _remember_reorg_accounting(self, block):
+        journal = self._reorg_accounting_undo
+        if journal is not None and block.hash != self._reorg_candidate_hash and block.hash not in journal:
+            journal[block.hash] = tuple(getattr(block, field) for field in (
+                'is_combo', 'minted_sats', 'reward_sats', 'miner_base_sats',
+                'pool_deposit_sats', 'eco_deposit_sats', 'combo_payout_sats', 'fees_sats'))
 
     def replay_block(self, block: DAGBlock) -> bool:
         """Validate and apply one persisted block without an O(n) rollback copy.
@@ -643,29 +753,20 @@ class BlockDAG:
                 # chain.  Of this suffix, only the extending block is selected.
                 selected_chain_set = {block.hash}
             else:
-                new_selected_chain = self.get_selected_parent_chain(block.hash)
-                old_chain = self.virtual_blue_order
-                new_chain = self.get_virtual_blue_order(block.hash)
-                common_ancestor_idx = 0
-                while common_ancestor_idx < len(old_chain) and common_ancestor_idx < len(new_chain):
-                    if old_chain[common_ancestor_idx] == new_chain[common_ancestor_idx]:
-                        common_ancestor_idx += 1
-                    else:
-                        break
-                blocks_to_apply = enumerate(
-                    new_chain[common_ancestor_idx:], start=common_ancestor_idx
+                selected_cut, selected_suffix, common_ancestor_idx, chain_extension = (
+                    self._selected_view_suffix(block.hash)
                 )
-                selected_chain_set = set(new_selected_chain)
+                old_chain = self.virtual_blue_order
+                blocks_to_apply = enumerate(
+                    chain_extension, start=common_ancestor_idx
+                )
+                selected_chain_set = set(selected_suffix)
 
             # Hard checkpoints are indexed by deterministic virtual blue-order
             # height, not raw DAG arrival order. Reject a candidate selected
             # view before reverting or minting anything if it would replace a
             # manifest-pinned historical hash.
-            prospective_suffix = (
-                chain_extension
-                if is_linear_extension
-                else new_chain[common_ancestor_idx:]
-            )
+            prospective_suffix = chain_extension
             for checkpoint_height, expected_hash in self.network.hard_checkpoints.items():
                 if checkpoint_height < common_ancestor_idx:
                     # The already-accepted prefix was checked when it entered
@@ -684,6 +785,7 @@ class BlockDAG:
             # If reorg occurred, revert orphaned blocks in reverse order
             for orphaned_hash in reversed(old_chain[common_ancestor_idx:]):
                 orphaned_blk = self.blocks[orphaned_hash]
+                self._remember_reorg_accounting(orphaned_blk)
                 self.utxo_set.revert_block(orphaned_hash)
                 # Deduct un-minted subsidy exactly
                 self.issued_supply_sats -= orphaned_blk.minted_sats
@@ -702,6 +804,7 @@ class BlockDAG:
             # Mint subsidies for blue blocks along the canonical virtual order.
             for idx, b_hash in blocks_to_apply:
                 b = self.blocks[b_hash]
+                self._remember_reorg_accounting(b)
                 b_hash_bytes = bytes.fromhex(b.hash)
                 allow_transaction_skips = b_hash not in selected_chain_set
                 previewed_fees = self.utxo_set.preview_block_fees(
@@ -784,11 +887,14 @@ class BlockDAG:
 
             self.selected_tip = block.hash
             if is_linear_extension:
-                self.virtual_selected_parent_chain.append(block.hash)
-                self.virtual_blue_order.extend(chain_extension)
+                self._replace_canonical_suffix(
+                    len(self.virtual_selected_parent_chain), [block.hash],
+                    len(self.virtual_blue_order), chain_extension,
+                )
             else:
-                self.virtual_selected_parent_chain = new_selected_chain
-                self.virtual_blue_order = new_chain
+                self._replace_canonical_suffix(
+                    selected_cut, selected_suffix, common_ancestor_idx, chain_extension,
+                )
 
         else:
             # Unmerged or red block: no subsidy until a future blue merge.
@@ -862,10 +968,36 @@ class BlockDAG:
 
     def state_root(self) -> str:
         """Deterministic commitment used to verify persisted replay results."""
-        blocks = []
-        for block_hash in sorted(self.blocks):
-            block = self.blocks[block_hash]
-            blocks.append({
+        # Preserve the exact canonical JSON byte stream used by the original
+        # implementation, but feed it to SHA-256 incrementally. Materializing
+        # the lifetime block list, UTXO list and final encoded JSON at once
+        # caused multi-gigabyte transient allocations on MAINNET.
+        encoder = json.JSONEncoder(sort_keys=True, separators=(",", ":"))
+        digest = hashlib.sha256()
+
+        def feed(value) -> None:
+            for chunk in encoder.iterencode(value):
+                digest.update(chunk.encode("utf-8"))
+
+        def feed_array(values) -> None:
+            digest.update(b"[")
+            first = True
+            for value in values:
+                if not first:
+                    digest.update(b",")
+                feed(value)
+                first = False
+            digest.update(b"]")
+
+        # json.dumps(..., sort_keys=True) sorts these top-level keys in this
+        # precise order. Keep the framing explicit so the resulting digest is
+        # backward-compatible with every durable checkpoint already written.
+        digest.update(b'{"blocks":')
+
+        def block_payloads():
+            for block_hash in sorted(self.blocks):
+                block = self.blocks[block_hash]
+                yield {
                 "hash": block_hash,
                 "parents": sorted(block.parents),
                 "selected_parent": block.selected_parent,
@@ -882,30 +1014,42 @@ class BlockDAG:
                 "combo_payout_sats": block.combo_payout_sats,
                 "fees_sats": block.fees_sats,
                 "accepted_txids": self.utxo_set.get_block_accepted_txids(block_hash),
-            })
-        utxos = []
-        for (txid, vout), entry in sorted(self.utxo_set.utxos.items()):
-            utxos.append({"txid": txid, "vout": vout, **asdict(entry)})
+                }
+
+        feed_array(block_payloads())
+        digest.update(b',"chain_id":')
+        feed(self.network.chain_id)
+        digest.update(b',"combo_active":')
+        feed(self.combo_machine.active_epoch_id)
+        digest.update(b',"combo_epochs":')
         epochs = {
             str(epoch_id): asdict(epoch)
             for epoch_id, epoch in sorted(self.combo_machine.epochs.items())
         }
-        payload = {
-            "chain_id": self.network.chain_id,
-            "blocks": blocks,
-            "tips": sorted(self.tips),
-            "selected_tip": self.selected_tip,
-            "selected_chain": self.virtual_selected_parent_chain,
-            "virtual_blue_order": self.virtual_blue_order,
-            "issued_supply_sats": self.issued_supply_sats,
-            "pool_balance_sats": self.pool_balance_sats,
-            "utxos": utxos,
-            "combo_epochs": epochs,
-            "combo_pending": sorted(self.combo_machine.pending_draws),
-            "combo_active": self.combo_machine.active_epoch_id,
-        }
-        encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
-        return hashlib.sha256(encoded).hexdigest()
+        feed(epochs)
+        digest.update(b',"combo_pending":')
+        feed_array(sorted(self.combo_machine.pending_draws))
+        digest.update(b',"issued_supply_sats":')
+        feed(self.issued_supply_sats)
+        digest.update(b',"pool_balance_sats":')
+        feed(self.pool_balance_sats)
+        digest.update(b',"selected_chain":')
+        feed_array(self.virtual_selected_parent_chain)
+        digest.update(b',"selected_tip":')
+        feed(self.selected_tip)
+        digest.update(b',"tips":')
+        feed_array(sorted(self.tips))
+        digest.update(b',"utxos":')
+
+        def utxo_payloads():
+            for (txid, vout), entry in sorted(self.utxo_set.utxos.items()):
+                yield {"txid": txid, "vout": vout, **asdict(entry)}
+
+        feed_array(utxo_payloads())
+        digest.update(b',"virtual_blue_order":')
+        feed_array(self.virtual_blue_order)
+        digest.update(b"}")
+        return digest.hexdigest()
 
     def get_dag_info(self, *, include_state_root: bool = True) -> dict:
         selected = self.blocks[self.selected_tip]

@@ -56,8 +56,8 @@ class TestPrivateWebSurfaces(unittest.TestCase):
         names = ("participate.html", "genesis.html", "releases.html", "llms.txt")
         docs = "\n".join((ROOT / "web" / name).read_text(encoding="utf-8") for name in names)
         self.assertIsNone(re.search(r"[\u3400-\u9fff]", docs))
-        self.assertIn("PUBLIC PORT CLOSED", docs)
-        self.assertIn("NO PUBLIC RELEASE YET", docs)
+        self.assertIn("PUBLIC MINING CLOSED", docs)
+        self.assertIn("DOWNLOADS NOT YET OPEN", docs)
         self.assertIn("PENDING", docs)
 
     def test_machine_network_record_is_valid_and_conservative(self):
@@ -86,6 +86,14 @@ class TestPrivateWebSurfaces(unittest.TestCase):
         self.assertIn("no fixed return or prize multiple is promised", pool)
         self.assertNotIn("hashrate works for free", pool.lower())
         self.assertNotIn("guaranteed profit", pool.lower())
+
+    def test_wallet_edge_exposes_rate_limited_shared_tip_cursor(self):
+        config = (
+            ROOT / "deploy" / "public-edge" / "guardian-wallet-sync.nginx.conf.template"
+        ).read_text(encoding="utf-8")
+        self.assertIn("location = /api/wallet/tip", config)
+        self.assertIn("limit_req zone=btck_wallet_sync_per_ip", config)
+        self.assertIn("proxy_pass http://127.0.0.1:18088", config)
 
 
 if __name__ == "__main__":

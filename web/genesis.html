@@ -1,1 +1,60 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Verify Genesis — Bitcoin K</title><link rel="stylesheet" href="/docs.css"></head><body><nav><div class="nav"><a href="/">BITCOIN K</a><a href="/whitepaper">WHITEPAPER</a><a href="/participate">PARTICIPATE</a><span class="push">VERIFY GENESIS</span></div></nav><main><span class="eyebrow">PUBLIC VERIFICATION RECORD</span><h1>Genesis is a claim you can check.</h1><p class="lead">These immutable parameters identify the Bitcoin K mainnet created on 8 October 2026. The checkpoint field will be added only after block #271,828 exists and has been independently re-read from the node.</p><div class="grid"><div class="card"><b>NETWORK</b><p>mainnet</p></div><div class="card"><b>CHAIN ID</b><p>btck-mainnet-v1</p></div><div class="card"><b>VERSION</b><p>2</p></div><div class="card"><b>UTC TIMESTAMP</b><p>1791442800</p></div><div class="card"><b>DIFFICULTY BITS</b><p>0x1c017668</p></div><div class="card"><b>GENESIS REWARD</b><p>0 SatK</p></div></div><h2>Timestamp headline</h2><p>2026-10-06 Euronews: Belgian physicist wins Nobel for turning Antarctic ice into a telescope</p><p class="hash">headline SHA-256: 97377dfd8800b485df736cd7c401c077951b7abb3af5b08ca3a746e5d6f40cfb</p><h2>Proof-of-work result</h2><div class="table"><table><tbody><tr><th>NONCE</th><td class="hash">0x2012b6eb6bc9c</td></tr><tr><th>PRE-POW HASH</th><td class="hash">f983a4aef7daa9f86a5af1807442764c4752db3dd70075de5c99dfb2f90dc734</td></tr><tr><th>GENESIS HASH</th><td class="hash">b9249be0f1b57021a9cfef8241a499c6e975a91e24d6a3fc22ce850000000000</td></tr></tbody></table></div><h2>Guardian checkpoint</h2><div class="notice">PENDING — Block #271,828 has not yet been reached. No checkpoint hash is published or implied. Public ports remain closed.</div><h2>What the record proves</h2><ul><li>The node release must reproduce the same chain ID, headline digest, pre-PoW hash, nonce and final hash.</li><li>Genesis itself issues no coins.</li><li>The headline commits the block to information available before the timestamp.</li></ul><h2>What it does not prove</h2><ul><li>It does not replace a source-code or wallet security audit.</li><li>It does not make future blocks irreversible before the checkpoint is frozen.</li><li>It does not imply that public mining was open from block zero.</li></ul></main><footer class="footer"><div>BITCOIN K · IMMUTABLE MAINNET GENESIS PARAMETERS</div></footer></body></html>
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Verify Launch — Bitcoin K</title>
+  <link rel="stylesheet" href="/docs.css">
+</head>
+<body>
+<nav><div class="nav"><a href="/">BITCOIN K</a><a href="/whitepaper">WHITEPAPER</a><a href="/participate">PARTICIPATE</a><span class="push">VERIFY LAUNCH</span></div></nav>
+<main>
+  <span class="eyebrow">PUBLIC VERIFICATION RECORD</span>
+  <h1>Do not trust a launch claim. Verify it.</h1>
+  <p class="lead">These values identify the checkpoint-bound Bitcoin K mainnet release. The checkpoint and supply state were independently replayed in two environments before Stage-B approval.</p>
+  <div class="grid">
+    <div class="card"><b>NETWORK</b><p>mainnet</p></div>
+    <div class="card"><b>CHAIN ID</b><p>btck-mainnet-v1</p></div>
+    <div class="card"><b>RELEASE</b><p>3.2.5</p></div>
+    <div class="card"><b>TARGET INTERVAL</b><p>1 second</p></div>
+    <div class="card"><b>GENESIS REWARD</b><p>0 SatK</p></div>
+    <div class="card"><b>CHECKPOINT</b><p>#271,828</p></div>
+  </div>
+
+  <h2>Genesis commitment</h2>
+  <p>2026-10-06 Euronews: Belgian physicist wins Nobel for turning Antarctic ice into a telescope</p>
+  <div class="table"><table><tbody>
+    <tr><th>UTC TIMESTAMP</th><td>1791442800</td></tr>
+    <tr><th>DIFFICULTY BITS</th><td>0x1c017668</td></tr>
+    <tr><th>NONCE</th><td class="hash">0x2012b6eb6bc9c</td></tr>
+    <tr><th>PRE-POW HASH</th><td class="hash">f983a4aef7daa9f86a5af1807442764c4752db3dd70075de5c99dfb2f90dc734</td></tr>
+    <tr><th>GENESIS HASH</th><td class="hash">b9249be0f1b57021a9cfef8241a499c6e975a91e24d6a3fc22ce850000000000</td></tr>
+  </tbody></table></div>
+
+  <h2>Guardian checkpoint</h2>
+  <div class="table"><table><tbody>
+    <tr><th>HEIGHT</th><td>271,828</td></tr>
+    <tr><th>HASH</th><td class="hash">02ecd7521f806a88cd8d688416edd1bc67c3a535a45d97b7bd5a910000000000</td></tr>
+    <tr><th>CONSENSUS FINGERPRINT</th><td class="hash">305828370fdbd5c116dd264ab29c9ba908a0f2409ba9f2b5d7e865ea7177c4f0</td></tr>
+    <tr><th>STATE ROOT</th><td class="hash">ca87a00294a01c8ab6fe8194982c72e7bf35f8fb881a07fba00e68b8a60db6f6</td></tr>
+    <tr><th>ISSUED / UTXO TOTAL</th><td>1,503,750.81755414 BTC-K</td></tr>
+    <tr><th>APPROVAL ID</th><td>BTCK-STAGEB-20261012-AGY-001</td></tr>
+  </tbody></table></div>
+  <div class="notice"><b>Replay-A: PASS · Replay-B: PASS.</b> Both independently replayed 272,069 records and matched the checkpoint, state root, issued supply, UTXO total, pool balance and Stage-B manifest byte-for-byte.</div>
+
+  <h2>Guardian-phase disclosure</h2>
+  <p>The first 271,828 blocks were produced with controlled project hashrate to reduce cold-start majority-hashrate risk. Genesis created no spendable reward, but the Guardian phase produced valid consensus rewards under the published 80/15/5 allocation. Bitcoin K therefore does not claim that mining was publicly open from block zero.</p>
+
+  <h2>Current publication state</h2>
+  <div class="notice">CHECKPOINT VERIFIED — PUBLIC LAUNCH PENDING. The signed release exists, but downloads and public mining remain closed until the second public seed completes Fresh IBD and the recovery, external-probe and final launch gates pass.</div>
+
+  <h2>What this record does not prove</h2>
+  <ul>
+    <li>It is not a claim of an independent third-party security audit.</li>
+    <li>It does not imply that L2, DEX, bridge or exchange services are live.</li>
+    <li>It does not authorize downloading software from unofficial mirrors.</li>
+  </ul>
+</main>
+<footer class="footer"><div>BITCOIN K · IMMUTABLE MAINNET AND CHECKPOINT PARAMETERS</div></footer>
+</body>
+</html>

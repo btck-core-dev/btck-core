@@ -98,6 +98,16 @@ def main() -> None:
         action="store_true",
         help="write a startup snapshot when the replay ends exactly at a durable checkpoint",
     )
+    parser.add_argument(
+        "--seal-latest-checkpoint",
+        action="store_true",
+        help="bind the fully replayed journal tip to its state root before writing a snapshot; offline copies only",
+    )
+    parser.add_argument(
+        "--write-snapshot-v2",
+        action="store_true",
+        help="write the bounded-memory SQLite V2 recovery snapshot; offline copies only",
+    )
     args = parser.parse_args()
 
     started = time.monotonic()
@@ -130,6 +140,14 @@ def main() -> None:
         "loaded_snapshot_sequence": daemon.chain_store.loaded_snapshot_sequence,
         "tail_replayed_blocks": daemon.chain_store.tail_replayed_blocks,
     }
+    if args.seal_latest_checkpoint:
+        checkpoint_sequence, checkpoint_hash = daemon.chain_store.seal_latest_checkpoint(
+            info["state_root"]
+        )
+        daemon.latest_checkpoint_sequence = checkpoint_sequence
+        daemon.latest_checkpoint_state_root = info["state_root"]
+        result["sealed_checkpoint_sequence"] = checkpoint_sequence
+        result["sealed_checkpoint_hash"] = checkpoint_hash
     if args.write_snapshot:
         checkpoint = daemon.chain_store.latest_checkpoint()
         if checkpoint is None:
@@ -157,6 +175,29 @@ def main() -> None:
         )
         result["snapshot_path"] = str(daemon.chain_store.snapshot_path)
         result["snapshot_sequence"] = checkpoint_sequence
+    if args.write_snapshot_v2:
+        checkpoint = daemon.chain_store.latest_checkpoint()
+        if checkpoint is None:
+            raise SystemExit("cannot write V2 snapshot: chain has no durable checkpoint")
+        checkpoint_sequence, checkpoint_state_root = checkpoint
+        if checkpoint_sequence != daemon.replayed_blocks:
+            raise SystemExit(
+                "cannot write V2 snapshot: replay must end exactly at the latest durable checkpoint "
+                f"({daemon.replayed_blocks} records replayed, checkpoint is {checkpoint_sequence})"
+            )
+        if info["state_root"] != checkpoint_state_root:
+            raise SystemExit("cannot write V2 snapshot: replayed state root does not match checkpoint")
+        with daemon.chain_store._connect() as connection:
+            row = connection.execute(
+                "SELECT block_hash FROM accepted_blocks WHERE sequence = ?", (checkpoint_sequence,)
+            ).fetchone()
+        if row is None:
+            raise SystemExit("cannot write V2 snapshot: checkpoint block is missing")
+        daemon.chain_store.write_snapshot_v2(
+            daemon.dag, checkpoint_sequence, str(row[0]), checkpoint_state_root
+        )
+        result["snapshot_v2_path"] = str(daemon.chain_store.snapshot_v2_path)
+        result["snapshot_v2_sequence"] = checkpoint_sequence
     mismatches = []
     if args.expect:
         expected = json.loads(args.expect.read_text(encoding="utf-8"))

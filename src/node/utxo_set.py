@@ -25,10 +25,51 @@ from privacy.wallet_engine import (
     sha256
 )
 from tokenomics.emission_schedule import get_regular_coinbase_maturity_blocks
+from collections.abc import MutableMapping
+
+_UNDO_ABSENT = object()
+
+
+class UndoMapping(MutableMapping):
+    """Record only first writes; undo values are replaced, never mutated."""
+
+    def __init__(self, base):
+        self.base = base
+        self.before = {}
+
+    def __getitem__(self, key):
+        return self.base[key]
+
+    def __iter__(self):
+        return iter(self.base)
+
+    def __len__(self):
+        return len(self.base)
+
+    def remember(self, key):
+        if key not in self.before:
+            self.before[key] = self.base.get(key, _UNDO_ABSENT)
+
+    def __setitem__(self, key, value):
+        self.remember(key)
+        self.base[key] = value
+
+    def __delitem__(self, key):
+        if key not in self.base:
+            raise KeyError(key)
+        self.remember(key)
+        del self.base[key]
+
+    def rollback(self):
+        for key, value in self.before.items():
+            if value is _UNDO_ABSENT:
+                self.base.pop(key, None)
+            else:
+                self.base[key] = value
 
 COINBASE_MATURITY_CONFIRMATIONS = 7200
 
-@dataclass
+@dataclass(slots=True)
 class UTXOEntry:
     amount_satk: int
     P_onetime_hex: str
@@ -49,6 +90,7 @@ class TrackedUTXODict(dict):
 
     def __init__(self, values=()):
         super().__init__()
+        self._undo_journal = None
         self.total_satk = 0
         self.kind_totals: Dict[str, int] = {}
         self.update(values)
@@ -61,6 +103,7 @@ class TrackedUTXODict(dict):
             self.kind_totals.pop(entry.kind, None)
 
     def __setitem__(self, key, value) -> None:
+        self._remember(key)
         previous = self.get(key)
         if previous is not None:
             self._add_entry(previous, -1)
@@ -68,6 +111,9 @@ class TrackedUTXODict(dict):
         self._add_entry(value, 1)
 
     def __delitem__(self, key) -> None:
+        if key not in self:
+            raise KeyError(key)
+        self._remember(key)
         self._add_entry(self[key], -1)
         super().__delitem__(key)
 
@@ -86,9 +132,35 @@ class TrackedUTXODict(dict):
             self[key] = value
 
     def clear(self) -> None:
+        if self._undo_journal is not None:
+            for key in list(self):
+                del self[key]
+            return
         super().clear()
         self.total_satk = 0
         self.kind_totals.clear()
+
+    def _remember(self, key):
+        journal = self._undo_journal
+        if journal is not None and key not in journal:
+            journal[key] = self.get(key, _UNDO_ABSENT)
+
+    def begin_undo(self):
+        if self._undo_journal is not None:
+            raise RuntimeError('nested UTXO undo transaction')
+        self._undo_journal = {}
+
+    def finish_undo(self, *, rollback=False):
+        journal = self._undo_journal
+        if journal is None:
+            raise RuntimeError('UTXO undo transaction missing')
+        self._undo_journal = None
+        if rollback:
+            for key, value in journal.items():
+                if value is _UNDO_ABSENT:
+                    self.pop(key, None)
+                else:
+                    self[key] = value
 
 class UTXOSet:
     """
@@ -103,6 +175,35 @@ class UTXOSet:
         self._block_created_undo: Dict[str, List[Tuple[str, int]]] = {}
         self._block_fees: Dict[str, int] = {}
         self._block_accepted_txids: Dict[str, List[str]] = {}
+        self._rollback_state = None
+
+    def begin_rollback(self):
+        if self._rollback_state is not None:
+            raise RuntimeError('nested UTXO rollback transaction')
+        names = ('_block_spent_undo', '_block_created_undo', '_block_fees', '_block_accepted_txids')
+        wrappers = {name: UndoMapping(getattr(self, name)) for name in names}
+        original = self.utxos
+        original.begin_undo()
+        self._rollback_state = original, wrappers
+        for name, wrapper in wrappers.items():
+            setattr(self, name, wrapper)
+
+    def finish_rollback(self, *, rollback=False):
+        if self._rollback_state is None:
+            raise RuntimeError('UTXO rollback transaction missing')
+        original, wrappers = self._rollback_state
+        original.finish_undo(rollback=rollback)
+        if rollback:
+            # A nonempty block can replace utxos with a new overlay. Discard
+            # that overlay and restore the journaled original in that case too.
+            self._utxos = original
+        for name, wrapper in wrappers.items():
+            if rollback:
+                wrapper.rollback()
+                setattr(self, name, wrapper.base)
+            elif getattr(self, name) is wrapper:
+                setattr(self, name, wrapper.base)
+        self._rollback_state = None
 
     @property
     def utxos(self) -> TrackedUTXODict:
@@ -202,6 +303,11 @@ class UTXOSet:
         allow_transaction_skips: bool = False,
     ) -> int:
         """Validate a block transaction sequence without mutating consensus state."""
+        # Mining-only blocks have exactly zero transaction fees. Do not copy
+        # the lifetime UTXO map just to iterate an empty transaction sequence.
+        # Nonempty/other input types retain the existing validation path.
+        if isinstance(transactions, (list, tuple)) and not transactions:
+            return 0
         overlay = dict(self.utxos)
         total_fees_sats = 0
         for tx in transactions:

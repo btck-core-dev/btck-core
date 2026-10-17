@@ -18,6 +18,7 @@ from dataclasses import dataclass, field
 import hashlib
 import sys
 import os
+import copy
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from tokenomics.emission_schedule import (
@@ -65,6 +66,7 @@ class ComboStateMachine:
         self.epochs: Dict[int, ComboEpoch] = {}
         self.pending_draws: List[int] = []  # List of epoch_ids awaiting beacon block
         self.resolutions_by_beacon_height: Dict[int, LotteryResolution] = {}
+        self._rollback_state = None
         
         # Initialize epoch 1
         stage_id, _, _ = get_combo_spec_for_height(1)
@@ -73,6 +75,34 @@ class ComboStateMachine:
             stage_id=stage_id,
             start_height=1
         )
+
+    def begin_rollback(self):
+        if self._rollback_state is not None:
+            raise RuntimeError('nested Combo rollback transaction')
+        self._rollback_state = (self.active_epoch_id, dict(self.epochs),
+            list(self.pending_draws), dict(self.resolutions_by_beacon_height), set())
+
+    def _remember_epoch(self, epoch_id):
+        state = self._rollback_state
+        if state is None or epoch_id in state[4] or epoch_id not in state[1]:
+            return
+        original = state[1][epoch_id]
+        saved = copy.copy(original)
+        # Hashes are immutable strings. Avoid recursively visiting every past
+        # candidate in every historical epoch on each short DAG reorganization.
+        saved.candidates = list(original.candidates)
+        saved.resolution = copy.deepcopy(original.resolution)
+        state[1][epoch_id] = saved
+        state[4].add(epoch_id)
+
+    def finish_rollback(self, *, rollback=False):
+        state = self._rollback_state
+        if state is None:
+            raise RuntimeError('Combo rollback transaction missing')
+        if rollback:
+            (self.active_epoch_id, self.epochs, self.pending_draws,
+             self.resolutions_by_beacon_height, _) = state
+        self._rollback_state = None
 
     def process_block(
         self,
@@ -90,6 +120,7 @@ class ComboStateMachine:
             return None, 0
 
         current_epoch = self.epochs[self.active_epoch_id]
+        self._remember_epoch(self.active_epoch_id)
         if not current_epoch.is_frozen:
             current_epoch.candidates.append(block_hash)
 
@@ -124,6 +155,7 @@ class ComboStateMachine:
         if resolved_epoch_id is not None:
             self.pending_draws.remove(resolved_epoch_id)
             epoch = self.epochs[resolved_epoch_id]
+            self._remember_epoch(resolved_epoch_id)
 
             # Compute winner using future beacon block hash
             beacon_bytes = bytes.fromhex(block_hash)
@@ -173,6 +205,7 @@ class ComboStateMachine:
             res = self.resolutions_by_beacon_height.pop(h)
             epoch = self.epochs.get(res.epoch_id)
             if epoch:
+                self._remember_epoch(res.epoch_id)
                 epoch.is_resolved = False
                 epoch.resolution = None
                 if epoch.epoch_id not in self.pending_draws:
@@ -193,6 +226,7 @@ class ComboStateMachine:
                 self.epochs.pop(nk, None)
             
             epoch = self.epochs[eid]
+            self._remember_epoch(eid)
             epoch.is_frozen = False
             epoch.draw_height = 0
             epoch.beacon_height = 0
@@ -202,11 +236,13 @@ class ComboStateMachine:
         # Candidate hashes are consensus state too.  Trim each surviving epoch
         # to the number of canonical heights that still belong to it so a
         # same-height replacement cannot leave an orphan candidate behind.
-        for epoch in self.epochs.values():
+        for eid, epoch in self.epochs.items():
             last_kept_height = min(
                 target_height,
                 epoch.draw_height if epoch.is_frozen else target_height,
             )
             keep_count = max(0, last_kept_height - epoch.start_height + 1)
+            if len(epoch.candidates) > keep_count:
+                self._remember_epoch(eid)
             del epoch.candidates[keep_count:]
         self.pending_draws.sort()

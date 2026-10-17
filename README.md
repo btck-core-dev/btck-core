@@ -1,13 +1,15 @@
 # BTC-K Core
 
-> 当前状态（2026-10-09）：MAINNET Stage-A 私有 Guardian 已运行；公网 P2P、公开矿池和最终钱包发布仍锁定，必须等待高度 271,828 checkpoint、双环境独立重放、Stage-B manifest 审批和最终制品构建。
+> 当前状态（2026-10-17）：MAINNET 已公开运行。Seed-B 已完成限速持续跟链与断线补齐验收并保持在线。钱包与矿池稳定性修复正在整理发布；PPLNS 自动付款保持关闭，完整生产支付验收尚未完成。
+
+矿工请先读[SOLO/PPLNS接入地址、端口、算力及付款状态](docs/mining_pool_access.md)；中文操作见[ASIC矿机指南](docs/iceriver_mining_setup_guide.md)。SOLO为3333–3336，PPLNS为3332。源码修复推送不等于PPLNS付款已启用。
 
 BTC-K Core 包含 Python BlockDAG 节点、kHeavyHash PoW、网络隔离、持久化 UTXO、节点权威 Stratum 和本地签名钱包。正式公网状态只能由批准的 MAINNET manifest 与发布清单判定；不得把 Guardian 私网身份当作最终公网身份，也不得宣称 Monero 级隐私、交易所就绪或已完成独立外审。
 
 ## 当前安全边界
 
 - 默认网络是 `devnet`；`testnet` 有独立 chain ID、magic、genesis 和数据目录。
-- 默认 `mainnet.json` 保持发布锁；私有 Guardian 使用单独审批且仅限 Stage-A 的 manifest。
+- 公网 `mainnet.json` 绑定已批准的Stage-B身份及271828检查点；历史Guardian manifest只适用于原Stage-A，不能替代公网身份。
 - 节点是高度、发行、奖池和 UTXO 的唯一权威；Stratum 不保存独立账本。
 - CLI 在本地扫描公开 UTXO、本地签名，再向节点提交真实交易。
 - 网页钱包只读；浏览器密钥生成和“随机 TXID 假广播”已关闭。

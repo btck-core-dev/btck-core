@@ -144,6 +144,25 @@ class TxOutput:
     P_onetime_hex: str
     recipient_tag: str = "" # Optional memo / tag
 
+
+def _encode_outpoint_id(value: str) -> bytes:
+    """Encode normal transaction IDs and protocol-created output IDs.
+
+    Ordinary transaction IDs retain their historical 32-byte hex encoding.
+    Coinbase, ecosystem and vesting outputs use named IDs in the UTXO map;
+    domain-separating and hashing those names makes them signable without
+    creating an ambiguity with a normal transaction hash.
+    """
+    text = str(value)
+    if len(text) == 64:
+        try:
+            return bytes.fromhex(text)
+        except ValueError:
+            pass
+    if text.startswith(("cb_", "eco_", "vesting_")):
+        return hashlib.sha256(b"BTCK/outpoint-id/v1\x00" + text.encode("ascii")).digest()
+    raise ValueError("Unsupported transaction outpoint identifier")
+
 @dataclass
 class StealthTransaction:
     version: int
@@ -156,7 +175,7 @@ class StealthTransaction:
         payload = bytearray()
         payload.extend(self.version.to_bytes(4, "little"))
         for inp in self.inputs:
-            payload.extend(bytes.fromhex(inp.prev_txid))
+            payload.extend(_encode_outpoint_id(inp.prev_txid))
             payload.extend(inp.prev_vout.to_bytes(4, "little"))
             payload.extend(inp.amount_satk.to_bytes(8, "little"))
             payload.extend(bytes.fromhex(inp.P_onetime_hex))

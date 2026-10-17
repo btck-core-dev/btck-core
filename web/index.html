@@ -961,11 +961,11 @@
 </head>
 <body>
 
-  <!-- Scheduled maintenance notice. Keep this visible while Stratum is offline. -->
+  <!-- Keep this notice visible throughout the post-upgrade observation window. -->
   <div class="maintenance-marquee" role="status" aria-live="polite">
     <div class="maintenance-marquee-track">
-      <span>Scheduled pool infrastructure upgrade in progress. Mining services are temporarily paused and are expected to reopen within 24 hours. Consensus ledger and balances are 100% intact.</span>
-      <span aria-hidden="true">Scheduled pool infrastructure upgrade in progress. Mining services are temporarily paused and are expected to reopen within 24 hours. Consensus ledger and balances are 100% intact.</span>
+      <span>Pool infrastructure upgrade remains in progress. Mining services are temporarily unavailable and are expected to resume within 24 hours.</span>
+      <span aria-hidden="true">Pool infrastructure upgrade remains in progress. Mining services are temporarily unavailable and are expected to resume within 24 hours.</span>
     </div>
   </div>
 
@@ -1500,10 +1500,11 @@
         panel.style.display = "block";
         document.getElementById("mp-title").innerText = `Miner [${payload.miner_id}]`;
         document.getElementById("mp-hashrate").innerText = payload.total_hashrate_str || "N/A";
-        document.getElementById("mp-workers").innerText = `${payload.active_worker_count} / ${payload.worker_count}`;
         document.getElementById("mp-mode").innerText = (payload.modes || []).join(" + ") || "—";
         document.getElementById("mp-status").innerText = payload.active_worker_count ? "● Active Hashrate Detected" : "○ Workers Offline";
-        const rows = (payload.workers || []).map(worker => `
+        const onlineWorkers = (payload.workers || []).filter(worker => worker.online === true);
+        document.getElementById("mp-workers").innerText = `${onlineWorkers.length} / ${onlineWorkers.length}`;
+        const rows = onlineWorkers.map(worker => `
           <tr>
             <td>${worker.online ? "● Online" : "○ Offline"}</td>
             <td><strong>${escapeHtml(worker.worker_name)}</strong></td>
@@ -1512,7 +1513,7 @@
           </tr>`).join("");
         document.getElementById("mp-worker-list").innerHTML = `
           <table class="pool-table"><thead><tr><th>Status</th><th>Worker Name</th><th>Scheme</th><th style="text-align:right;">Hashrate</th></tr></thead><tbody>${rows}</tbody></table>`;
-        showToast(`Found ${payload.worker_count} worker(s)`);
+        showToast(`Found ${onlineWorkers.length} online worker(s)`);
       } catch (error) {
         panel.style.display = "block";
         document.getElementById("mp-title").innerText = "Miner not found";
@@ -1558,6 +1559,7 @@
       let rows = [];
 
       for (const [k, v] of Object.entries(miners)) {
+        if (v.status !== "ONLINE") continue;
         const mode = (v.mode || "SOLO").toUpperCase();
         allCount++;
         if (mode === "SOLO") soloCount++;

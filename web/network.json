@@ -1,1 +1,68 @@
-{"schema":"https://bitcoin-k.com/schemas/network-v1.json","updated_utc":"2026-10-08T14:30:00Z","project":{"name":"Bitcoin K","ticker":"BTC-K","ui_ticker":"BTCK","base_unit":"SatK","base_units_per_coin":100000000},"network":{"name":"mainnet","chain_id":"btck-mainnet-v1","status":"private_guardian","target_block_seconds":1,"pow":"kHeavyHash","ordering":"GHOSTDAG","public_checkpoint_height":271828},"supply":{"hard_cap_satk":2100000000000000,"subsidy_days":1460,"final_subsidy_height":126144000,"genesis_reward_satk":0,"post_subsidy_fee_split":{"immediate_miner":0.5,"combo":0.5}},"genesis":{"timestamp":1791442800,"bits":"0x1c017668","nonce":"0x2012b6eb6bc9c","hash":"b9249be0f1b57021a9cfef8241a499c6e975a91e24d6a3fc22ce850000000000","headline_sha256":"97377dfd8800b485df736cd7c401c077951b7abb3af5b08ca3a746e5d6f40cfb"},"services":{"website":"https://bitcoin-k.com/","explorer":"https://explorer.bitcoin-k.com/","pool":"https://pool.bitcoin-k.com/","wallet":"https://wallet.bitcoin-k.com/","live_stats":"https://bitcoin-k.com/api/stats"},"availability":{"public_mining":false,"public_node_release":false,"gpu_market":false,"dex":false,"http_402_inference":false,"agent_wallet_production":false}}
+{
+  "schema": "https://bitcoin-k.com/schemas/network-v1.json",
+  "updated_utc": "2026-10-12T17:55:13Z",
+  "project": {
+    "name": "Bitcoin K",
+    "ticker": "BTC-K",
+    "ui_ticker": "BTCK",
+    "base_unit": "SatK",
+    "base_units_per_coin": 100000000
+  },
+  "network": {
+    "name": "mainnet",
+    "chain_id": "btck-mainnet-v1",
+    "status": "checkpoint_bound_prelaunch",
+    "target_block_seconds": 1,
+    "pow": "kHeavyHash",
+    "ordering": "GHOSTDAG",
+    "public_checkpoint_height": 271828,
+    "consensus_fingerprint": "305828370fdbd5c116dd264ab29c9ba908a0f2409ba9f2b5d7e865ea7177c4f0"
+  },
+  "supply": {
+    "hard_cap_satk": 2100000000000000,
+    "subsidy_days": 1460,
+    "final_subsidy_height": 126144000,
+    "genesis_reward_satk": 0,
+    "post_subsidy_fee_split": {
+      "immediate_miner": 0.5,
+      "combo": 0.5
+    }
+  },
+  "genesis": {
+    "timestamp": 1791442800,
+    "bits": "0x1c017668",
+    "nonce": "0x2012b6eb6bc9c",
+    "hash": "b9249be0f1b57021a9cfef8241a499c6e975a91e24d6a3fc22ce850000000000",
+    "headline_sha256": "97377dfd8800b485df736cd7c401c077951b7abb3af5b08ca3a746e5d6f40cfb"
+  },
+  "checkpoint": {
+    "height": 271828,
+    "hash": "02ecd7521f806a88cd8d688416edd1bc67c3a535a45d97b7bd5a910000000000",
+    "state_root": "ca87a00294a01c8ab6fe8194982c72e7bf35f8fb881a07fba00e68b8a60db6f6",
+    "approval_id": "BTCK-STAGEB-20261012-AGY-001",
+    "replay_a": "PASS",
+    "replay_b": "PASS"
+  },
+  "release": {
+    "version": "3.2.5",
+    "tag": "v3.2.5",
+    "source_commit": "818b5a7bd26d1233ef169c51feceb7ce397faf3d",
+    "signature_verified": true,
+    "downloads_enabled": false
+  },
+  "services": {
+    "website": "https://bitcoin-k.com/",
+    "explorer": "https://explorer.bitcoin-k.com/",
+    "pool": "https://pool.bitcoin-k.com/",
+    "wallet": "https://wallet.bitcoin-k.com/",
+    "live_stats": "https://bitcoin-k.com/api/stats"
+  },
+  "availability": {
+    "public_mining": false,
+    "public_node_release": false,
+    "gpu_market": false,
+    "dex": false,
+    "http_402_inference": false,
+    "agent_wallet_production": false
+  }
+}

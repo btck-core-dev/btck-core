@@ -1,0 +1,40 @@
+[Unit]
+StartLimitIntervalSec=0
+Description=BTC-K public PPLNS Stratum (port 3332)
+After=network-online.target btckd.service
+Wants=btckd.service
+
+[Service]
+Type=simple
+User=btck
+Group=btck
+WorkingDirectory=/opt/btck/current
+EnvironmentFile=/etc/btck/stratum-pplns.env
+Environment=PYTHONPATH=/opt/btck/current/src
+ExecCondition=/usr/bin/test -r /etc/btck/pool_treasury_wallet.password
+ExecStart=/usr/bin/python3 -m stratum.stratum_server
+Restart=always
+RestartSec=5
+TimeoutStartSec=60
+LimitNOFILE=65535
+MemoryHigh=512M
+MemoryMax=768M
+CPUQuota=100%
+TasksMax=384
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+CapabilityBoundingSet=
+ReadWritePaths=/var/lib/btck-pool
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

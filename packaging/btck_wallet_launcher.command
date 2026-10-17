@@ -4,6 +4,10 @@ set -uo pipefail
 PACKAGE_DIR="$(cd "$(dirname "$0")" && pwd)"
 display_unit="btck"
 display_label="BTC-K"
+if [ -d "$PACKAGE_DIR/BTC-K Wallet.app" ]; then
+  open "$PACKAGE_DIR/BTC-K Wallet.app"
+  exit $?
+fi
 if [ -x "$PACKAGE_DIR/btck-wallet" ]; then
   WALLET_BIN="$PACKAGE_DIR/btck-wallet"
 elif [ -x "$PACKAGE_DIR/btck-wallet.pyz" ]; then

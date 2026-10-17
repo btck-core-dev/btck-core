@@ -5,8 +5,10 @@ import os
 import sys
 import tempfile
 import unittest
+from io import BytesIO
 from pathlib import Path
 from types import SimpleNamespace
+from urllib.error import HTTPError, URLError
 from unittest.mock import MagicMock, patch
 
 
@@ -16,7 +18,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..",
 import btck_cli
 from privacy.stealth_address import StealthKeyPair
 from privacy.bip39 import mnemonic_to_seed, validate_mnemonic
-from privacy.wallet_crypto import aead_decrypt, aead_encrypt
+from privacy.wallet_crypto import aead_decrypt, aead_encrypt, encrypt_wallet_payload
 from privacy.wallet_engine import StealthWallet, UTXO, transaction_from_dict
 from stratum.stratum_server import load_pool_treasury_wallet
 
@@ -106,6 +108,8 @@ class TestWalletEncryption(unittest.TestCase):
             encoded = cache_path.read_text(encoding="utf-8")
             self.assertNotIn("ab" * 32, encoded)
             self.assertEqual(cache_path.stat().st_mode & 0o777, 0o600)
+            envelope = json.loads(encoded)
+            self.assertEqual(envelope["public"]["format"], "btck-wallet-sync-cache-v2")
 
             restored = StealthWallet(wallet.keypair, "cache-test")
             restored._source_path = source
@@ -113,6 +117,88 @@ class TestWalletEncryption(unittest.TestCase):
             loaded = btck_cli._load_sync_cache(restored)
             self.assertEqual(loaded["next_height"], 10)
             self.assertEqual(restored.utxos[0].amount_satk, 123456)
+
+            wallet.utxos[0].spent = True
+            btck_cli.persist_current_wallet_state(wallet)
+            reloaded = StealthWallet(wallet.keypair, "cache-test")
+            reloaded._source_path = source
+            reloaded._unlock_password = password
+            btck_cli._load_sync_cache(reloaded)
+            self.assertTrue(reloaded.utxos[0].spent)
+
+    def test_parallel_wallet_scan_preserves_ordered_spends(self):
+        wallet = StealthWallet.generate("parallel-scan")
+        foreign = StealthWallet.generate("foreign")
+        owned_one = StealthKeyPair.generate_one_time_stealth_output(wallet.address)
+        owned_two = StealthKeyPair.generate_one_time_stealth_output(wallet.address)
+        foreign_output = StealthKeyPair.generate_one_time_stealth_output(foreign.address)
+
+        def output(txid, amount, pair, height):
+            return {
+                "txid": txid, "vout": 0, "amount_satk": amount,
+                "R_ephem_hex": pair[0].hex(), "P_onetime_hex": pair[1].hex(),
+                "height": height, "is_coinbase": True,
+                "timelock_until_height": 0, "kind": "miner",
+            }
+
+        page = {
+            "format": "btck-wallet-sync-v1",
+            "network": btck_cli.APPROVED_NETWORKS["devnet"],
+            "from_height": 0, "next_height": 2,
+            "anchor_hash": "02" * 32, "tip_height": 1,
+            "done": True,
+            "blocks": [
+                {
+                    "height": 0, "hash": "01" * 32, "spent": [],
+                    "created": [
+                        output("11" * 32, 100, owned_one, 0),
+                        output("22" * 32, 999, foreign_output, 0),
+                    ],
+                },
+                {
+                    "height": 1, "hash": "02" * 32,
+                    "spent": [{"txid": "11" * 32, "vout": 0}],
+                    "created": [output("33" * 32, 200, owned_two, 1)],
+                },
+            ],
+        }
+        args = SimpleNamespace(sync_workers=2)
+        with patch.object(btck_cli, "_fetch_sync_page", return_value=page):
+            snapshot, network = btck_cli.scan_wallet(args, wallet)
+        self.assertEqual(snapshot["selected_height"], 1)
+        self.assertEqual(network["name"], "devnet")
+        self.assertEqual([(item.txid, item.amount_satk) for item in wallet.utxos], [("33" * 32, 200)])
+
+    def test_legacy_v1_sync_cache_remains_readable(self):
+        password = "legacy cache compatibility password"
+        wallet = StealthWallet.generate("legacy-cache")
+        with tempfile.TemporaryDirectory() as root:
+            source = Path(root) / "wallet.json"
+            wallet._source_path = source
+            wallet._unlock_password = password
+            legacy_utxo = UTXO(
+                txid="ef" * 32, vout=2, amount_satk=987654,
+                R_ephem_hex="02" + "33" * 32,
+                P_onetime_hex="03" + "44" * 32,
+                block_height=12,
+            )
+            private = {
+                "next_height": 13,
+                "anchor_hash": "aa" * 32,
+                "network": {**DEVNET_IDENTITY, "name": "devnet"},
+                "utxos": [vars(legacy_utxo)],
+            }
+            public = {
+                "format": "btck-wallet-sync-cache-v1",
+                "wallet_address": wallet.address,
+            }
+            Path(str(source) + ".sync.json").write_text(
+                json.dumps(encrypt_wallet_payload(private, public, password)),
+                encoding="utf-8",
+            )
+            state = btck_cli._load_sync_cache(wallet)
+            self.assertEqual(state["next_height"], 13)
+            self.assertEqual(wallet.utxos[0].amount_satk, 987654)
 
     def test_cli_mnemonic_create_restore_verify_and_eco_output(self):
         mnemonic = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
@@ -267,6 +353,76 @@ class TestWalletEncryption(unittest.TestCase):
 
 
 class TestOfflineWalletFlow(unittest.TestCase):
+    def test_wallet_sync_reports_page_progress_to_graphical_clients(self):
+        wallet = MagicMock()
+        wallet.utxos = []
+        network = {**DEVNET_IDENTITY, "name": "devnet"}
+        pages = [
+            {
+                "format": "btck-wallet-sync-v1", "network": network,
+                "from_height": 0, "next_height": 1, "anchor_hash": "01" * 32,
+                "tip_height": 1, "done": False,
+                "blocks": [{"height": 0, "hash": "01" * 32, "spent": [], "created": []}],
+            },
+            {
+                "format": "btck-wallet-sync-v1", "network": network,
+                "from_height": 1, "next_height": 2, "anchor_hash": "02" * 32,
+                "tip_height": 1, "done": True,
+                "blocks": [{"height": 1, "hash": "02" * 32, "spent": [], "created": []}],
+            },
+        ]
+        progress = []
+        with patch.object(
+            btck_cli, "_load_sync_cache",
+            return_value={"next_height": 0, "anchor_hash": "", "network": None},
+        ), patch.object(btck_cli, "_save_sync_cache"), patch.object(
+            btck_cli, "_fetch_sync_page", side_effect=pages,
+        ):
+            snapshot, actual_network = btck_cli.scan_wallet(
+                SimpleNamespace(), wallet, progress_callback=progress.append,
+            )
+        self.assertEqual(snapshot["selected_height"], 1)
+        self.assertEqual(actual_network, btck_cli.validate_network_identity(network))
+        self.assertEqual([item["percent"] for item in progress], [50.0, 100.0])
+        self.assertEqual([item["completed"] for item in progress], [1, 2])
+        self.assertTrue(all("tracked_satk" in item for item in progress))
+        self.assertTrue(all("spendable_satk" in item for item in progress))
+
+    def test_cli_transfer_preserves_spent_state_when_broadcast_status_is_unknown(self):
+        wallet = MagicMock()
+        wallet.create_and_sign_transfer.return_value = MagicMock()
+        args = SimpleNamespace(
+            offline=False, wallet="wallet.json", to="recipient", amount="1",
+            fee="0.0001",
+        )
+        snapshot = {"selected_height": 100}
+        network = {**DEVNET_IDENTITY, "name": "devnet"}
+        with patch.object(btck_cli, "load_wallet", return_value=wallet), patch.object(
+            btck_cli, "scan_wallet", return_value=(snapshot, network),
+        ), patch.object(btck_cli, "make_signed_package", return_value={}), patch.object(
+            btck_cli, "broadcast_signed_package",
+            side_effect=btck_cli.BroadcastStatusUnknown("status is unknown"),
+        ), patch.object(btck_cli, "persist_current_wallet_state") as persist:
+            with self.assertRaises(btck_cli.BroadcastStatusUnknown):
+                btck_cli.cmd_transfer(args)
+        persist.assert_called_once_with(wallet)
+
+    def test_broadcast_distinguishes_explicit_rejection_from_unknown_status(self):
+        args = SimpleNamespace(broadcast_url="https://wallet.example/broadcast", timeout=1.0)
+        package = {"format": "btck-signed-transfer-v1"}
+
+        rejection = HTTPError(
+            args.broadcast_url, 400, "Bad Request", {},
+            BytesIO(b'{"message":"invalid transaction"}'),
+        )
+        with patch.object(btck_cli, "urlopen", side_effect=rejection):
+            with self.assertRaisesRegex(btck_cli.CLIError, "rejected.*invalid transaction"):
+                btck_cli.broadcast_signed_package(args, package)
+
+        with patch.object(btck_cli, "urlopen", side_effect=URLError("response lost")):
+            with self.assertRaisesRegex(btck_cli.BroadcastStatusUnknown, "status is unknown"):
+                btck_cli.broadcast_signed_package(args, package)
+
     def test_broadcast_refuses_unbound_raw_transaction_without_rpc(self):
         with tempfile.TemporaryDirectory() as root:
             path = Path(root) / "raw.json"

@@ -15,8 +15,10 @@ import time
 import hashlib
 import hmac
 import secrets
+from collections import OrderedDict
 import urllib.request
 import urllib.parse
+import urllib.error
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
 from typing import Dict, Any, List
@@ -34,13 +36,29 @@ from tokenomics.emission_schedule import (
 from consensus.pow import compact_to_target
 from config.network import load_network
 from privacy.stealth_address import StealthKeyPair
+from privacy.wallet_engine import StealthWallet, transaction_from_dict, transaction_to_dict
+from wallet_sync_index import WalletSyncIndex, WalletSyncIndexError
 
 WEB_DIR = Path(os.getenv("BTCK_WEB_DIR", str(BASE_DIR / "web")))
 NODE_INFO_URL = os.getenv("BTCK_NODE_INFO_URL", "http://127.0.0.1:16110/dashboard")
 NODE_RPC_URL = os.getenv("BTCK_NODE_RPC_URL", "http://127.0.0.1:16110/rpc")
 STRATUM_STATUS_URL = os.getenv("BTCK_STRATUM_STATUS_URL", "http://127.0.0.1:3337/status")
+PPLNS_STATUS_URL = os.getenv("BTCK_PPLNS_STATUS_URL", "http://127.0.0.1:3338/status")
 NETWORK = load_network()
 _PUBLIC_MINER_ID_KEY = os.getenv("BTCK_PUBLIC_MINER_ID_KEY", "").encode("utf-8") or secrets.token_bytes(32)
+WALLET_SYNC_INDEX_PATH = os.getenv("BTCK_WALLET_SYNC_INDEX_PATH", "").strip()
+WALLET_SYNC_STATIC_ONLY = os.getenv("BTCK_WALLET_SYNC_STATIC_ONLY", "0").strip() == "1"
+_WALLET_SYNC_INDEX = None
+if WALLET_SYNC_INDEX_PATH:
+    try:
+        _WALLET_SYNC_INDEX = WalletSyncIndex(Path(WALLET_SYNC_INDEX_PATH), {
+            "network": NETWORK.name,
+            "chain_id": NETWORK.chain_id,
+            "genesis_hash": NETWORK.genesis.expected_hash,
+            "consensus_fingerprint": NETWORK.consensus_fingerprint,
+        })
+    except WalletSyncIndexError as exc:
+        raise RuntimeError(f"Refusing invalid wallet synchronization index: {exc}") from exc
 
 
 def _public_miner_id(address: str, worker: str) -> str:
@@ -56,6 +74,13 @@ _CACHED_NODE_INFO: Dict[str, Any] = {}
 _LAST_CACHE_TIME = 0.0
 _CACHED_POOL_STATUS: Dict[str, Any] = {}
 _LAST_POOL_CACHE_TIME = 0.0
+_CACHED_PPLNS_STATUS: Dict[str, Any] = {}
+_LAST_PPLNS_CACHE_TIME = 0.0
+_WALLET_SYNC_PAGE_CACHE: "OrderedDict[tuple[int, int, str], tuple[float, Dict[str, Any]]]" = OrderedDict()
+_WALLET_SYNC_PAGE_CACHE_LOCK = threading.Lock()
+_WALLET_SYNC_FETCH_LOCK = threading.Lock()
+_WALLET_SYNC_PAGE_CACHE_TTL_SECONDS = 3.0
+_WALLET_SYNC_PAGE_CACHE_MAX_ENTRIES = 32
 
 def _node_info_updater():
     global _CACHED_NODE_INFO, _LAST_CACHE_TIME
@@ -90,19 +115,140 @@ def _pool_status_updater():
         # placing its JSON endpoint on the public request path.
         time.sleep(2.0)
 
+
+def _pplns_status_updater():
+    global _CACHED_PPLNS_STATUS, _LAST_PPLNS_CACHE_TIME
+    while True:
+        try:
+            req = urllib.request.Request(PPLNS_STATUS_URL, headers={"User-Agent": "BTCK-Explorer/1.0"})
+            with urllib.request.urlopen(req, timeout=3.0) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                if data and isinstance(data, dict):
+                    _CACHED_PPLNS_STATUS = data
+                    _LAST_PPLNS_CACHE_TIME = time.time()
+        except Exception:
+            pass
+        time.sleep(2.0)
+
 # Start background updater thread
 _updater_thread = threading.Thread(target=_node_info_updater, daemon=True)
 _updater_thread.start()
 _pool_updater_thread = threading.Thread(target=_pool_status_updater, daemon=True)
 _pool_updater_thread.start()
+_pplns_updater_thread = threading.Thread(target=_pplns_status_updater, daemon=True)
+_pplns_updater_thread.start()
 
 
 def fetch_node_info() -> Dict[str, Any]:
     return _CACHED_NODE_INFO
 
 
+def build_wallet_tip_payload() -> Dict[str, Any]:
+    """Return the cached public chain cursor without one RPC call per wallet."""
+    dag = _CACHED_NODE_INFO.get("dag", {})
+    raw_height = dag.get("ledger_height")
+    if raw_height is None:
+        order_length = int(dag.get("virtual_blue_order_length", 0) or 0)
+        raw_height = order_length - 1
+    height = int(raw_height)
+    tip_hash = str(dag.get("selected_tip") or "")
+    if height < 0 or len(tip_hash) != 64 or time.time() - _LAST_CACHE_TIME > 10.0:
+        raise RuntimeError("node chain cursor is temporarily unavailable")
+    return {
+        "format": "btck-wallet-tip-v1",
+        "network": {
+            "name": NETWORK.name,
+            "chain_id": NETWORK.chain_id,
+            "genesis_hash": NETWORK.genesis.expected_hash,
+            "consensus_fingerprint": NETWORK.consensus_fingerprint,
+        },
+        "tip_height": height,
+        "tip_hash": tip_hash,
+        "observed_at": _LAST_CACHE_TIME,
+    }
+
+
+def build_miner_lookup(address: str) -> Dict[str, Any]:
+    """Return address-scoped worker telemetry without echoing the address."""
+    workers = []
+    for snapshot in (_CACHED_POOL_STATUS, _CACHED_PPLNS_STATUS):
+        mode = str(snapshot.get("pool_mode") or "UNKNOWN").upper()
+        for worker in snapshot.get("workers", []):
+            if not worker.get("online"):
+                continue
+            wallet = str(worker.get("wallet_address") or "")
+            if not hmac.compare_digest(wallet, address):
+                continue
+            rate = float(worker.get("hashrate_hps", 0.0) or 0.0)
+            workers.append({
+                "worker_name": str(worker.get("worker_name") or "worker"),
+                "mode": mode,
+                "online": bool(worker.get("online")),
+                "connections": int(worker.get("connections", 0) or 0),
+                "hashrate_hps": rate,
+                "hashrate_str": _format_hashrate(rate),
+                "last_seen_seconds_ago": worker.get("last_seen_seconds_ago"),
+            })
+    workers.sort(key=lambda item: (not item["online"], item["mode"], item["worker_name"]))
+    total_hashrate = sum(item["hashrate_hps"] for item in workers)
+    active = sum(1 for item in workers if item["online"])
+    modes = sorted({item["mode"] for item in workers})
+    return {
+        "found": bool(workers),
+        "miner_id": _public_miner_id(address, "account"),
+        "total_hashrate_hps": total_hashrate,
+        "total_hashrate_str": _format_hashrate(total_hashrate),
+        "active_worker_count": active,
+        "worker_count": len(workers),
+        "modes": modes,
+        "workers": workers,
+    }
+
+
 def fetch_wallet_sync_page(from_height: int, limit: int, anchor_hash: str) -> Dict[str, Any]:
-    """Proxy a bounded, secret-free ledger page from the loopback node RPC."""
+    """Serve immutable history locally, then proxy only the live tail to btckd."""
+    if _WALLET_SYNC_INDEX is not None:
+        indexed = _WALLET_SYNC_INDEX.get_page(from_height, limit, anchor_hash)
+        if indexed is not None:
+            # A historical index is a data source, not the current chain tip.
+            # Preserve its non-terminal boundary if live telemetry is missing.
+            result = dict(indexed)
+            try:
+                tip = build_wallet_tip_payload()
+            except RuntimeError:
+                result.update(done=False, chain_status="tip-unavailable")
+                return result
+            if int(tip["tip_height"]) < int(_WALLET_SYNC_INDEX.tip_height):
+                raise WalletSyncIndexError("wallet index is ahead of the current node")
+            result.update(tip_height=tip["tip_height"],tip_hash=tip["tip_hash"],
+                          done=int(result["next_height"])>int(tip["tip_height"]),
+                          chain_status="live-tip-observed")
+            return result
+        if WALLET_SYNC_STATIC_ONLY:
+            raise WalletSyncIndexError(
+                "wallet synchronization is temporarily limited to the verified static checkpoint"
+            )
+    # Serialize live cache misses across HTTP threads, not just cache updates.
+    # Many newly opened wallets at the same cursor must share one node RPC.
+    # Bound waiting so a slow upstream cannot grow an indefinite request queue.
+    if not _WALLET_SYNC_FETCH_LOCK.acquire(timeout=1.0):
+        raise RuntimeError("wallet synchronization backend is busy; retry later")
+    try:
+        return _fetch_live_wallet_sync_page(from_height, limit, anchor_hash)
+    finally:
+        _WALLET_SYNC_FETCH_LOCK.release()
+
+
+def _fetch_live_wallet_sync_page(from_height: int, limit: int, anchor_hash: str) -> Dict[str, Any]:
+    cache_key = (int(from_height), int(limit), str(anchor_hash))
+    now = time.monotonic()
+    with _WALLET_SYNC_PAGE_CACHE_LOCK:
+        cached = _WALLET_SYNC_PAGE_CACHE.get(cache_key)
+        if cached is not None and now - cached[0] <= _WALLET_SYNC_PAGE_CACHE_TTL_SECONDS:
+            _WALLET_SYNC_PAGE_CACHE.move_to_end(cache_key)
+            return cached[1]
+        if cached is not None:
+            del _WALLET_SYNC_PAGE_CACHE[cache_key]
     params = {"from_height": from_height, "limit": limit, "anchor_hash": anchor_hash}
     payload = json.dumps({
         "jsonrpc": "2.0", "id": 1, "method": "getWalletSyncPage", "params": params,
@@ -122,7 +268,76 @@ def fetch_wallet_sync_page(from_height: int, limit: int, anchor_hash: str) -> Di
     result = envelope.get("result")
     if not isinstance(result, dict):
         raise ValueError("node returned a malformed wallet sync result")
+    with _WALLET_SYNC_PAGE_CACHE_LOCK:
+        _WALLET_SYNC_PAGE_CACHE[cache_key] = (time.monotonic(), result)
+        _WALLET_SYNC_PAGE_CACHE.move_to_end(cache_key)
+        while len(_WALLET_SYNC_PAGE_CACHE) > _WALLET_SYNC_PAGE_CACHE_MAX_ENTRIES:
+            _WALLET_SYNC_PAGE_CACHE.popitem(last=False)
     return result
+
+
+def validate_signed_wallet_package(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Validate a public broadcast package before it reaches node RPC."""
+    if not isinstance(payload, dict) or payload.get("format") != "btck-signed-transfer-v1":
+        raise ValueError("unsupported signed transaction package")
+    package_id = str(payload.get("package_id") or "")
+    if len(package_id) != 64:
+        raise ValueError("invalid package ID")
+    try:
+        bytes.fromhex(package_id)
+    except ValueError as exc:
+        raise ValueError("invalid package ID") from exc
+    supplied_network = payload.get("network")
+    expected_network = {
+        "name": NETWORK.name,
+        "chain_id": NETWORK.chain_id,
+        "genesis_hash": NETWORK.genesis.expected_hash,
+        "consensus_fingerprint": NETWORK.consensus_fingerprint,
+    }
+    if supplied_network != expected_network:
+        raise ValueError("signed package network identity mismatch")
+    tx = transaction_from_dict(payload.get("transaction"))
+    if len(tx.inputs) > 100 or len(tx.outputs) > 100:
+        raise ValueError("transaction exceeds input/output limit")
+    if not StealthWallet.verify_transaction(tx):
+        raise ValueError("transaction signature verification failed")
+    return transaction_to_dict(tx)
+
+
+def submit_public_wallet_package(payload: Dict[str, Any]) -> Dict[str, Any]:
+    transaction = validate_signed_wallet_package(payload)
+    rpc_payload = json.dumps({
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "submitTransaction",
+        "params": {"transaction": transaction},
+    }, separators=(",", ":")).encode("utf-8")
+    request = urllib.request.Request(
+        NODE_RPC_URL,
+        data=rpc_payload,
+        headers={"Content-Type": "application/json", "User-Agent": "BTCK-Wallet-Relay/1.0"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=10.0) as response:
+            envelope = json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        raise ValueError(f"node RPC rejected relay request (HTTP {exc.code})") from exc
+    except (urllib.error.URLError, TimeoutError) as exc:
+        raise RuntimeError(f"node RPC unavailable: {exc}") from exc
+    if not isinstance(envelope, dict):
+        raise ValueError("node returned a malformed transaction response")
+    if "error" in envelope:
+        raise ValueError(str(envelope["error"].get("message", "transaction rejected")))
+    result = envelope.get("result")
+    if not isinstance(result, dict) or not result.get("accepted"):
+        raise ValueError("node did not accept the transaction")
+    return {
+        "accepted": True,
+        "txid": str(result.get("txid") or ""),
+        "status": str(result.get("status") or "accepted"),
+        "fee_satk": int(result.get("fee_satk", 0) or 0),
+    }
 
 
 def _format_hashrate(rate: float, approximate: bool = True) -> str:
@@ -179,6 +394,7 @@ def build_production_stats_payload() -> Dict[str, Any]:
     """Aggregate only node-authoritative and Stratum-measured production data."""
     node_snapshot = _CACHED_NODE_INFO
     pool_snapshot = _CACHED_POOL_STATUS
+    pplns_snapshot = _CACHED_PPLNS_STATUS
     dag = node_snapshot.get("dag", {})
     now = time.time()
 
@@ -250,13 +466,28 @@ def build_production_stats_payload() -> Dict[str, Any]:
         })
 
     combo_resolutions = combo_state.get("resolutions", []) or []
+    public_combo_winners = {
+        str(item.get("winner_block_hash")): item
+        for snapshot in (pool_snapshot, pplns_snapshot)
+        for item in snapshot.get("combo_public_winners", [])
+        if item.get("winner_block_hash")
+    }
     combo_hof = []
     for resolution in reversed(combo_resolutions):
         winner_hash = str(resolution.get("winner_block_hash", ""))
         attribution = pool_blocks.get(winner_hash, {})
-        winner_worker = attribution.get("finder_worker") or "unattributed"
+        public_winner = public_combo_winners.get(winner_hash, {})
+        winner_worker = (
+            public_winner.get("worker_name")
+            or attribution.get("finder_worker")
+            or "unattributed"
+        )
         winner_address = attribution.get("finder_wallet") or ""
-        public_miner_id = _public_miner_id(winner_address, winner_worker)
+        public_miner_id = (
+            _public_miner_id(winner_address, winner_worker)
+            if winner_worker != "unattributed"
+            else "unattributed"
+        )
         worker_match = next(
             (
                 worker for worker in pool_snapshot.get("workers", [])
@@ -275,9 +506,16 @@ def build_production_stats_payload() -> Dict[str, Any]:
             "beacon_height": int(resolution.get("beacon_height", 0)),
             "beacon_hash_prefix": str(resolution.get("beacon_hash", ""))[:16],
             "winner_block_hash": winner_hash,
-            "winner_miner": public_miner_id,
+            "winner_miner": winner_worker,
             "miner_id": public_miner_id,
-            "winner_hashrate": _format_hashrate(float(worker_match.get("hashrate_hps", 0.0))) if worker_match else "N/A",
+            "winner_mode": str(public_winner.get("mode") or attribution.get("mode") or "UNKNOWN").upper(),
+            "winner_hashrate": (
+                _format_hashrate(float(public_winner.get("hashrate_hps", 0.0)), approximate=False)
+                if public_winner
+                else _format_hashrate(float(worker_match.get("hashrate_hps", 0.0))) if worker_match
+                else "N/A"
+            ),
+            "winner_hashrate_window_seconds": float(public_winner.get("hashrate_window_seconds", 0.0) or 0.0),
             "hardware_model": "kHeavyHash Stratum worker",
             "xor_distance_hex": str(resolution.get("winner_distance_hex", "")),
             "payout_btck": int(resolution.get("jackpot_amount_satk", 0)) / SATK_PER_COIN,
@@ -287,6 +525,8 @@ def build_production_stats_payload() -> Dict[str, Any]:
 
     miners_summary: Dict[str, Dict[str, Any]] = {}
     for worker in pool_snapshot.get("workers", []):
+        if not worker.get("online"):
+            continue
         name = str(worker.get("worker_name") or "worker")
         address = str(worker.get("wallet_address") or "")
         miner_id = _public_miner_id(address, name)
@@ -324,6 +564,7 @@ def build_production_stats_payload() -> Dict[str, Any]:
     }
     node_age = now - _LAST_CACHE_TIME if _LAST_CACHE_TIME else None
     pool_age = now - _LAST_POOL_CACHE_TIME if _LAST_POOL_CACHE_TIME else None
+    pplns_age = now - _LAST_PPLNS_CACHE_TIME if _LAST_PPLNS_CACHE_TIME else None
     return {
         "generated_at": now,
         "ledger_height": ledger_height,
@@ -375,15 +616,18 @@ def build_production_stats_payload() -> Dict[str, Any]:
         "is_actively_mining": int(pool_snapshot.get("active_workers", 0) or 0) > 0,
         "miners_summary": miners_summary,
         "stratum_share_counters": pool_snapshot.get("share_counters"),
+        "node_rpc_health": pool_snapshot.get("node_rpc_health"),
         "combo_hof": combo_hof,
         "blocks": display_blocks,
         "network": node_snapshot.get("network", {}),
         "telemetry": {
             "node_age_seconds": node_age,
             "pool_age_seconds": pool_age,
+            "pplns_age_seconds": pplns_age,
             "node_fresh": node_age is not None and node_age < 15.0,
             "pool_fresh": pool_age is not None and pool_age < 25.0,
-            "source": "btckd:/dashboard + stratum:/status",
+            "pplns_fresh": pplns_age is not None and pplns_age < 25.0,
+            "source": "btckd:/dashboard + solo/pplns stratum:/status",
         },
     }
 
@@ -507,6 +751,11 @@ class ExplorerHTTPHandler(BaseHTTPRequestHandler):
                 self.send_json_response({"error": str(exc)}, 409)
             except Exception:
                 self.send_json_response({"error": "wallet sync backend temporarily unavailable"}, 503)
+        elif path == "/api/wallet/tip":
+            try:
+                self.send_json_response(build_wallet_tip_payload())
+            except Exception:
+                self.send_json_response({"error": "wallet chain cursor temporarily unavailable"}, 503)
         elif path == "/api/search":
             query = urllib.parse.parse_qs(parsed.query).get("q", [""])[0]
             result = _search_recent_blocks(query)
@@ -552,6 +801,41 @@ class ExplorerHTTPHandler(BaseHTTPRequestHandler):
                 self.serve_static_file(clean_path, ct)
             else:
                 self.send_error(404, "Endpoint not found")
+
+    def do_POST(self):
+        path = urllib.parse.urlparse(self.path).path
+        if path not in ("/api/miner/lookup", "/api/wallet/broadcast"):
+            self.send_error(404, "Endpoint not found")
+            return
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+            max_length = 4096 if path == "/api/miner/lookup" else 131072
+            if length <= 0 or length > max_length:
+                raise ValueError("invalid request size")
+            payload = json.loads(self.rfile.read(length).decode("utf-8"))
+            if path == "/api/wallet/broadcast":
+                result = submit_public_wallet_package(payload)
+                self.send_json_response(result)
+                return
+            address = str(payload.get("address") or "").strip()
+            if not StealthKeyPair.validate_stealth_address(address):
+                self.send_json_response({"found": False, "message": "Invalid BTC-K payout address"}, 400)
+                return
+            result = build_miner_lookup(address)
+            if not result["found"]:
+                result["message"] = "No workers found for this payout address yet"
+            self.send_json_response(result, 200 if result["found"] else 404)
+        except (ValueError, TypeError, KeyError, json.JSONDecodeError) as exc:
+            if path == "/api/wallet/broadcast":
+                self.send_json_response({"accepted": False, "message": str(exc)}, 400)
+            else:
+                self.send_json_response({"found": False, "message": "Malformed lookup request"}, 400)
+        except Exception as exc:
+            print(f"Public edge POST failure on {path}: {type(exc).__name__}: {exc}", file=sys.stderr, flush=True)
+            if path == "/api/wallet/broadcast":
+                self.send_json_response({"accepted": False, "message": "Transaction relay temporarily unavailable"}, 503)
+            else:
+                self.send_json_response({"found": False, "message": "Lookup temporarily unavailable"}, 503)
 
 
 def run_server(port: int = 8088):

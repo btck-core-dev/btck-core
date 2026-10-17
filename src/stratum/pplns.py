@@ -19,11 +19,14 @@ PPLNS (Pay Per Last N Shares):
 from __future__ import annotations
 
 import asyncio
+import copy
+import json
 import logging
 import math
 import os
 import sqlite3
 import time
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal, ROUND_DOWN
 from dataclasses import dataclass
 from pathlib import Path
@@ -31,7 +34,7 @@ from typing import Dict, List, Optional, Tuple
 
 from tokenomics.emission_schedule import SATK_PER_COIN, compute_beacon_xor_winner
 from tokenomics.anti_hopping import AntiHoppingGate
-from privacy.wallet_engine import StealthWallet, transaction_to_dict
+from privacy.wallet_engine import StealthWallet, transaction_to_dict, transaction_from_dict
 
 logger = logging.getLogger("btck-pplns")
 
@@ -131,6 +134,18 @@ class PPLNSEngine:
 
                 CREATE INDEX IF NOT EXISTS idx_payouts_wallet ON payouts(wallet_address);
 
+                CREATE TABLE IF NOT EXISTS payout_intents (
+                    txid TEXT PRIMARY KEY,
+                    wallet_address TEXT NOT NULL,
+                    amount_satk INTEGER NOT NULL,
+                    fee_satk INTEGER NOT NULL,
+                    transaction_json TEXT NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'prepared',
+                    created_at REAL NOT NULL
+                );
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_one_pending_payout_per_wallet
+                    ON payout_intents(wallet_address) WHERE status != 'confirmed';
+
                 CREATE TABLE IF NOT EXISTS pool_meta (
                     key TEXT PRIMARY KEY,
                     value TEXT NOT NULL
@@ -160,6 +175,18 @@ class PPLNSEngine:
                     unlock_height INTEGER NOT NULL,
                     credited INTEGER NOT NULL DEFAULT 0,
                     PRIMARY KEY (epoch_id, tranche_index)
+                );
+
+                CREATE TABLE IF NOT EXISTS combo_public_winners (
+                    winner_block_hash TEXT PRIMARY KEY,
+                    epoch_id INTEGER NOT NULL,
+                    draw_height INTEGER NOT NULL,
+                    worker_name TEXT NOT NULL,
+                    mode TEXT NOT NULL,
+                    hashrate_hps REAL NOT NULL,
+                    hashrate_window_seconds REAL NOT NULL,
+                    block_timestamp REAL NOT NULL,
+                    captured_at REAL NOT NULL
                 );
                 """
             )
@@ -194,6 +221,85 @@ class PPLNSEngine:
                     ON blocks(is_pool_fee, payout_address);
                 """
             )
+
+    def record_combo_public_winners(
+        self,
+        resolutions: List[dict],
+        hashrate_window_seconds: float = 600.0,
+    ) -> List[dict]:
+        """Persist wallet-free winner attribution for the public Combo history.
+
+        Hashrate is the accepted-share average for the exact wallet/worker pair
+        during the window immediately preceding its winning block. Only the
+        worker label, mining mode and aggregate rate are copied to the public
+        table; payout addresses and connection metadata remain private.
+        """
+        window = max(60.0, float(hashrate_window_seconds))
+        recorded: List[dict] = []
+        with self._get_connection() as conn:
+            known = {
+                str(row["winner_block_hash"])
+                for row in conn.execute(
+                    "SELECT winner_block_hash FROM combo_public_winners"
+                )
+            }
+            for resolution in resolutions:
+                winner_hash = str(resolution.get("winner_block_hash", ""))
+                if len(winner_hash) != 64 or winner_hash in known:
+                    continue
+                block = conn.execute(
+                    """
+                    SELECT finder_wallet, finder_worker, timestamp, mode
+                    FROM blocks WHERE block_hash = ?
+                    """,
+                    (winner_hash,),
+                ).fetchone()
+                if not block:
+                    continue
+                block_timestamp = float(block["timestamp"] or 0.0)
+                share_totals = conn.execute(
+                    """
+                    SELECT COALESCE(SUM(difficulty), 0.0) AS difficulty_total
+                    FROM shares
+                    WHERE wallet_address = ? AND worker_name = ?
+                      AND timestamp > ? AND timestamp <= ?
+                    """,
+                    (
+                        str(block["finder_wallet"]),
+                        str(block["finder_worker"]),
+                        block_timestamp - window,
+                        block_timestamp,
+                    ),
+                ).fetchone()
+                hashrate_hps = (
+                    float(share_totals["difficulty_total"] or 0.0)
+                    * (2**32)
+                    / window
+                )
+                item = {
+                    "winner_block_hash": winner_hash,
+                    "epoch_id": int(resolution.get("epoch_id", 0) or 0),
+                    "draw_height": int(resolution.get("draw_height", 0) or 0),
+                    "worker_name": str(block["finder_worker"] or "unattributed"),
+                    "mode": str(block["mode"] or "UNKNOWN").upper(),
+                    "hashrate_hps": hashrate_hps,
+                    "hashrate_window_seconds": window,
+                    "block_timestamp": block_timestamp,
+                    "captured_at": time.time(),
+                }
+                conn.execute(
+                    """
+                    INSERT INTO combo_public_winners (
+                        winner_block_hash, epoch_id, draw_height, worker_name,
+                        mode, hashrate_hps, hashrate_window_seconds,
+                        block_timestamp, captured_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    tuple(item.values()),
+                )
+                known.add(winner_hash)
+                recorded.append(item)
+        return recorded
 
     def get_or_create_launch_time(self, requested: float = 0.0) -> float:
         """Return a restart-stable pool launch timestamp."""
@@ -843,6 +949,15 @@ class PPLNSEngine:
                 FROM blocks ORDER BY timestamp DESC LIMIT 250
                 """
             ).fetchall()]
+            combo_public_winners = [dict(row) for row in conn.execute(
+                """
+                SELECT winner_block_hash, epoch_id, draw_height, worker_name,
+                       mode, hashrate_hps, hashrate_window_seconds,
+                       block_timestamp
+                FROM combo_public_winners
+                ORDER BY draw_height DESC, epoch_id DESC
+                """
+            ).fetchall()]
 
         window_map = {
             (row["wallet_address"], row["worker_name"]): row
@@ -881,6 +996,7 @@ class PPLNSEngine:
             "fee_recipients": fee_recipients,
             "pool_hashrate_hps": sum(worker["hashrate_hps"] for worker in workers),
             "recent_blocks": recent_blocks,
+            "combo_public_winners": combo_public_winners,
         }
 
     def get_miner(self, wallet_address: str) -> Optional[MinerBalance]:
@@ -924,9 +1040,49 @@ class PPLNSEngine:
                 for r in rows
             ]
 
+    def get_payout_intents(self,limit=None) -> List[dict]:
+        with self._get_connection() as conn:
+            query="SELECT * FROM payout_intents WHERE status != 'confirmed' ORDER BY created_at,txid"
+            return [dict(row) for row in conn.execute(query+(' LIMIT ?' if limit is not None else ''),
+                                                      (int(limit),) if limit is not None else ())]
+
+    def prepare_payout(self, tx, wallet_address, amount_satk, fee_satk):
+        """Persist the EXACT signed transaction before any network write.
+
+        An unknown broadcast outcome must never generate another random tx.
+        Transactions are public data; no signing/view keys enter this table.
+        """
+        body=transaction_to_dict(tx)
+        inputs={(i['prev_txid'],int(i['prev_vout'])) for i in body['inputs']}
+        if not 0<len(inputs)<=100 or len(body['inputs'])!=len(inputs):
+            raise ValueError('payout inputs outside safe transaction bounds')
+        with self._get_connection() as conn:
+            conn.execute('PRAGMA synchronous=FULL')
+            conn.execute('BEGIN IMMEDIATE')
+            row=conn.execute('SELECT unpaid_satk FROM miners WHERE wallet_address=?',(wallet_address,)).fetchone()
+            if not row or not 0<amount_satk<=row[0] or fee_satk<0:
+                raise ValueError('payout exceeds recorded liability')
+            pending=conn.execute("SELECT transaction_json FROM payout_intents WHERE status!='confirmed'").fetchall()
+            for old in pending:
+                reserved={(i['prev_txid'],int(i['prev_vout'])) for i in json.loads(old[0])['inputs']}
+                if inputs & reserved:
+                    raise ValueError('payout input already reserved')
+            conn.execute('INSERT INTO payout_intents VALUES(?,?,?,?,?,?,?)',
+                (tx.txid,wallet_address,amount_satk,fee_satk,json.dumps(body,sort_keys=True),'prepared',time.time()))
+
     def record_payout(self, txid: str, wallet_address: str, amount_satk: int, fee_satk: int = 10_000) -> None:
         """Record an executed payout on-chain transaction and deduct from unpaid balance."""
         with self._get_connection() as conn:
+            conn.execute('PRAGMA synchronous=FULL')
+            conn.execute('BEGIN IMMEDIATE')
+            old=conn.execute('SELECT wallet_address,amount_satk,fee_satk FROM payouts WHERE txid=?',(txid,)).fetchone()
+            if old:
+                if tuple(old)!=(wallet_address,amount_satk,fee_satk):
+                    raise ValueError('payout identity conflicts with recorded transaction')
+                return
+            balance=conn.execute('SELECT unpaid_satk FROM miners WHERE wallet_address=?',(wallet_address,)).fetchone()
+            if not balance or not 0<amount_satk<=balance[0]:
+                raise ValueError('payout exceeds recorded unpaid balance')
             conn.execute(
                 """
                 INSERT INTO payouts (txid, wallet_address, amount_satk, fee_satk, timestamp, status)
@@ -943,6 +1099,8 @@ class PPLNSEngine:
                 """,
                 (amount_satk, amount_satk, wallet_address),
             )
+            conn.execute("UPDATE payout_intents SET status='confirmed' WHERE txid=?",(txid,))
+            conn.execute("UPDATE payouts SET status='confirmed' WHERE txid=?",(txid,))
         logger.info(
             "💸 Recorded PPLNS payout to %s: %.4f BTC-K (txid: %s)",
             wallet_address[:18] + "...",
@@ -1005,106 +1163,238 @@ class AutoPayoutWorker:
         engine: PPLNSEngine,
         treasury_wallet: Optional[StealthWallet],
         node_rpc,
-        payout_interval_seconds: float = 60.0,
+        payout_utc_hours: Tuple[int, ...] = (0, 6, 12, 18),
         default_threshold_satk: int = 500_000_000,
         tx_fee_satk: int = 10_000,
     ):
         self.engine = engine
         self.treasury_wallet = treasury_wallet
         self.node_rpc = node_rpc
-        self.payout_interval_seconds = payout_interval_seconds
+        normalized_hours = tuple(sorted(set(int(hour) for hour in payout_utc_hours)))
+        if not normalized_hours or any(hour < 0 or hour > 23 for hour in normalized_hours):
+            raise ValueError("payout UTC hours must contain values from 0 through 23")
+        self.payout_utc_hours = normalized_hours
         self.default_threshold_satk = default_threshold_satk
         self.tx_fee_satk = tx_fee_satk
         self.running = False
         self._task: Optional[asyncio.Task] = None
+        self._cycle_lock=asyncio.Lock()
+        self.synced_height=None
+        enabled=os.getenv('BTCK_PPLNS_AUTOPAYOUT_ENABLED','1').strip()
+        if enabled not in ('0','1'):
+            raise ValueError('BTCK_PPLNS_AUTOPAYOUT_ENABLED must be0or1')
+        self.payout_enabled=enabled=='1'
 
-    async def sync_treasury_utxos(self) -> int:
-        """Scan node UTXO set for available treasury funds."""
+    async def sync_treasury_utxos(self) -> Optional[int]:
+        """Page through current outputs without constructing a full-node UTXO response."""
         if not self.treasury_wallet or not self.node_rpc:
             return 0
         try:
-            utxo_resp = await self.node_rpc.call("getUTXOSet")
-            raw_outputs = utxo_resp.get("outputs", [])
-            self.treasury_wallet.scan_chain_outputs(raw_outputs)
+            # Rebuild from current unspent outputs.  The bounded page size keeps
+            # both the node response and the pool's transient allocations small.
+            candidate=StealthWallet(self.treasury_wallet.keypair,'isolated-treasury-scan')
+            from_height = 0
+            anchor_hash = ""
+            identity=None
+            while True:
+                page = await self.node_rpc.call(
+                    "getWalletSyncPage",
+                    {
+                        "from_height": from_height,
+                        "anchor_hash": anchor_hash,
+                        "limit": 1000,
+                        "unspent_only": True,
+                    },
+                )
+                if page.get('unspent_only') is not True or int(page.get('from_height',-1))!=from_height:
+                    raise RuntimeError('invalid treasury scan page contract')
+                if identity is None:
+                    identity=page.get('network')
+                if not identity or identity!=page.get('network'):
+                    raise RuntimeError('treasury network identity changed during scan')
+                next_height=int(page.get('next_height',-1))
+                blocks=page.get('blocks',[])
+                if next_height!=from_height+len(blocks):
+                    raise RuntimeError('non-contiguous treasury page')
+                for offset,block in enumerate(blocks):
+                    if block.get('height')!=from_height+offset or len(str(block.get('hash','')))!=64:
+                        raise RuntimeError('non-contiguous treasury block cursor')
+                expected_anchor=blocks[-1]['hash'] if blocks else anchor_hash
+                if page.get('anchor_hash')!=expected_anchor:
+                    raise RuntimeError('treasury end anchor mismatch')
+                raw_outputs = [
+                    output
+                    for block in page.get("blocks", [])
+                    for output in block.get("created", [])
+                ]
+                # Elliptic-curve ownership checks are CPU-bound. Keep them off
+                # the Stratum event loop so share readers remain responsive.
+                await asyncio.to_thread(
+                    candidate.scan_chain_outputs,
+                    raw_outputs,
+                )
+                if page.get("done"):
+                    height=int(page['tip_height'])
+                    if next_height!=height+1:
+                        raise RuntimeError('treasury scan terminated before current tip')
+                    self.treasury_wallet.utxos=candidate.utxos
+                    self.synced_height=height
+                    break
+                next_height = int(page.get("next_height", from_height))
+                next_anchor = str(page.get("anchor_hash", ""))
+                if next_height <= from_height or not next_anchor:
+                    raise RuntimeError("wallet sync cursor did not advance")
+                from_height = next_height
+                anchor_hash = next_anchor
             bal = self.treasury_wallet.get_balance_satk()
             return bal
         except Exception as exc:
             logger.warning("Failed to sync treasury UTXOs: %s", exc)
-            return 0
+            self.synced_height=None
+            return None
 
     async def run_payout_cycle(self) -> List[dict]:
+        if not self.payout_enabled:
+            return []
+        async with self._cycle_lock:
+            return await self._run_payout_cycle()
+
+    async def _confirm_intent(self,intent):
+        status=await self.node_rpc.call('getTransaction',{'txid':intent['txid']})
+        if (status.get('txid')==intent['txid'] and status.get('status')=='confirmed'
+                and int(status.get('confirmations',0))>=6):
+            await asyncio.to_thread(self.engine.record_payout,intent['txid'],intent['wallet_address'],
+                                    intent['amount_satk'],intent['fee_satk'])
+            return True
+        return False
+
+    async def _broadcast_intent(self,intent):
+        # Parse persisted public transaction; never reconstruct a new signed tx
+        # after a timeout, rejection or process restart.
+        tx=transaction_from_dict(json.loads(intent['transaction_json']))
+        if tx.txid!=intent['txid'] or not await asyncio.to_thread(StealthWallet.verify_transaction,tx):
+            raise ValueError('persisted payout transaction failed verification')
+        result=await self.node_rpc.call('submitTransaction',{'transaction':transaction_to_dict(tx)})
+        if result.get('accepted'):
+            with self.engine._get_connection() as conn:
+                conn.execute("UPDATE payout_intents SET status='broadcasted' WHERE txid=? AND status='prepared'",(tx.txid,))
+            return await self._confirm_intent(intent)
+        return False
+
+    async def _run_payout_cycle(self) -> List[dict]:
         """Execute one payout sweep for all eligible miners."""
         if not self.treasury_wallet:
             return []
 
-        await self.sync_treasury_utxos()
-        available_satk = self.treasury_wallet.get_balance_satk()
-        eligible = self.engine.get_pending_payouts(self.default_threshold_satk)
+        # Do not request and scan the full UTXO set when there is nothing to
+        # pay. This is the normal state of a newly launched PPLNS pool.
+        settled=[]
+        intents=await asyncio.to_thread(self.engine.get_payout_intents,16)
+        for intent in intents:
+            try:
+                if await self._confirm_intent(intent) or await self._broadcast_intent(intent):
+                    settled.append({'wallet':intent['wallet_address'],'amount_btck':intent['amount_satk']/SATK_PER_COIN,
+                                    'txid':intent['txid'],'status':'success'})
+            except Exception as exc:
+                logger.warning('Pending payout remains reserved (%s)',type(exc).__name__)
+        eligible = await asyncio.to_thread(
+            self.engine.get_pending_payouts,
+            self.default_threshold_satk,
+        )
         if not eligible:
-            return []
+            return settled
 
-        payout_results = []
-        for item in eligible:
+        if await self.sync_treasury_utxos() is None:
+            return settled
+        intents=await asyncio.to_thread(self.engine.get_payout_intents)
+        reserved={(i['prev_txid'],int(i['prev_vout'])) for intent in intents
+                  for i in json.loads(intent['transaction_json'])['inputs']}
+        pending_wallets={intent['wallet_address'] for intent in intents}
+        for utxo in self.treasury_wallet.utxos:
+            if (utxo.txid,utxo.vout) in reserved:
+                utxo.spent=True
+
+        payout_results = settled
+        for item in eligible[:16]:
             wallet_addr = item["wallet_address"]
+            if wallet_addr in pending_wallets:
+                continue
             unpaid_satk = item["unpaid_satk"]
-            needed_satk = unpaid_satk + self.tx_fee_satk
-
-            if available_satk < needed_satk:
-                logger.warning(
-                    "Treasury balance insufficient for payout: have %.4f BTC-K, need %.4f BTC-K for miner %s",
-                    available_satk / SATK_PER_COIN,
-                    needed_satk / SATK_PER_COIN,
-                    wallet_addr[:16],
-                )
+            usable=sorted((u for u in self.treasury_wallet.utxos
+                if self.treasury_wallet.is_utxo_spendable(u,self.synced_height)),
+                key=lambda u:(-u.amount_satk,u.txid,u.vout))[:100]
+            amount_satk=min(unpaid_satk,sum(u.amount_satk for u in usable)-self.tx_fee_satk)
+            if amount_satk<min(unpaid_satk,self.default_threshold_satk):
+                logger.warning('No mature, unreserved treasury funds available for payout')
                 continue
 
             try:
                 # Create and sign stealth transfer
-                tx = self.treasury_wallet.create_and_sign_transfer(
+                signer=StealthWallet(self.treasury_wallet.keypair,'bounded-payout-signer')
+                signer.utxos=[copy.copy(u) for u in usable]
+                tx = await asyncio.to_thread(signer.create_and_sign_transfer,
                     recipient_stealth_addr=wallet_addr,
-                    amount_satk=unpaid_satk,
+                    amount_satk=amount_satk,
                     fee_satk=self.tx_fee_satk,
+                    current_height=self.synced_height,
                 )
-                # Broadcast to node
-                broadcast_res = await self.node_rpc.call(
-                    "submitTransaction",
-                    {"transaction": transaction_to_dict(tx)},
-                )
-                if broadcast_res.get("accepted"):
-                    self.engine.record_payout(tx.txid, wallet_addr, unpaid_satk, self.tx_fee_satk)
-                    available_satk -= needed_satk
+                await asyncio.to_thread(self.engine.prepare_payout,tx,wallet_addr,amount_satk,self.tx_fee_satk)
+                used={(i.prev_txid,i.prev_vout) for i in tx.inputs}
+                for u in self.treasury_wallet.utxos:
+                    if (u.txid,u.vout) in used:u.spent=True
+                intent={'txid':tx.txid,'wallet_address':wallet_addr,'amount_satk':amount_satk,
+                        'fee_satk':self.tx_fee_satk,'transaction_json':json.dumps(transaction_to_dict(tx))}
+                if await self._broadcast_intent(intent):
                     payout_results.append(
                         {
                             "wallet": wallet_addr,
-                            "amount_btck": unpaid_satk / SATK_PER_COIN,
+                            "amount_btck": amount_satk / SATK_PER_COIN,
                             "txid": tx.txid,
                             "status": "success",
                         }
                     )
-                else:
-                    logger.warning("Node rejected payout transaction %s: %s", tx.txid, broadcast_res)
             except Exception as exc:
-                logger.error("Error executing payout to %s: %s", wallet_addr, exc)
+                logger.error('Payout remains unpaid/reserved after error: %s',type(exc).__name__)
 
         return payout_results
 
+    def seconds_until_next_utc_batch(self, now_timestamp: float | None = None) -> float:
+        """Return the delay to the next strictly-future fixed UTC batch."""
+        now = datetime.fromtimestamp(
+            time.time() if now_timestamp is None else now_timestamp,
+            tz=timezone.utc,
+        )
+        for hour in self.payout_utc_hours:
+            candidate = now.replace(hour=hour, minute=0, second=0, microsecond=0)
+            if candidate > now:
+                return (candidate - now).total_seconds()
+        tomorrow = (now + timedelta(days=1)).replace(
+            hour=self.payout_utc_hours[0], minute=0, second=0, microsecond=0
+        )
+        return (tomorrow - now).total_seconds()
+
     async def _loop(self) -> None:
         while self.running:
+            await asyncio.sleep(self.seconds_until_next_utc_batch())
+            if not self.running:
+                break
             try:
                 await self.run_payout_cycle()
             except Exception as exc:
                 logger.error("AutoPayout loop encountered error: %s", exc)
-            await asyncio.sleep(self.payout_interval_seconds)
 
     def start(self) -> None:
+        if not self.payout_enabled:
+            logger.info('PPLNS automatic payouts DISABLED by operator; no scan/sign/broadcast task started')
+            return
         if self.running or not self.treasury_wallet:
             return
         self.running = True
         self._task = asyncio.create_task(self._loop())
         logger.info(
-            "🚀 PPLNS AutoPayout worker active (Threshold: %.2f BTC-K, Interval: %ds)",
+            "PPLNS AutoPayout worker active (Threshold: %.2f BTC-K, UTC batches: %s)",
             self.default_threshold_satk / SATK_PER_COIN,
-            int(self.payout_interval_seconds),
+            ",".join(f"{hour:02d}:00" for hour in self.payout_utc_hours),
         )
 
     async def stop(self) -> None:

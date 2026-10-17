@@ -106,6 +106,15 @@ class TestNodeDaemonAndRPC(unittest.IsolatedAsyncioTestCase):
                 }, token="",
             )
             self.assertTrue(second_page["result"]["done"])
+            unspent_page = await async_rpc_call(
+                test_host, test_port, "getWalletSyncPage",
+                {"from_height": 0, "limit": 10, "anchor_hash": "", "unspent_only": True},
+                token="",
+            )
+            self.assertTrue(unspent_page["result"]["unspent_only"])
+            self.assertTrue(all(
+                block["spent"] == [] for block in unspent_page["result"]["blocks"]
+            ))
             rejected_secret = await async_rpc_call(
                 test_host, test_port, "getWalletSyncPage",
                 {"from_height": 0, "view_priv_scalar": "1"}, token="",
