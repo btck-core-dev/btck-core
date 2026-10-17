@@ -1,17 +1,18 @@
 # Official BTC-K mining endpoints
 
-Status: 17 October 2026. SOLO mining is operating. The PPLNS service listens on
-3332, but automatic payouts are disabled and production payment acceptance is
-incomplete. Do not treat a successful connection or an unpaid pool credit as a
-payment. New PPLNS onboarding is pending the published acceptance decision.
+Status: 18 October 2026. SOLO and PPLNS mining are operating. PPLNS automatic
+payouts are enabled after an operator-triggered first batch was signed,
+broadcast and confirmed through the production automatic payment worker.
+Subsequent new-payment batches run at UTC 00:00/06:00/12:00/18:00. A connection
+or unpaid credit is not a confirmed payment; check the on-chain receipt.
 
-| Mode | Current direct endpoint | Initial difficulty tier |
-|---|---|---|
-| PPLNS | `stratum+tcp://185.130.45.240:3332` | Shared VarDiff endpoint; ASIC bootstrap difficulty 128 |
-| SOLO | `stratum+tcp://185.130.45.240:3333` | Below 1 TH/s; base difficulty 128 |
-| SOLO | `stratum+tcp://185.130.45.240:3334` | Typical 1–3 TH/s; base difficulty 4096 |
-| SOLO | `stratum+tcp://185.130.45.240:3335` | Typical 6–10 TH/s; base difficulty 16384 |
-| SOLO | `stratum+tcp://185.130.45.240:3336` | Typical 20–100+ TH/s; base difficulty 65536 |
+| Mode | Current direct endpoint | Official domain endpoint | Initial difficulty tier |
+|---|---|---|---|
+| PPLNS | `stratum+tcp://185.130.45.240:3332` | `stratum+tcp://pool.bitcoin-k.com:3332` | Shared VarDiff endpoint; ASIC bootstrap difficulty 128 |
+| SOLO | `stratum+tcp://185.130.45.240:3333` | `stratum+tcp://pool.bitcoin-k.com:3333` | Below 1 TH/s; base difficulty 128 |
+| SOLO | `stratum+tcp://185.130.45.240:3334` | `stratum+tcp://pool.bitcoin-k.com:3334` | Typical 1–3 TH/s; base difficulty 4096 |
+| SOLO | `stratum+tcp://185.130.45.240:3335` | `stratum+tcp://pool.bitcoin-k.com:3335` | Typical 6–10 TH/s; base difficulty 16384 |
+| SOLO | `stratum+tcp://185.130.45.240:3336` | `stratum+tcp://pool.bitcoin-k.com:3336` | Typical 20–100+ TH/s; base difficulty 65536 |
 
 The official hostname is `pool.bitcoin-k.com`, with the same ports. Historical
 long-connection failures on the domain route are still under investigation;
@@ -37,10 +38,12 @@ variance; it does not guarantee income or returns. The two modes must remain
 separately visible regardless of miner hashrate.
 
 The configured pool fee schedule is 5% on launch days 1–7, 3% on days 8–30, and
-1% afterward. The PPLNS worker has a configured minimum of 5 BTC-K, UTC batch
+1% afterward. The PPLNS worker has a minimum of 5 BTC-K, UTC batch
 times 00:00/06:00/12:00/18:00, mature-input filtering and six-confirmation payment
-settlement. **Those settings are not an active payment promise: payouts remain
-disabled.** Existing unpaid balances must remain recorded until verified payment.
+settlement. Pending receipts are checked every 30 seconds independently of new-payment
+batches. Mature funds, canonical rewards and successful confirmation are required;
+a safety hold or incomplete treasury checkpoint prevents new payments. Balances
+below the minimum remain unpaid and recorded until eligible.
 
 HTTP status ports 3337/3338 are loopback-only monitoring interfaces, not mining
 endpoints. Node RPC 16110 and P2P 16111 are not Stratum mining ports.

@@ -15,8 +15,8 @@ Machine-readable network record: https://bitcoin-k.com/network.json
 
 ## Current status
 
-- L1 mainnet has reached and locked checkpoint block 271,828 after two independent replay passes.
-- The checkpoint-bound v3.2.5 release is signed and reproducible; public downloads and mining remain closed until the second-seed and final launch gates pass.
+- L1 mainnet is publicly live; the initial Guardian phase is disclosed in the genesis record.
+- Public SOLO/PPLNS mining and the signed3.2.13 node/wallet release are available. PPLNS automatic payouts are enabled after real payment acceptance.
 - The hard cap is 21,000,000 BTC-K; one BTC-K equals 100,000,000 SatK.
 - Subsidy issuance completes in 1,460 days. Genesis reward is zero.
 - GPU inference, HTTP 402 settlement, DEX routing and delegated agent wallets are not live products.

@@ -961,11 +961,11 @@
 </head>
 <body>
 
-  <!-- Keep this notice visible throughout the post-upgrade observation window. -->
+  <!-- Scheduled maintenance notice. Keep this visible while Stratum is offline. -->
   <div class="maintenance-marquee" role="status" aria-live="polite">
     <div class="maintenance-marquee-track">
-      <span>SOLO mining is operating on ports 3333-3336. PPLNS port 3332 remains under payment acceptance; automatic payouts are disabled. See the mining access guide before connecting.</span>
-      <span aria-hidden="true">SOLO mining is operating on ports 3333-3336. PPLNS port 3332 remains under payment acceptance; automatic payouts are disabled. See the mining access guide before connecting.</span>
+      <span>SOLO ports3333-3336 and PPLNS port3332 are operating. Automatic PPLNS payouts are enabled after real payment acceptance. See the mining access guide for mode, hashrate tiers and fees.</span>
+      <span aria-hidden="true">SOLO ports3333-3336 and PPLNS port3332 are operating. Automatic PPLNS payouts are enabled after real payment acceptance. See the mining access guide for mode, hashrate tiers and fees.</span>
     </div>
   </div>
 
@@ -993,8 +993,8 @@
       <!-- Quick Stratum Copy -->
       <div class="header-stratum">
         <span class="stratum-tag"><span class="dot"></span> STRATUM</span>
-        <span id="header-stratum-url">pool.bitcoin-k.com:3333</span>
-        <button class="copy-btn" onclick="copyText('stratum+tcp://pool.bitcoin-k.com:3333')">Copy</button>
+        <span id="header-stratum-url">pool.bitcoin-k.com:3332</span>
+        <button class="copy-btn" onclick="copyText('stratum+tcp://pool.bitcoin-k.com:3332')">Copy</button>
       </div>
 
       <!-- Links -->
@@ -1009,7 +1009,7 @@
     </div>
   </header>
 
-  <main class="container">
+  <main class="container"><aside style="padding:1rem;border:1px solid #d4a72c;margin:1rem"><strong>PPLNS automatic payouts are enabled.</strong> Accounting and the first catch-up payment batch passed production acceptance. SOLO: 3333-3336. PPLNS: 3332. <a href="/mining.html">Endpoints, hashrate tiers and payment status</a>.</aside>
 
     <!-- ==================================================================== -->
     <!-- HERO: consensus-authoritative Combo jackpot -->
@@ -1199,7 +1199,7 @@
       <div class="stat-card">
         <div class="stat-card-label">Active Miners</div>
         <div class="stat-card-value" style="color: #fff;" id="stat-active-miners">—</div>
-        <div class="stat-card-sub">SOLO & PPLNS Supported</div>
+        <div class="stat-card-sub">SOLO 3333-3336 · PPLNS3332 (automatic payouts enabled)</div>
       </div>
 
       <!-- 6. Pool Fee -->
@@ -1355,7 +1355,7 @@
       <div id="tab-iceriver" class="setup-tab-content">
         <div class="config-box">
           <div class="comment"># In your IceRiver Miner WebUI (http://&lt;MINER_IP&gt; -> Mining Settings):</div>
-          <div><span class="key">Pool 1 Address:</span>  <span class="val">stratum+tcp://pool.bitcoin-k.com:3333</span>  <button class="copy-btn" onclick="copyText('stratum+tcp://pool.bitcoin-k.com:3333')" style="margin-left: 8px;">Copy</button></div>
+          <div><span class="key">Pool 1 Address:</span>  <span class="val">stratum+tcp://pool.bitcoin-k.com:3332</span>  <button class="copy-btn" onclick="copyText('stratum+tcp://pool.bitcoin-k.com:3332')" style="margin-left: 8px;">Copy</button></div>
           <div><span class="key">Pool 1 Worker:</span>   <span class="val">&lt;YOUR_STEALTH_ADDRESS&gt;.&lt;WORKER_NAME&gt;</span></div>
           <div><span class="key">Pool 1 Password:</span> <span class="val">x</span></div>
           <div class="comment" style="margin-top: 8px;"># Example Worker Username:</div>
@@ -1367,7 +1367,7 @@
       <div id="tab-antminer" class="setup-tab-content" style="display: none;">
         <div class="config-box">
           <div class="comment"># In Antminer Dashboard (KS3 / KS5 / KS5 Pro):</div>
-          <div><span class="key">URL:</span>      <span class="val">stratum+tcp://pool.bitcoin-k.com:3333</span></div>
+          <div><span class="key">URL:</span>      <span class="val">stratum+tcp://pool.bitcoin-k.com:3332</span></div>
           <div><span class="key">Worker:</span>   <span class="val">&lt;YOUR_STEALTH_ADDRESS&gt;.antminer01</span></div>
           <div><span class="key">Password:</span> <span class="val">x</span></div>
         </div>

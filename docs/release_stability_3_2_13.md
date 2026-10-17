@@ -1,90 +1,60 @@
-# Stability and wallet update: 3.2.13 candidate
+# BTC-K 3.2.13 stability and wallet release
 
-This update addresses live node following, wallet synchronization and pool
-accounting. It does not enable PPLNS automatic payments or the public signed
-transaction relay while their production holds remain in place.
+This release includes bounded node reorganizations, managed Seed-B native
+following and reconnect recovery, automatic wallet synchronization and reliable
+multiwallet switching. The mainnet identity, signature rules and issuance
+parameters are unchanged.
 
-## Resulting behavior
+## Transactions and node stability
 
-- The node bounds ordinary shallow reorganization work while retaining atomic
-  rollback of UTXO, issuance and Combo state after a failed durable commit.
-- Managed P2P preserves dependency requests across reconnects, bounds orphan
-  pressure and avoids echoing a dependency batch back to its source. Seed-B's
-  live recovery retained its journal and applied only the existing snapshot's
-  suffix. No new genesis replay was required.
-- The desktop wallet follows the public tip automatically. Shared public ledger
-  data is cached locally; wallet keys, ownership and balances remain separately
-  encrypted. Switching wallets pauses old asynchronous callbacks before asking
-  for the selected wallet's password.
-- PPLNS payment preparation requires a complete scan, mature inputs and bounded
-  input selection. Durable intents preserve the same transaction after an
-  ambiguous response; unpaid balances are settled only after confirmation.
-  Native-protocol shares use the actual assigned target for accounting weight.
-- PPLNS freezes the original allocation window even when a new DAG block has
-  no reward yet. Later canonical reward changes update the same allocation
-  atomically and conserve integer SatK. Unknown legacy windows or unsafe debits
-  hold payments rather than guessing or erasing paid balances.
+Ordinary transaction preview and block application stage only touched UTXOs,
+retain cached conservation totals and preserve rollback after failed commits.
+They no longer copy the accumulated UTXO map. Submission duplicate checks use
+consensus accepted-transaction records instead of loading unrelated block bodies.
+Confirmation lookups scan at most the latest 2,048 canonical blocks; older
+receipts require an exact canonical height and block hash. An unknown scoped
+lookup does not prove absence from all history.
 
-## Acceptance and current limits
+The exact transaction candidate passed 49 checks on macOS and 49 in isolated
+Linux. Coverage includes nonempty transfers without history iteration, late
+validation failures, partial-write rollback, durable-commit rollback and reorgs.
+A local 300,000-output synthetic map using a real signed 100-input payment
+verified value conservation and reversal without a node or chain replay.
+Production acceptance separately checked recovery, actual mining and payments.
+These are observed acceptance windows, not a guarantee of uninterrupted service.
 
-Loopback TCP/simnet checks cover subscription, authorization, credited work,
-reward conservation, duplicate retry, durable accounting and payment
-confirmation. Live external ports 3332-3336 pass subscription probes. These
-checks are distinct from actual production payments. The exact production
-candidate passed 57 focused checks on both macOS and isolated Linux. The
-approved historical accounting migration was verified offline, then applied
-atomically to 2,490 production records with automatic payouts disabled.
+## Wallet and mining
 
-The daily mining wallet completed its real history scan and then advanced both
-height and balance automatically without pressing Sync. Real multiwallet
-switching was confirmed after the password-dialog race repair.
+The desktop wallet follows the public tip automatically. Public ledger data is
+cached locally while private wallet balances remain separately encrypted.
+Switching wallets pauses old callbacks before the selected password dialog.
+Real multiwallet switching and mining-wallet balance growth were accepted.
 
-PPLNS automatic payouts remain disabled. A configured five-coin threshold and
-six-hour UTC schedule do not mean payments are active. Complete current treasury
-backing and production broadcast/confirmation acceptance remain required before
-an explicit payment-enablement decision. New PPLNS onboarding remains pending.
+PPLNS uses verified native share targets and preserves original allocation
+windows, including when DAG rewards become final later. Historical accounting
+was reconciled without inventing shares or erasing already-paid balances.
+Payment preparation applies a bounded suffix to an authenticated encrypted
+checkpoint. Incomplete or invalid funds and unsafe reward changes hold new
+payments. Durable intents preserve the same signed transaction across retries.
+The production observer checks receipts every 30 seconds and settles at six
+confirmations independently of UTC new-payment batches.
 
-The public signed-transaction relay remains in maintenance. Local signing is
-not proof of a broadcast or confirmed payment. Domain long-connection behavior
-is still under investigation; currently stable direct-IP miners should retain
-their configured endpoints.
+An operator-triggered initial catch-up batch was signed and broadcast through
+the automatic payment worker, then confirmed and settled by the production
+observer. Automatic subsequent batches are enabled for UTC 00/06/12/18 with a
+5 BTC-K minimum. This does not claim that every scheduled future batch has run.
+The rate-limited public signed-transaction relay is open. Local signing or a
+submission timeout is not proof of confirmation.
 
-The macOS arm64 candidate is locally ad-hoc signed and is not Developer ID
-signed or notarized. The candidate retains the disclosed payment and relay holds; it is not a
-claim of complete production payment acceptance. No private wallet data,
-backup databases, credentials or operational incident archives are included.
+Full SOLO/PPLNS endpoints, difficulty tiers and fees are in the
+[mining guide](mining_pool_access.md). Domain long-connection behavior remains
+under investigation; stable direct-IP miners should retain their settings.
 
-See [mining access](mining_pool_access.md) for both modes, exact URLs, ports,
-hashrate tiers, fee configuration and current payout status.
+## Artifacts and limits
 
-## Bounded transaction confirmation lookup
-
-The production node no longer loads lifetime block bodies to answer a
-transaction status query. It uses consensus accepted-transaction records for
-at most the latest 2,048 canonical blocks. An older transaction can be queried
-with its exact canonical `height` and `block_hash`; stale locators are rejected.
-An unknown recent-window result is explicitly scoped and does not prove absence
-from all history. Merely including an unaccepted transaction in a DAG block is
-not confirmation.
-
-This fix is deployed and passed live mining and bounded-query acceptance.
-Automatic PPLNS payouts remain disabled. The two approved production canaries
-confirmed on chain; this does not mean that unattended automatic payouts or
-the general public transaction relay have been enabled.
-
-## Incremental treasury and pending receipts
-
-Payment preparation requires an authenticated, encrypted checkpoint belonging to
-the configured treasury wallet. It applies at most four pages of canonical
-changes, including spends, and publishes funds only after reaching the reported
-tip. Missing, invalid or stale checkpoints hold payments; this path cannot fall
-back to a genesis scan. Operators must keep the checkpoint fresh with a separate
-resource-limited updater.
-
-The payment worker observes already saved intents every 30 seconds independently
-of the UTC new-payment batches. Confirmed receipts retain their exact canonical
-block locator across restarts. Reorganization recovery rechecks only the bounded
-recent window, and retries preserve the same signed transaction. Reward holds
-allow confirmation observation but prevent rebroadcasts and new payments.
-These changes passed 67 focused checks in the public source tree. Runtime
-activation and payment enablement remain separate operator decisions.
+The macOS arm64 wallet was built twice in isolated roots with identical bytes.
+Verify SHA256SUMS, RELEASE_MANIFEST.json and the detached release signature.
+The wallet is ad-hoc signed, not Apple Developer ID signed or notarized. No
+third-party security audit is claimed. Private wallets, ledgers, credentials
+and operational incident archives are excluded. L2 inference, DEX, bridges and
+exchange integrations remain separate, unavailable services.
