@@ -194,7 +194,7 @@ def main() -> None:
         "checkpoint_hash": checkpoint_hash,
         "consensus_fingerprint": network.consensus_fingerprint,
         "release_approval_id": network.release_approval_id,
-        "independent_replays": replay_records,
+        "independent_replays": [{**record, "environment_id": "sha256:" + hashlib.sha256(record["environment_id"].encode("utf-8")).hexdigest()} for record in replay_records],
         "wallet_evidence": wallet_evidence,
         "sbom_sha256": sbom_sha256,
         "artifacts": checksums,

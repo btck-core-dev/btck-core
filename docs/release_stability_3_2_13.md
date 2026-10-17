@@ -56,5 +56,6 @@ The macOS arm64 wallet was built twice in isolated roots with identical bytes.
 Verify SHA256SUMS, RELEASE_MANIFEST.json and the detached release signature.
 The wallet is ad-hoc signed, not Apple Developer ID signed or notarized. No
 third-party security audit is claimed. Private wallets, ledgers, credentials
-and operational incident archives are excluded. L2 inference, DEX, bridges and
+and operational incident archives are excluded. Public replay environment
+labels use deterministic SHA-256 aliases instead of host names. L2 inference, DEX, bridges and
 exchange integrations remain separate, unavailable services.
