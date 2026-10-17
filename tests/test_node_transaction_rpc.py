@@ -77,6 +77,44 @@ class TestNodeTransactionRPC(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(RPCError):
             await self.rpc.call("submitTransaction", {"transaction": transaction_to_dict(conflict)})
 
+    async def test_transaction_lookup_never_loads_lifetime_block_bodies(self):
+        class NoBlockReads(dict):
+            def __getitem__(self, key):
+                raise AssertionError('transaction lookup loaded unrelated block body')
+        genesis = self.daemon.dag.genesis_hash
+        self.daemon.dag.virtual_blue_order = ['old-history'] * 560000 + [genesis] * 2048
+        self.daemon.dag.blocks = NoBlockReads(self.daemon.dag.blocks)
+        calls = []
+        def accepted(block_hash):
+            self.assertEqual(block_hash, genesis)
+            calls.append(block_hash)
+            return []
+        self.daemon.dag.utxo_set.get_block_accepted_txids = accepted
+        result = await self.rpc.call('getTransaction', {'txid': '33' * 32})
+        self.assertEqual(result['status'], 'unknown')
+        self.assertEqual(result['lookup_scope'], 'recent_2048')
+        self.assertEqual(len(calls), 2048)
+
+    async def test_historical_transaction_locator_checks_only_one_canonical_block(self):
+        genesis = self.daemon.dag.genesis_hash
+        txid = '44' * 32
+        self.daemon.dag.virtual_blue_order = [genesis] + ['later-history'] * 560000
+        self.daemon.dag.utxo_set._block_accepted_txids[genesis] = [txid]
+        result = await self.rpc.call('getTransaction', {
+            'txid': txid, 'height': 0, 'block_hash': genesis})
+        self.assertEqual(result['status'], 'confirmed')
+        self.assertEqual(result['confirmations'], 560001)
+        with self.assertRaises(RPCError):
+            await self.rpc.call('getTransaction', {'txid': txid, 'height': 1, 'block_hash': genesis})
+
+    async def test_transaction_presence_without_consensus_acceptance_is_not_confirmation(self):
+        from types import SimpleNamespace
+        genesis = self.daemon.dag.genesis_hash
+        txid = '55' * 32
+        self.daemon.dag.blocks[genesis].transactions = [SimpleNamespace(txid=txid)]
+        result = await self.rpc.call('getTransaction', {'txid': txid})
+        self.assertEqual(result['status'], 'unknown')
+
     async def test_mempool_maturity_uses_virtual_blue_height(self):
         entry = self.daemon.dag.utxo_set.utxos[("11" * 32, 0)]
         entry.is_coinbase = True

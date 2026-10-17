@@ -56,3 +56,18 @@ backup databases, credentials or operational incident archives are included.
 
 See [mining access](mining_pool_access.md) for both modes, exact URLs, ports,
 hashrate tiers, fee configuration and current payout status.
+
+## Bounded transaction confirmation lookup
+
+The production node no longer loads lifetime block bodies to answer a
+transaction status query. It uses consensus accepted-transaction records for
+at most the latest 2,048 canonical blocks. An older transaction can be queried
+with its exact canonical `height` and `block_hash`; stale locators are rejected.
+An unknown recent-window result is explicitly scoped and does not prove absence
+from all history. Merely including an unaccepted transaction in a DAG block is
+not confirmation.
+
+This fix is deployed and passed live mining and bounded-query acceptance.
+Automatic PPLNS payouts remain disabled. The two approved production canaries
+confirmed on chain; this does not mean that unattended automatic payouts or
+the general public transaction relay have been enabled.

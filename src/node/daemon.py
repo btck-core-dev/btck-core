@@ -627,9 +627,24 @@ class BTCKDaemon:
                 return {"jsonrpc": "2.0", "result": {"txid": txid, "status": "mempool"}, "id": req_id}
             order = self.dag.virtual_blue_order
             tip_height = len(order) - 1
-            for height, block_hash in enumerate(order):
-                block = self.dag.blocks[block_hash]
-                if any(tx.txid == txid for tx in block.transactions):
+            # Never walk lifetime block bodies in the single RPC/mining loop.
+            # Consensus already journals exactly the transactions it accepted
+            # for each canonical block, including through snapshot recovery.
+            start_height = max(0, len(order) - 2048)
+            hinted_height = params.get('height')
+            hinted_hash = params.get('block_hash')
+            if hinted_height is not None or hinted_hash is not None:
+                if (type(hinted_height) is not int or not 0 <= hinted_height < len(order)
+                        or not isinstance(hinted_hash, str) or order[hinted_height] != hinted_hash):
+                    return {"jsonrpc": "2.0", "error": {"code": -32602,
+                            "message": "canonical transaction locator mismatch"}, "id": req_id}
+                heights = (hinted_height,)
+            else:
+                heights = range(tip_height, start_height - 1, -1)
+            for height in heights:
+                block_hash = order[height]
+                if txid in self.dag.utxo_set.get_block_accepted_txids(block_hash):
+                    block = self.dag.blocks[block_hash]
                     return {
                         "jsonrpc": "2.0",
                         "result": {
@@ -642,7 +657,9 @@ class BTCKDaemon:
                         },
                         "id": req_id,
                     }
-            return {"jsonrpc": "2.0", "result": {"txid": txid, "status": "unknown"}, "id": req_id}
+            return {"jsonrpc": "2.0", "result": {"txid": txid, "status": "unknown",
+                    "lookup_scope": "canonical_locator" if hinted_height is not None else "recent_2048",
+                    "tip_height": tip_height}, "id": req_id}
 
         elif method == "getUTXOSet":
             outputs = []
