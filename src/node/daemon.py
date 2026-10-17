@@ -196,8 +196,7 @@ class BTCKDaemon:
         # Mempool duplicates remain fully idempotent; recently confirmed
         # resubmissions are recognized across a generous 2,048-blue window.
         for block_hash in reversed(self.dag.virtual_blue_order[-2048:]):
-            block = self.dag.blocks[block_hash]
-            if any(existing.txid == tx.txid for existing in block.transactions):
+            if tx.txid in self.dag.utxo_set.get_block_accepted_txids(block_hash):
                 return {"accepted": True, "txid": tx.txid, "status": "confirmed"}
         overlay = self._mempool_overlay()
         height = len(self.dag.virtual_blue_order) - 1

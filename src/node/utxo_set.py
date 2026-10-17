@@ -30,6 +30,62 @@ from collections.abc import MutableMapping
 _UNDO_ABSENT = object()
 
 
+class UTXODelta(MutableMapping):
+    """Stage only touched outpoints; ordinary transfers never copy history."""
+
+    def __init__(self, base):
+        self.base = base
+        self.updates = {}
+        self.removed = set()
+
+    def __getitem__(self, key):
+        if key in self.removed:
+            raise KeyError(key)
+        if key in self.updates:
+            return self.updates[key]
+        return self.base[key]
+
+    def __setitem__(self, key, value):
+        self.removed.discard(key)
+        self.updates[key] = value
+
+    def __delitem__(self, key):
+        self[key]
+        self.updates.pop(key, None)
+        self.removed.add(key)
+
+    def __iter__(self):
+        for key in self.base:
+            if key not in self.removed and key not in self.updates:
+                yield key
+        yield from self.updates
+
+    def __len__(self):
+        return sum(1 for _ in self)
+
+    def fork(self):
+        candidate = type(self)(self.base)
+        candidate.updates = self.updates.copy()
+        candidate.removed = self.removed.copy()
+        return candidate
+
+    def commit(self):
+        before = {key: self.base.get(key, _UNDO_ABSENT)
+                  for key in self.removed | self.updates.keys()}
+        try:
+            for key in self.removed:
+                self.base.pop(key, None)
+            for key, value in self.updates.items():
+                self.base[key] = value
+        except BaseException:
+            for key, value in before.items():
+                if value is _UNDO_ABSENT:
+                    self.base.pop(key, None)
+                else:
+                    self.base[key] = value
+            raise
+
+
 class UndoMapping(MutableMapping):
     """Record only first writes; undo values are replaced, never mutated."""
 
@@ -308,7 +364,7 @@ class UTXOSet:
         # Nonempty/other input types retain the existing validation path.
         if isinstance(transactions, (list, tuple)) and not transactions:
             return 0
-        overlay = dict(self.utxos)
+        overlay = UTXODelta(self.utxos)
         total_fees_sats = 0
         for tx in transactions:
             valid, error, fee_sats = self.validate_transaction(tx, block_height, overlay)
@@ -316,7 +372,7 @@ class UTXOSet:
                 if allow_transaction_skips:
                     continue
                 raise ValueError(f"invalid transaction {tx.txid}: {error}")
-            candidate = dict(overlay)
+            candidate = overlay.fork()
             for tx_input in tx.inputs:
                 candidate.pop((tx_input.prev_txid, tx_input.prev_vout))
             duplicate = False
@@ -421,7 +477,7 @@ class UTXOSet:
             self._block_accepted_txids[block_hash] = []
             return True, "Block applied successfully"
 
-        overlay = dict(self.utxos)
+        overlay = UTXODelta(self.utxos)
         total_fees_sats = 0
         accepted_txids: List[str] = []
 
@@ -433,7 +489,7 @@ class UTXOSet:
                 if allow_transaction_skips:
                     continue
                 return False, f"Block rejected due to invalid transaction {tx.txid}: {err}"
-            tx_overlay = dict(overlay)
+            tx_overlay = overlay.fork()
             tx_spent: List[Tuple[Tuple[str, int], UTXOEntry]] = []
             tx_created: List[Tuple[str, int]] = []
             for inp in tx.inputs:
@@ -566,7 +622,7 @@ class UTXOSet:
                 created_undo.append(vo_outpoint)
 
         # Single commit point.
-        self.utxos = overlay
+        overlay.commit()
         self._block_spent_undo[block_hash] = spent_undo
         self._block_created_undo[block_hash] = created_undo
         self._block_fees[block_hash] = total_fees_sats

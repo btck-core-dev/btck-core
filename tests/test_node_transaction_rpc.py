@@ -77,6 +77,18 @@ class TestNodeTransactionRPC(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(RPCError):
             await self.rpc.call("submitTransaction", {"transaction": transaction_to_dict(conflict)})
 
+    async def test_submit_dedup_uses_consensus_receipts_without_block_reads(self):
+        from types import SimpleNamespace
+        class NoBlockReads(dict):
+            def __getitem__(self, key):
+                raise AssertionError('submit duplicate lookup loaded a block body')
+        genesis = self.daemon.dag.genesis_hash
+        self.daemon.dag.blocks = NoBlockReads(self.daemon.dag.blocks)
+        self.daemon.dag.utxo_set._block_accepted_txids[genesis] = ['77' * 32]
+        result = self.daemon.submit_transaction(
+            SimpleNamespace(txid='77' * 32, inputs=[None], outputs=[None]))
+        self.assertEqual(result['status'], 'confirmed')
+
     async def test_transaction_lookup_never_loads_lifetime_block_bodies(self):
         class NoBlockReads(dict):
             def __getitem__(self, key):

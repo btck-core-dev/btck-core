@@ -9,7 +9,7 @@ import unittest
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
 
 from node.blockdag import BlockDAG
-from node.utxo_set import UTXOEntry, UTXOSet
+from node.utxo_set import UTXOEntry, UTXOSet, TrackedUTXODict
 from privacy.stealth_address import StealthKeyPair
 from privacy.wallet_engine import StealthTransaction, StealthWallet, TxInput, TxOutput
 from tests.pow_helpers import mine_block
@@ -48,6 +48,77 @@ def make_two_conflicting_transactions():
 
 
 class TestUTXOAtomicity(unittest.TestCase):
+    def transaction_fixture_without_history_iteration(self):
+        class NoHistoryWalk(TrackedUTXODict):
+            def __iter__(self):
+                raise AssertionError('ordinary transfer enumerated lifetime UTXOs')
+
+            def keys(self):
+                raise AssertionError('ordinary transfer copied lifetime UTXOs')
+
+            def items(self):
+                raise AssertionError('ordinary transfer enumerated lifetime UTXOs')
+
+        utxos = UTXOSet()
+        outpoint, entry, tx, _ = make_two_conflicting_transactions()
+        utxos._utxos = NoHistoryWalk({outpoint: entry})
+        return utxos, outpoint, entry, tx
+
+    def test_nonempty_preview_apply_and_revert_never_copy_history(self):
+        utxos, outpoint, entry, tx = self.transaction_fixture_without_history_iteration()
+        mapping = utxos.utxos
+        self.assertEqual(utxos.preview_block_fees([tx], 10), 1000)
+        self.assertIs(utxos.get_utxo(*outpoint), entry)
+        applied, error = utxos.apply_block('de' * 32, 10, COINBASE_A, 123, [tx])
+        self.assertTrue(applied, error)
+        self.assertIs(utxos.utxos, mapping)
+        self.assertEqual(utxos.total_value_sats(), entry.amount_satk + 123)
+        utxos.revert_block('de' * 32)
+        self.assertIs(utxos.get_utxo(*outpoint), entry)
+        self.assertEqual(utxos.total_value_sats(), entry.amount_satk)
+
+    def test_late_fee_failure_discards_only_staged_changes(self):
+        utxos, outpoint, entry, tx = self.transaction_fixture_without_history_iteration()
+        applied, error = utxos.apply_block(
+            'df' * 32, 10, COINBASE_A, 123, [tx], expected_miner_fee_sats=1001)
+        self.assertFalse(applied)
+        self.assertIn('fee split', error)
+        self.assertIs(utxos.get_utxo(*outpoint), entry)
+        self.assertFalse(utxos.has_utxo(tx.txid, 0))
+        self.assertEqual(utxos.total_value_sats(), entry.amount_satk)
+
+    def test_nonempty_delta_respects_outer_durable_commit_rollback(self):
+        utxos, outpoint, entry, tx = self.transaction_fixture_without_history_iteration()
+        mapping = utxos.utxos
+        utxos.begin_rollback()
+        applied, error = utxos.apply_block('e0' * 32, 10, COINBASE_A, 123, [tx])
+        self.assertTrue(applied, error)
+        utxos.finish_rollback(rollback=True)
+        self.assertIs(utxos.utxos, mapping)
+        self.assertIs(utxos.get_utxo(*outpoint), entry)
+        self.assertEqual(utxos.total_value_sats(), entry.amount_satk)
+        self.assertEqual(utxos.get_block_accepted_txids('e0' * 32), [])
+
+    def test_partial_delta_commit_failure_restores_touched_outpoints(self):
+        utxos = UTXOSet()
+        outpoint, entry, tx, _ = make_two_conflicting_transactions()
+        class FailOnce(TrackedUTXODict):
+            armed = False
+
+            def __setitem__(self, key, value):
+                if self.armed and key == ('cb_' + 'e1' * 32, 0):
+                    self.armed = False
+                    raise OSError('injected delta write failure')
+                super().__setitem__(key, value)
+
+        utxos._utxos = FailOnce({outpoint: entry})
+        utxos.utxos.armed = True
+        with self.assertRaisesRegex(OSError, 'injected delta'):
+            utxos.apply_block('e1' * 32, 10, COINBASE_A, 123, [tx])
+        self.assertEqual(dict(utxos.utxos), {outpoint: entry})
+        self.assertEqual(utxos.total_value_sats(), entry.amount_satk)
+        self.assertEqual(utxos._block_created_undo, {})
+
     def test_empty_mining_block_updates_utxos_in_place(self):
         utxos = UTXOSet()
         mapping_id = id(utxos.utxos)
