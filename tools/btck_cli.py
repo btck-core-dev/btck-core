@@ -92,6 +92,7 @@ def _load_packaged_identity() -> None:
 
 _load_packaged_identity()
 
+from privacy.private_files import is_private_path, restrict_private_path
 from privacy.stealth_address import StealthKeyPair
 from privacy.bip39 import WORDLIST, derive_btck_stealth_wallet, generate_mnemonic, mnemonic_to_seed, validate_mnemonic
 from privacy.wallet_crypto import WALLET_FORMAT, decrypt_wallet_payload, encrypt_wallet_payload
@@ -230,6 +231,7 @@ def write_private_json(path: Path, payload: dict) -> None:
     except FileExistsError as exc:
         raise CLIError(f"Refusing to overwrite existing file: {path}") from exc
     with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+        restrict_private_path(path, descriptor=handle.fileno())
         json.dump(payload, handle, indent=2, sort_keys=True)
         handle.write("\n")
 
@@ -264,7 +266,7 @@ def _encrypted_recoverable_wallet(
 def _read_mnemonic_file(path: str) -> str:
     mnemonic_path = Path(path)
     try:
-        if mnemonic_path.stat().st_mode & 0o077:
+        if not is_private_path(mnemonic_path):
             raise CLIError("Mnemonic file must not be accessible by group or other users")
         return mnemonic_path.read_text(encoding="utf-8").strip()
     except OSError as exc:
@@ -322,7 +324,7 @@ def wallet_password(args, *, confirm: bool = False) -> str:
     if args.password_file:
         try:
             password_path = Path(args.password_file)
-            if password_path.stat().st_mode & 0o077:
+            if not is_private_path(password_path):
                 raise CLIError("Password file must not be accessible by group or other users")
             password = password_path.read_text(encoding="utf-8").rstrip("\r\n")
         except OSError as exc:
@@ -449,6 +451,7 @@ def _save_sync_cache(wallet: StealthWallet, state: dict) -> None:
     descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     try:
         with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            restrict_private_path(temporary, descriptor=handle.fileno())
             json.dump(envelope, handle, separators=(",", ":"), sort_keys=True)
             handle.write("\n")
             handle.flush()
@@ -843,8 +846,11 @@ def cmd_eco_output(args):
 
 def cmd_init_mainnet_wallets(args):
     destination = Path(args.output_dir).expanduser()
+    existed = destination.exists()
     destination.mkdir(mode=0o700, parents=True, exist_ok=True)
-    if destination.stat().st_mode & 0o077:
+    if not existed:
+        restrict_private_path(destination, directory=True)
+    if not is_private_path(destination):
         raise CLIError("Output directory must not be accessible by group or other users")
     roles = (
         ("personal", "BTC-K Mainnet Personal / Mining"),

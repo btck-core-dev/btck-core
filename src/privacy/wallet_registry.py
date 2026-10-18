@@ -6,13 +6,24 @@ import hashlib
 import json
 import os
 import tempfile
+import sys
+
+from privacy.private_files import restrict_private_path
 from pathlib import Path
 
 
 REGISTRY_FORMAT = "btck-wallet-registry-v1"
-DEFAULT_REGISTRY_PATH = (
-    Path.home() / "Library" / "Application Support" / "Bitcoin K Wallet" / "wallets.json"
-)
+def default_registry_path() -> Path:
+    if sys.platform == "win32":
+        base = Path(os.environ.get("LOCALAPPDATA") or Path.home() / "AppData" / "Local")
+        return base / "Bitcoin K Wallet" / "wallets.json"
+    if sys.platform == "darwin":
+        return Path.home() / "Library" / "Application Support" / "Bitcoin K Wallet" / "wallets.json"
+    base = Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local" / "share")
+    return base / "bitcoin-k-wallet" / "wallets.json"
+
+
+DEFAULT_REGISTRY_PATH = default_registry_path()
 
 
 class WalletRegistryError(ValueError):
@@ -81,21 +92,21 @@ class WalletRegistry:
 
     def _save(self) -> None:
         self.path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-        self.path.parent.chmod(0o700)
+        restrict_private_path(self.path.parent, directory=True)
         payload = {"format": REGISTRY_FORMAT, "wallets": self.records}
         descriptor, temporary_name = tempfile.mkstemp(
             prefix=".wallets.", suffix=".tmp", dir=self.path.parent,
         )
         temporary = Path(temporary_name)
         try:
-            os.fchmod(descriptor, 0o600)
             with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+                restrict_private_path(temporary, descriptor=handle.fileno())
                 json.dump(payload, handle, indent=2, sort_keys=True)
                 handle.write("\n")
                 handle.flush()
                 os.fsync(handle.fileno())
             os.replace(temporary, self.path)
-            self.path.chmod(0o600)
+            restrict_private_path(self.path)
         finally:
             if temporary.exists():
                 temporary.unlink()

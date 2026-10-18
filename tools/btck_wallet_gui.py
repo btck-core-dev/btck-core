@@ -7,6 +7,7 @@ import threading
 import time
 import multiprocessing
 import os
+import sys
 import queue
 import tkinter as tk
 from pathlib import Path
@@ -18,6 +19,12 @@ from privacy.bip39 import generate_mnemonic, validate_mnemonic
 from privacy.stealth_address import StealthKeyPair
 from privacy.wallet_engine import SATK_PER_COIN, StealthWallet
 from privacy.wallet_registry import WalletRegistry, WalletRegistryError
+from privacy.private_files import restrict_private_path
+
+
+UI_FONT = "Segoe UI" if sys.platform == "win32" else "Helvetica Neue"
+MONO_FONT = "Consolas" if sys.platform == "win32" else "Menlo"
+HAND_CURSOR = "hand2" if sys.platform == "win32" else "pointinghand"
 
 
 class TechButton(tk.Frame):
@@ -39,7 +46,7 @@ class TechButton(tk.Frame):
         self.enabled = True
         self.label = tk.Label(
             self, text=text, bg=bg, fg=fg, bd=0,
-            font=("Helvetica Neue", 11, "bold"), cursor="pointinghand",
+            font=(UI_FONT, 11, "bold"), cursor=HAND_CURSOR,
             padx=padx, pady=pady,
         )
         self.label.pack(fill="both", expand=True, padx=1, pady=1)
@@ -66,7 +73,7 @@ class TechButton(tk.Frame):
             self.label.configure(
                 bg=self.normal_bg if self.enabled else self.disabled_bg,
                 fg=self.normal_fg if self.enabled else self.disabled_fg,
-                cursor="pointinghand" if self.enabled else "arrow",
+                cursor=HAND_CURSOR if self.enabled else "arrow",
             )
             super().configure(bg=self.border)
         if cnf or kwargs:
@@ -93,7 +100,7 @@ class MultilineDialog(tk.Toplevel):
             self, height=10, wrap="word", bg="#0d1728", fg="#eaf6ff",
             insertbackground="#28d7e5", relief="flat", padx=16, pady=16,
             highlightthickness=1, highlightbackground="#20334c",
-            font=("Menlo", 13),
+            font=(MONO_FONT, 13),
         )
         self.text.pack(fill="both", expand=True, padx=24, pady=8)
         if readonly_text:
@@ -129,13 +136,13 @@ class PasswordDialog(tk.Toplevel):
 
         tk.Label(
             self, text=prompt, bg="#080d18", fg="#e8f3ff",
-            font=("Helvetica Neue", 13, "bold"), anchor="w",
+            font=(UI_FONT, 13, "bold"), anchor="w",
         ).pack(fill="x", padx=26, pady=(25, 10))
         self.entry = tk.Entry(
             self, show="•", bg="#0d1728", fg="#eaf6ff",
             insertbackground="#25d4e3", relief="flat", bd=0,
             highlightthickness=1, highlightbackground="#20334c",
-            highlightcolor="#25d4e3", font=("Menlo", 14),
+            highlightcolor="#25d4e3", font=(MONO_FONT, 14),
         )
         self.entry.pack(fill="x", padx=26, ipady=9)
 
@@ -248,7 +255,7 @@ class WalletApp(tk.Tk):
     def _configure_style(self):
         style = ttk.Style(self)
         style.theme_use("clam")
-        style.configure(".", background=self.BG, foreground=self.TEXT, font=("Helvetica Neue", 12))
+        style.configure(".", background=self.BG, foreground=self.TEXT, font=(UI_FONT, 12))
         style.configure("TFrame", background=self.BG)
         style.configure("TLabel", background=self.BG, foreground=self.TEXT)
         style.configure("TButton", padding=(14, 9), background=self.PANEL_ALT, foreground=self.TEXT)
@@ -281,7 +288,7 @@ class WalletApp(tk.Tk):
         for index, (x, y) in enumerate(nodes):
             color = self.GOLD if index == 4 else self.CYAN
             canvas.create_oval(x - 2, y - 2, x + 2, y + 2, fill=color, outline="")
-        canvas.create_text(32, 27, text="K", fill=self.TEXT, font=("Helvetica Neue", 24, "bold"))
+        canvas.create_text(32, 27, text="K", fill=self.TEXT, font=(UI_FONT, 24, "bold"))
 
     def _build_ui(self):
         shell = tk.Frame(self, bg=self.BG)
@@ -298,12 +305,12 @@ class WalletApp(tk.Tk):
         brand_text = tk.Frame(brand, bg=self.SIDEBAR)
         brand_text.pack(side="left", padx=(5, 0))
         tk.Label(brand_text, text="BITCOIN K", bg=self.SIDEBAR, fg=self.TEXT,
-                 font=("Helvetica Neue", 17, "bold")).pack(anchor="w")
+                 font=(UI_FONT, 17, "bold")).pack(anchor="w")
         tk.Label(brand_text, text="CORE WALLET", bg=self.SIDEBAR, fg=self.CYAN,
-                 font=("Menlo", 9, "bold")).pack(anchor="w", pady=(2, 0))
+                 font=(MONO_FONT, 9, "bold")).pack(anchor="w", pady=(2, 0))
 
         tk.Label(sidebar, text="WALLET CONTROL", bg=self.SIDEBAR, fg=self.FAINT,
-                 font=("Menlo", 9, "bold")).pack(anchor="w", padx=25, pady=(0, 10))
+                 font=(MONO_FONT, 9, "bold")).pack(anchor="w", padx=25, pady=(0, 10))
         self.open_button = self._button(sidebar, "OPEN WALLET", self.open_wallet, primary=True)
         self.open_button.pack(fill="x", padx=22, pady=(0, 9))
         self._button(sidebar, "CREATE NEW", self.create_wallet).pack(fill="x", padx=22, pady=4)
@@ -312,12 +319,12 @@ class WalletApp(tk.Tk):
         self.lock_button.pack(fill="x", padx=22, pady=4)
 
         tk.Label(sidebar, text="MY WALLETS", bg=self.SIDEBAR, fg=self.FAINT,
-                 font=("Menlo", 9, "bold")).pack(anchor="w", padx=25, pady=(18, 8))
+                 font=(MONO_FONT, 9, "bold")).pack(anchor="w", padx=25, pady=(18, 8))
         self.wallet_list = tk.Listbox(
             sidebar, height=5, bg="#0a1320", fg=self.MUTED,
             selectbackground="#12354a", selectforeground=self.TEXT,
             activestyle="none", relief="flat", bd=0, highlightthickness=1,
-            highlightbackground=self.BORDER, font=("Helvetica Neue", 10, "bold"),
+            highlightbackground=self.BORDER, font=(UI_FONT, 10, "bold"),
             exportselection=False,
         )
         self.wallet_list.pack(fill="x", padx=22)
@@ -332,13 +339,13 @@ class WalletApp(tk.Tk):
         protocol = tk.Frame(sidebar, bg=self.SIDEBAR)
         protocol.pack(side="bottom", fill="x", padx=24, pady=24)
         tk.Label(protocol, text="PROTOCOL", bg=self.SIDEBAR, fg=self.FAINT,
-                 font=("Menlo", 9, "bold")).pack(anchor="w")
+                 font=(MONO_FONT, 9, "bold")).pack(anchor="w")
         tk.Label(protocol, text="BTCK MAINNET", bg=self.SIDEBAR, fg=self.TEXT,
-                 font=("Menlo", 10, "bold")).pack(anchor="w", pady=(7, 2))
+                 font=(MONO_FONT, 10, "bold")).pack(anchor="w", pady=(7, 2))
         tk.Label(protocol, text="LOCAL KEY CUSTODY", bg=self.SIDEBAR, fg=self.MUTED,
-                 font=("Menlo", 9)).pack(anchor="w")
+                 font=(MONO_FONT, 9)).pack(anchor="w")
         tk.Label(protocol, text=f"CLIENT {btck_cli.WALLET_VERSION}", bg=self.SIDEBAR, fg=self.FAINT,
-                 font=("Menlo", 8)).pack(anchor="w", pady=(12, 0))
+                 font=(MONO_FONT, 8)).pack(anchor="w", pady=(12, 0))
 
         content = tk.Frame(shell, bg=self.BG)
         content.pack(side="left", fill="both", expand=True, padx=32, pady=24)
@@ -348,16 +355,16 @@ class WalletApp(tk.Tk):
         heading = tk.Frame(header, bg=self.BG)
         heading.pack(side="left")
         tk.Label(heading, text="ASSET CONSOLE", bg=self.BG, fg=self.TEXT,
-                 font=("Helvetica Neue", 24, "bold")).pack(anchor="w")
+                 font=(UI_FONT, 24, "bold")).pack(anchor="w")
         tk.Label(heading, text="Machine-native value. Human-controlled keys.", bg=self.BG,
-                 fg=self.MUTED, font=("Helvetica Neue", 11)).pack(anchor="w", pady=(3, 0))
+                 fg=self.MUTED, font=(UI_FONT, 11)).pack(anchor="w", pady=(3, 0))
         status_pill = tk.Frame(header, bg="#0c2430", highlightthickness=1,
                                highlightbackground="#155164")
         status_pill.pack(side="right", pady=7)
         tk.Label(status_pill, text="●", bg="#0c2430", fg=self.CYAN,
-                 font=("Helvetica Neue", 10)).pack(side="left", padx=(12, 5), pady=7)
+                 font=(UI_FONT, 10)).pack(side="left", padx=(12, 5), pady=7)
         self.network_label = tk.Label(status_pill, text="MAINNET / LOCKED", bg="#0c2430",
-                                      fg="#a8eaf0", font=("Menlo", 9, "bold"))
+                                      fg="#a8eaf0", font=(MONO_FONT, 9, "bold"))
         self.network_label.pack(side="left", padx=(0, 12), pady=7)
 
         hero_border, hero = self._panel(content, bg="#0a1726")
@@ -367,21 +374,21 @@ class WalletApp(tk.Tk):
         balance_area = tk.Frame(hero, bg="#0a1726")
         balance_area.pack(fill="x", padx=28, pady=(23, 18))
         tk.Label(balance_area, text="AVAILABLE BALANCE", bg="#0a1726", fg=self.MUTED,
-                 font=("Menlo", 9, "bold")).pack(anchor="w")
+                 font=(MONO_FONT, 9, "bold")).pack(anchor="w")
         balance_value_row = tk.Frame(balance_area, bg="#0a1726")
         balance_value_row.pack(fill="x", pady=(5, 0))
         self.balance_label = tk.Label(balance_value_row, text="0.00000000", bg="#0a1726", fg=self.TEXT,
-                                      font=("Helvetica Neue", 40, "bold"))
+                                      font=(UI_FONT, 40, "bold"))
         self.balance_label.pack(side="left", anchor="w")
         self.balance_unit_label = tk.Label(balance_value_row, text="BTC-K", bg="#0a1726", fg=self.CYAN,
-                                           font=("Menlo", 13, "bold"))
+                                           font=(MONO_FONT, 13, "bold"))
         self.balance_unit_label.pack(side="left", anchor="s", padx=(12, 0), pady=(0, 9))
         self.unit_button = self._button(balance_value_row, "SatK", self.toggle_balance_unit, compact=True)
         self.unit_button.pack(side="left", anchor="s", padx=(12, 0), pady=(0, 5))
         self.balance_detail_label = tk.Label(
             balance_area,
             text="TRACKED 0.00000000 BTC-K  •  LOCKED / IMMATURE 0.00000000 BTC-K",
-            bg="#0a1726", fg=self.MUTED, font=("Menlo", 9), anchor="w",
+            bg="#0a1726", fg=self.MUTED, font=(MONO_FONT, 9), anchor="w",
         )
         self.balance_detail_label.pack(fill="x", pady=(7, 0))
 
@@ -389,11 +396,11 @@ class WalletApp(tk.Tk):
         address_row = tk.Frame(hero, bg="#0d1b2b")
         address_row.pack(fill="x", padx=28, pady=(0, 18))
         tk.Label(address_row, text="STEALTH ADDRESS", bg="#0d1b2b", fg=self.FAINT,
-                 font=("Menlo", 8, "bold")).pack(anchor="w", padx=14, pady=(10, 3))
+                 font=(MONO_FONT, 8, "bold")).pack(anchor="w", padx=14, pady=(10, 3))
         address_line = tk.Frame(address_row, bg="#0d1b2b")
         address_line.pack(fill="x", padx=14, pady=(0, 10))
         tk.Label(address_line, textvariable=self.address_var, bg="#0d1b2b", fg="#a9bdd0",
-                 font=("Menlo", 10), anchor="w").pack(side="left", fill="x", expand=True)
+                 font=(MONO_FONT, 10), anchor="w").pack(side="left", fill="x", expand=True)
         self.copy_button = self._button(address_line, "COPY", self.copy_address, compact=True)
         self.copy_button.pack(side="right", padx=(12, 0))
 
@@ -411,9 +418,9 @@ class WalletApp(tk.Tk):
         sync_header = tk.Frame(sync_panel, bg="#091522")
         sync_header.pack(fill="x", padx=16, pady=(11, 6))
         tk.Label(sync_header, text="LEDGER SYNCHRONIZATION", bg="#091522", fg=self.TEXT,
-                 font=("Menlo", 9, "bold")).pack(side="left")
+                 font=(MONO_FONT, 9, "bold")).pack(side="left")
         self.sync_state_label = tk.Label(sync_header, text="LOCKED", bg="#091522", fg=self.FAINT,
-                                         font=("Menlo", 9, "bold"))
+                                         font=(MONO_FONT, 9, "bold"))
         self.sync_state_label.pack(side="right")
         self.sync_progress_canvas = tk.Canvas(
             sync_panel, height=8, bg="#091522", bd=0, highlightthickness=0,
@@ -422,7 +429,7 @@ class WalletApp(tk.Tk):
         self.sync_progress_canvas.bind("<Configure>", lambda _event: self._draw_sync_progress())
         self.sync_detail_label = tk.Label(
             sync_panel, text="Unlock a wallet to synchronize its ledger history.",
-            bg="#091522", fg=self.MUTED, anchor="w", font=("Menlo", 9), width=1,
+            bg="#091522", fg=self.MUTED, anchor="w", font=(MONO_FONT, 9), width=1,
         )
         self.sync_detail_label.pack(fill="x", padx=16, pady=(6, 11))
 
@@ -434,31 +441,31 @@ class WalletApp(tk.Tk):
             border.pack(side="left", fill="x", expand=True, padx=(0 if index == 0 else 7, 0))
             cells.append(body)
         tk.Label(cells[0], text="LEDGER HEIGHT", bg=self.PANEL, fg=self.FAINT,
-                 font=("Menlo", 8, "bold")).pack(anchor="w", padx=15, pady=(12, 3))
+                 font=(MONO_FONT, 8, "bold")).pack(anchor="w", padx=15, pady=(12, 3))
         self.height_label = tk.Label(cells[0], text="NOT SYNCED", bg=self.PANEL, fg=self.TEXT,
-                                     font=("Menlo", 11, "bold"))
+                                     font=(MONO_FONT, 11, "bold"))
         self.height_label.pack(anchor="w", padx=15, pady=(0, 12))
         tk.Label(cells[1], text="KEY STATE", bg=self.PANEL, fg=self.FAINT,
-                 font=("Menlo", 8, "bold")).pack(anchor="w", padx=15, pady=(12, 3))
+                 font=(MONO_FONT, 8, "bold")).pack(anchor="w", padx=15, pady=(12, 3))
         self.key_state_label = tk.Label(cells[1], text="ENCRYPTED / LOCKED", bg=self.PANEL,
-                                        fg=self.GOLD, font=("Menlo", 11, "bold"))
+                                        fg=self.GOLD, font=(MONO_FONT, 11, "bold"))
         self.key_state_label.pack(anchor="w", padx=15, pady=(0, 12))
         tk.Label(cells[2], text="SYNC PRIVACY", bg=self.PANEL, fg=self.FAINT,
-                 font=("Menlo", 8, "bold")).pack(anchor="w", padx=15, pady=(12, 3))
+                 font=(MONO_FONT, 8, "bold")).pack(anchor="w", padx=15, pady=(12, 3))
         tk.Label(cells[2], text="ADDRESS-NEUTRAL", bg=self.PANEL, fg=self.CYAN,
-                 font=("Menlo", 11, "bold")).pack(anchor="w", padx=15, pady=(0, 12))
+                 font=(MONO_FONT, 11, "bold")).pack(anchor="w", padx=15, pady=(0, 12))
 
         activity_border, activity = self._panel(content, bg=self.PANEL)
         activity_border.pack(fill="both", expand=True)
         activity_header = tk.Frame(activity, bg=self.PANEL)
         activity_header.pack(fill="x", padx=18, pady=(14, 3))
         tk.Label(activity_header, text="PROTOCOL ACTIVITY", bg=self.PANEL, fg=self.TEXT,
-                 font=("Helvetica Neue", 13, "bold")).pack(side="left")
+                 font=(UI_FONT, 13, "bold")).pack(side="left")
         tk.Label(activity_header, text="LOCAL EVENT LOG", bg=self.PANEL, fg=self.FAINT,
-                 font=("Menlo", 8)).pack(side="right")
+                 font=(MONO_FONT, 8)).pack(side="right")
         self.activity = tk.Text(
             activity, state="disabled", wrap="word", bg=self.PANEL, fg=self.MUTED,
-            relief="flat", font=("Menlo", 10), height=7, padx=2, pady=5,
+            relief="flat", font=(MONO_FONT, 10), height=7, padx=2, pady=5,
             selectbackground="#18384d", insertbackground=self.CYAN,
             bd=0, highlightthickness=0,
         )
@@ -467,9 +474,9 @@ class WalletApp(tk.Tk):
         self.status_var = tk.StringVar(value="Keys remain encrypted on this Mac. No browser wallet is used.")
         footer = tk.Frame(content, bg=self.BG)
         footer.pack(fill="x", pady=(11, 0))
-        tk.Label(footer, text="●", bg=self.BG, fg=self.GOLD, font=("Helvetica Neue", 9)).pack(side="left")
+        tk.Label(footer, text="●", bg=self.BG, fg=self.GOLD, font=(UI_FONT, 9)).pack(side="left")
         tk.Label(footer, textvariable=self.status_var, bg=self.BG, fg=self.MUTED,
-                 font=("Helvetica Neue", 10)).pack(side="left", padx=(7, 0))
+                 font=(UI_FONT, 10)).pack(side="left", padx=(7, 0))
         self._update_controls()
 
     def _log(self, message: str):
@@ -796,7 +803,7 @@ class WalletApp(tk.Tk):
             path,
             btck_cli._encrypted_recoverable_wallet(wallet, password, word_count=len(mnemonic.split())),
         )
-        path.chmod(0o600)
+        restrict_private_path(path)
         wallet._source_path = path
         wallet._unlock_password = password
         if self.wallet and self.wallet is not wallet:

@@ -1,4 +1,5 @@
 """Shared public ledger pages only. Never accepts wallet objects or keys."""
+from contextlib import contextmanager
 import hashlib
 import json
 import os
@@ -16,8 +17,14 @@ class PublicLedgerCache:
             conn.execute('CREATE TABLE IF NOT EXISTS pages(bucket TEXT,start INTEGER,lim INTEGER,anchor TEXT,payload TEXT,PRIMARY KEY(bucket,start,lim,anchor))')
         os.chmod(self.path,0o600)
 
+    @contextmanager
     def _connect(self):
-        return sqlite3.connect(self.path,timeout=10)
+        connection = sqlite3.connect(self.path, timeout=10)
+        try:
+            with connection:
+                yield connection
+        finally:
+            connection.close()
 
     def clear(self):
         with self._connect() as conn:

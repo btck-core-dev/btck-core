@@ -1,6 +1,7 @@
 """Tests for the non-secret multi-wallet application registry."""
 
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -23,8 +24,9 @@ class TestWalletRegistry(unittest.TestCase):
             second = registry.add(second_path, "Mining")
             self.assertNotEqual(first["id"], second["id"])
             self.assertEqual(len(registry.records), 2)
-            self.assertEqual(registry_path.stat().st_mode & 0o777, 0o600)
-            self.assertEqual(registry_path.parent.stat().st_mode & 0o777, 0o700)
+            if os.name != "nt":
+                self.assertEqual(registry_path.stat().st_mode & 0o777, 0o600)
+                self.assertEqual(registry_path.parent.stat().st_mode & 0o777, 0o700)
 
             registry.rename(second["id"], "Mining Vault")
             reloaded = WalletRegistry(registry_path)

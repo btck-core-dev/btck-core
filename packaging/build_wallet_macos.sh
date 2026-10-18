@@ -106,6 +106,7 @@ else
   install -m 0644 "$PROJECT_DIR/tools/btck_cli.py" "$ZIPAPP_ROOT/__main__.py"
   install -m 0644 "$PROJECT_DIR/src/privacy/__init__.py" "$ZIPAPP_ROOT/privacy/__init__.py"
   install -m 0644 "$PROJECT_DIR/src/privacy/wallet_engine.py" "$ZIPAPP_ROOT/privacy/wallet_engine.py"
+  install -m 0644 "$PROJECT_DIR/src/privacy/private_files.py" "$ZIPAPP_ROOT/privacy/private_files.py"
   install -m 0644 "$PROJECT_DIR/src/privacy/wallet_crypto.py" "$ZIPAPP_ROOT/privacy/wallet_crypto.py"
   install -m 0644 "$PROJECT_DIR/src/privacy/stealth_address.py" "$ZIPAPP_ROOT/privacy/stealth_address.py"
   install -m 0644 "$PROJECT_DIR/src/privacy/bip39.py" "$ZIPAPP_ROOT/privacy/bip39.py"

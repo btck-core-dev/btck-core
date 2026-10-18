@@ -107,7 +107,8 @@ class TestWalletEncryption(unittest.TestCase):
             cache_path = Path(str(source) + ".sync.json")
             encoded = cache_path.read_text(encoding="utf-8")
             self.assertNotIn("ab" * 32, encoded)
-            self.assertEqual(cache_path.stat().st_mode & 0o777, 0o600)
+            if os.name != "nt":
+                self.assertEqual(cache_path.stat().st_mode & 0o777, 0o600)
             envelope = json.loads(encoded)
             self.assertEqual(envelope["public"]["format"], "btck-wallet-sync-cache-v2")
 
@@ -212,8 +213,8 @@ class TestWalletEncryption(unittest.TestCase):
             eco_path = root / "eco.json"
             password_path.write_text(password + "\n", encoding="utf-8")
             mnemonic_path.write_text(mnemonic + "\n", encoding="utf-8")
-            password_path.chmod(0o600)
-            mnemonic_path.chmod(0o600)
+            btck_cli.restrict_private_path(password_path)
+            btck_cli.restrict_private_path(mnemonic_path)
             common = {"password_file": str(password_path), "allow_legacy_plaintext": False}
 
             create_args = SimpleNamespace(
@@ -255,7 +256,7 @@ class TestWalletEncryption(unittest.TestCase):
             password_path = root / "password.txt"
             output_dir = root / "suite"
             password_path.write_text(password + "\n", encoding="utf-8")
-            password_path.chmod(0o600)
+            btck_cli.restrict_private_path(password_path)
             captured = []
             args = SimpleNamespace(
                 password_file=str(password_path), allow_legacy_plaintext=False,
@@ -276,7 +277,8 @@ class TestWalletEncryption(unittest.TestCase):
             )
             r_ephem, p_onetime = (bytes.fromhex(item) for item in public["eco_fund_output"])
             self.assertTrue(eco_wallet.keypair.is_my_stealth_output(r_ephem, p_onetime))
-            self.assertEqual(oct((output_dir / "personal_wallet.json").stat().st_mode & 0o777), "0o600")
+            if os.name != "nt":
+                self.assertEqual(oct((output_dir / "personal_wallet.json").stat().st_mode & 0o777), "0o600")
 
     def test_mainnet_wallet_suite_resumes_after_first_wallet_confirmation_abort(self):
         mnemonic = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
@@ -285,9 +287,10 @@ class TestWalletEncryption(unittest.TestCase):
             root = Path(root)
             output_dir = root / "suite"
             output_dir.mkdir(mode=0o700)
+            btck_cli.restrict_private_path(output_dir, directory=True)
             password_path = root / "password.txt"
             password_path.write_text(password + "\n", encoding="utf-8")
-            password_path.chmod(0o600)
+            btck_cli.restrict_private_path(password_path)
             personal = btck_cli._wallet_from_mnemonic(
                 mnemonic, "BTC-K Mainnet Personal / Mining",
             )
@@ -312,6 +315,7 @@ class TestWalletEncryption(unittest.TestCase):
             public = json.loads((output_dir / "mainnet_wallet_public.json").read_text(encoding="utf-8"))
             self.assertEqual(public["personal_address"], personal.address)
 
+    @unittest.skipIf(os.name == "nt", "Linux production pool permissions; not a desktop wallet component")
     def test_pool_treasury_requires_encryption_password_and_matching_address(self):
         wallet = StealthWallet.generate("pool")
         password = "pool encrypted wallet password"
@@ -326,7 +330,7 @@ class TestWalletEncryption(unittest.TestCase):
                 json.dumps(wallet.export_to_dict(include_private=True)), encoding="utf-8",
             )
             wallet_path.chmod(0o600)
-            password_path.chmod(0o600)
+            btck_cli.restrict_private_path(password_path)
             plaintext_path.chmod(0o600)
 
             loaded = load_pool_treasury_wallet(
@@ -462,7 +466,7 @@ class TestOfflineWalletFlow(unittest.TestCase):
             signed_path = root / "signed.json"
             wallet_path.write_text(json.dumps(sender.export_encrypted(password)), encoding="utf-8")
             password_path.write_text(password + "\n", encoding="utf-8")
-            password_path.chmod(0o600)
+            btck_cli.restrict_private_path(password_path)
             common = {"password_file": str(password_path), "allow_legacy_plaintext": False}
             btck_cli.cmd_export_watch(SimpleNamespace(**common, wallet=str(wallet_path), out=str(watch_path)))
 
