@@ -91,7 +91,7 @@
     "tests/test_service_verifier.py": "13a0abc96796298dfd5a065cb96584379b5833f01e87b50184694bbfea94a6a2",
     "tests/test_windows_mining_lease.py": "90e603b1797abe19ea313abb4f25e485803e56e688be3337232e93c14ed5a640",
     "tests/test_worker_enrollment.py": "1932335d6be2642b9364c4b6fd0087a1c15e55590ff3cd5d3889b5fa1322b6b0",
-    "web/l2_downloads.html": "833b87e834995859cbf8df42b4eabb91b2995e8473358efe4853254031ea8bd6",
+    "web/l2_downloads.html": "4bb285788831369de314088e7016856a8229097509f5124a54f3140b24c0ea10",
     "web/l2_pilot.html": "35669d314d1466f8dd923e2ae9c7ddcf639296fa8db9b0011ddca04bd9cdeac9"
   },
   "format": "btck-l2-source-preview-v1",
