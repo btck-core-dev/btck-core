@@ -22,6 +22,26 @@ BTC-K-Compute-Connect.exe --node-config C:\private\node.json
 
 Use Windows paths for your local miner/model executables, logs, lease and status files; set miner_process_name to SRBMiner-MULTI.exe. Launch as administrator when the miner requires elevated access. This starts the configured miner/model if absent, then accepts work. Diagnostics go to compute-node.log beside your private config. --check validates configuration without starting processes. The Linux real-GPU test does not qualify Windows GPU inference.
 
+For an existing Windows scheduled mining task, set `miner_task` to its exact task name instead of supplying a second miner command. The node adopts an existing miner first; it starts the task only when the miner is absent. A miner's own restart mechanism and its external supervisor must also cooperate to prevent duplicate mining processes. Multiple matching miner processes close admission rather than selecting an arbitrary process.
+
+For automatic startup, open an elevated PowerShell in the Windows package directory:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File deploy\install_compute_node_windows.ps1 -ConfigPath C:\private\node.json -ExecutablePath .\BTC-K-Compute-Connect.exe -Start
+```
+
+This installs the standalone executable with the current administrator's identity, highest privileges and automatic restart. The Compute Node executable does not require a separate Python installation. Your chosen local model runtime still needs its own dependencies. The installer refuses to overwrite an existing installation.
+
+The source package also supports an existing Python installation:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File deploy\install_compute_node_windows.ps1 -ConfigPath C:\private\node.json -PythonPath "C:\Program Files\Python310\python.exe" -Start
+```
+
+The source option requires Python 3.10+ and copies the node into a protected directory. The selected local runtime may be launched through `wsl.exe` using an explicit argument list; prepare the WSL distribution, runtime and weights first. Neither this installer nor the executable downloads models or installs vLLM. Service startup verification does not replace a real computer reboot test.
+
+For a runtime whose startup kernels require exclusive GPU time, optional `model_startup_pause_marker` pauses the identified miner after that exact message appears in the new private model log. This requires an explicit local `model_stop_command`, a startup timeout of30–900 seconds, and a pause of30–180 seconds (`model_startup_timeout`, `model_startup_pause_seconds`). A ready model remains resident and mining resumes. A failed warmup stops the selected model before releasing the mining lease. A failed-startup marker beside the configuration prevents repeated automatic GPU launches; inspect the private log, correct the runtime, then remove that marker to retry. This startup protection needs its own hardware validation and does not qualify a runtime for long contexts.
+
 ## Invitation quick start
 
 Download from https://compute.bitcoin-k.com/downloads/. Open Compute Connect and import the operator-issued private Worker invitation JSON; the software redeems it over HTTPS and preserves a durable retry identity. Start or select your local model/Pearl configuration, choose GPUs, and connect. A Worker invitation does not grant customer access. Local model IDs are mapped to approved network model IDs; arbitrary models are not automatically added to the shared catalog.
@@ -53,3 +73,5 @@ The authoritative policy is tokenomics_v2_canonical.md sections8.1 and8.5, toget
 
 
 Reference measurements are matched against the selected runtime version/code, model metadata and GPU configuration. A reference-machine result is shown as such; it does not mark another computer as already qualified. Fresh free-memory checks and per-GPU reserves still apply. If a measured profile supplies a memory observation, the estimate includes5% extra headroom plus the per-GPU reserve and preserves its validated GPU-memory fraction. Manual changes to cache mode do not inherit a different configuration's qualification. The GUI shows elapsed waiting time while a managed local model initializes.
+
+Gateway operators can set `max_concurrent_requests` to an integer from1 to32 in the private gateway configuration. The default remains1. A fleet with multiple workers needs enough gateway slots to serve those workers simultaneously; each worker still accepts one request at a time. Reservations and settlement remain atomic, and uncertain tasks keep their existing holds. Increasing this limit does not increase a worker's model capacity.

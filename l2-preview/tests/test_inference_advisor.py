@@ -124,6 +124,19 @@ class AdvisorTests(unittest.TestCase):
             large=estimate(model,self.cards(),16384,'auto',1024,runtime,'enabled')
             self.assertTrue(large['launch_compatible']);self.assertTrue(large['prefix_caching'])
 
+    def test_dual3090_dense27b_prefix_prefill_constraint_does_not_claim_gpu_qualification(self):
+        from worker.qualified_profiles import ENGINE_CONSTRAINTS
+        constraint=next(c for c in ENGINE_CONSTRAINTS if c['gpu_count']==2)
+        model={**self.model(),'metadata_sha256':constraint['model_metadata_sha256'],
+               'attention_heads':24,'model_type':'qwen3_5_text','kv_heads':4}
+        cards=[dict(index=i,total_mib=24576,free_mib=21882,name='NVIDIA GeForce RTX 3090',temperature_c=65) for i in range(2)]
+        small=estimate(model,cards,16384,'auto',512,constraint['runtime'],prefix_mode='enabled')
+        self.assertFalse(small['launch_compatible'])
+        self.assertTrue(any('784' in reason for reason in small['reasons']))
+        compatible=estimate(model,cards,16384,'auto',1024,constraint['runtime'],prefix_mode='enabled')
+        self.assertTrue(compatible['launch_compatible'])
+        self.assertNotIn('reference_qualification',compatible)
+
     def test_reference_memory_keeps_headroom_and_does_not_override_manual_cache_choice(self):
         runtime={'engine':'vllm','version':'fixture','code_sha256':'a'*64}
         model={**self.model(),'metadata_sha256':'b'*64}

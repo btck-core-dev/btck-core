@@ -7,7 +7,8 @@ import zipfile
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
 FILES=['LICENSE','docs/L2_COMPUTE_CONNECT_QUICKSTART.md',
-       'scripts/l2_compute_node.py','deploy/install_compute_node.py','docs/examples/compute-node.example.json','deploy/btck-compute-node.service',
+       'scripts/l2_compute_node.py','deploy/install_compute_node.py','deploy/install_compute_node_windows.ps1',
+       'docs/examples/compute-node.example.json','deploy/btck-compute-node.service',
        'src/worker/mining_guard.py','src/worker/mining_lease.py','src/worker/compute_node.py',
        'src/worker/inference_advisor.py','src/worker/advisor_dialog.py','src/worker/service_info.py',
        'src/worker/qualified_profiles.py',

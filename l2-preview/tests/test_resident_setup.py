@@ -37,6 +37,11 @@ class TestResidentSetup(unittest.TestCase):
         worker=ResidentWorker({k:v for k,v in BASE.items() if k!='miner_process_name'})
         with patch('worker.resident_worker.os.name','nt'),patch('worker.resident_worker.windows_process_birth',return_value='creation'),patch('worker.resident_worker.os.kill') as kill:
             self.assertEqual(worker._miner_birth(1234),'creation');kill.assert_not_called()
+    def test_windows_session_zero_resolves_only_gpu_reported_pids(self):
+        raw=b'9344, [Insufficient Permissions]\n9344, [Insufficient Permissions]\n20, [Insufficient Permissions]\n'
+        with patch('worker.resident_worker.os.name','nt'),patch('worker.resident_worker.subprocess.check_output',return_value=raw),patch('worker.resident_worker.windows_process_image',side_effect=[r'C:\miners\SRBMiner-MULTI.exe',None]) as images:
+            self.assertEqual(gpu_processes(),[{'pid':9344,'name':'SRBMiner-MULTI.exe'},{'pid':20,'name':'[Insufficient Permissions]'}])
+            self.assertEqual([c.args[0] for c in images.call_args_list],[9344,20])
     def test_setup_produces_private_config_without_starting_any_process_or_overwriting(self):
         with tempfile.TemporaryDirectory() as td:
             path=Path(td)/'worker.json'

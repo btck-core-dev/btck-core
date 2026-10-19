@@ -22,6 +22,36 @@ class Provider:
         return {'text':'一段真实用量格式的测试文本','usage':{'prompt_tokens':7,'completion_tokens':3,'total_tokens':10},'model':self.model,'provider_request_id':str(self.calls)}
 
 class TestInferencePilot(unittest.TestCase):
+    def test_two_inferences_overlap_with_bounded_capacity_and_atomic_settlement(self):
+        self.pilot.close();self.pilot=InferencePilot(self.path,self.provider,max_concurrent_requests=2)
+        entered=threading.Barrier(3);release=threading.Event();original=self.provider.complete
+        def blocked(body):
+            entered.wait(timeout=5)
+            if not release.wait(5):raise TimeoutError('Test did not release provider')
+            return original(body)
+        self.provider.complete=blocked
+        results=[];errors=[]
+        def run(key):
+            try:results.append(self.pilot.complete('agent',key,self.request)[0])
+            except Exception as error:errors.append(error)
+        threads=[threading.Thread(target=run,args=(key,)) for key in ('parallel-a','parallel-b')]
+        try:
+            for thread in threads:thread.start()
+            entered.wait(timeout=5)
+            self.assertEqual(self.pilot.balance('agent')['held_satk'],2_000_000)
+            with self.assertRaises(PilotError) as raised:self.pilot.complete('agent','third',self.request)
+            self.assertEqual(raised.exception.code,'provider_busy')
+            self.assertEqual(self.pilot.balance('agent')['held_satk'],2_000_000)
+            with self.assertRaises(PilotError):self.pilot.complete('agent','parallel-a',self.request)
+        finally:
+            release.set()
+            for thread in threads:thread.join(6)
+        self.assertFalse(errors);self.assertEqual(len(results),2);self.assertEqual(self.provider.calls,2)
+        self.assertEqual(self.pilot.balance('agent')['available_satk'],5_000_000-3840)
+        self.assertEqual(self.pilot.balance('agent')['held_satk'],0)
+        for key in ('parallel-a','parallel-b'):self.assertTrue(self.pilot.complete('agent',key,self.request)[1])
+        self.assertEqual(self.provider.calls,2);self.assertTrue(self.pilot.conservation()['conserved'])
+
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory();self.addCleanup(self.tmp.cleanup)
         self.provider=Provider();self.path=Path(self.tmp.name)/'live';self.pilot=InferencePilot(self.path,self.provider)

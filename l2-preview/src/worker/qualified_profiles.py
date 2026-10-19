@@ -38,4 +38,13 @@ ENGINE_CONSTRAINTS = [{'model_metadata_sha256': '7458a032290d8eadfffe928f93718c1
   'per_gpu_mib': 16376,
   'gpu_count': 4,
   'kv_cache_dtype': 'auto',
-  'minimum_prefix_prefill_tokens': 528}]
+  'minimum_prefix_prefill_tokens': 528},
+ {'model_metadata_sha256': '613697a85cffd3e5880202d8018ed1411815e8f590d0ab4ebe762951a7e4e627',
+  'runtime': {'engine': 'vllm',
+              'version': '0.20.0',
+              'code_sha256': 'ee90ff080cfa5eb26e54ec6046de9308f03e6007dcc86ec608f5e22fccf1bf3d'},
+  'gpu_name': 'NVIDIA GeForce RTX 3090',
+  'per_gpu_mib': 24576,
+  'gpu_count': 2,
+  'kv_cache_dtype': 'auto',
+  'minimum_prefix_prefill_tokens': 784}]

@@ -18,7 +18,8 @@ def main():
     credentials=[w['token'] for w in config['workers'].values()]+[a['token'] for a in config['agents'].values()]
     if len(credentials)!=len(set(credentials)):raise ValueError('Each Agent and Worker requires a distinct credential')
     fleet=ResidentFleet(config['models'],config['workers'],task_timeout=config.get('task_timeout',120))
-    pilot=InferencePilot(config['data_dir'],fleet,reference_price_usd=config.get('reference_price_usd','0.05'))
+    pilot=InferencePilot(config['data_dir'],fleet,reference_price_usd=config.get('reference_price_usd','0.05'),
+                         max_concurrent_requests=config.get('max_concurrent_requests',1))
     try:
         for agent,info in config['agents'].items():
             with pilot.db() as db:present=db.execute('SELECT 1 FROM agents WHERE agent=?',(agent,)).fetchone()

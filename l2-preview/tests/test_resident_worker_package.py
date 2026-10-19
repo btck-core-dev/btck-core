@@ -17,6 +17,7 @@ class TestResidentPackage(unittest.TestCase):
                 subprocess.run([sys.executable,str(ROOT/'scripts/build_resident_worker.py'),'--output',str(archive)],check=True,capture_output=True)
             self.assertEqual(one.read_bytes(),two.read_bytes())
             with zipfile.ZipFile(one) as z:
+                self.assertIn('deploy/install_compute_node_windows.ps1', z.namelist())
                 manifest=json.loads(z.read('MANIFEST.json'))
                 for name,digest in manifest['files'].items():
                     self.assertEqual(hashlib.sha256(z.read(name)).hexdigest(),digest)

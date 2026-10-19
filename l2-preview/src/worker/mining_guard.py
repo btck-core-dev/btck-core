@@ -12,6 +12,34 @@ import threading
 import time
 
 
+def enable_debug_privilege():
+    """Enable an existing administrator right for a SYSTEM-owned miner.
+
+    This cannot grant a privilege absent from the caller's Windows token.
+    """
+    if os.name!='nt':return False
+    from ctypes import wintypes as w
+    class Luid(ctypes.Structure):
+        _fields_=[('low',w.DWORD),('high',w.LONG)]
+    class Privileges(ctypes.Structure):
+        _fields_=[('count',w.DWORD),('luid',Luid),('attributes',w.DWORD)]
+    kernel=ctypes.WinDLL('kernel32',use_last_error=True)
+    api=ctypes.WinDLL('advapi32',use_last_error=True)
+    kernel.GetCurrentProcess.restype=w.HANDLE
+    kernel.CloseHandle.argtypes=[w.HANDLE]
+    api.OpenProcessToken.argtypes=[w.HANDLE,w.DWORD,ctypes.POINTER(w.HANDLE)]
+    api.LookupPrivilegeValueW.argtypes=[w.LPCWSTR,w.LPCWSTR,ctypes.POINTER(Luid)]
+    api.AdjustTokenPrivileges.argtypes=[w.HANDLE,w.BOOL,ctypes.POINTER(Privileges),w.DWORD,w.LPVOID,w.LPVOID]
+    token=w.HANDLE()
+    if not api.OpenProcessToken(kernel.GetCurrentProcess(),0x20|0x08,ctypes.byref(token)):return False
+    try:
+        value=Privileges();value.count=1;value.attributes=2
+        if not api.LookupPrivilegeValueW(None,'SeDebugPrivilege',ctypes.byref(value.luid)):return False
+        ctypes.set_last_error(0)
+        return bool(api.AdjustTokenPrivileges(token,False,ctypes.byref(value),0,None,None) and ctypes.get_last_error()==0)
+    finally:kernel.CloseHandle(token)
+
+
 def process_birth(pid):
     if type(pid) is not int or pid <= 1: return None
     if sys.platform.startswith('linux'):
@@ -28,6 +56,7 @@ def process_birth(pid):
         try:
             times=[w.FILETIME() for _ in range(4)]
             if not kernel.GetProcessTimes(handle,*[ctypes.byref(x) for x in times]):return None
+            if times[1].dwHighDateTime or times[1].dwLowDateTime:return None
             return str((times[0].dwHighDateTime<<32)|times[0].dwLowDateTime)
         finally:kernel.CloseHandle(handle)
     return None
@@ -37,6 +66,7 @@ class NativeMiner:
     def __init__(self,pid,birth,name,*,recover=False):
         self.pid,self.birth,self.name=pid,str(birth),name
         self.handle=None;self.owned=False
+        if os.name=='nt':enable_debug_privilege()
         if process_birth(pid)!=self.birth:raise ValueError('Miner identity changed')
         if sys.platform.startswith('linux'):
             raw=(Path('/proc')/str(pid)/'cmdline').read_bytes().split(b'\0')[0].decode()
@@ -93,13 +123,26 @@ class NativeMiner:
             self.handle=None
 
 
+def replace_file(temporary,path):
+    # Windows readers and antivirus scanners can briefly deny replacement.
+    # Keep the old complete state until the new file can be swapped in.
+    deadline=time.monotonic()+1
+    while True:
+        try:
+            os.replace(temporary,path)
+            return
+        except PermissionError:
+            if os.name!='nt' or time.monotonic()>=deadline:raise
+            time.sleep(.01)
+
+
 def write_state(path,data):
     temporary=path.with_name(path.name+'.'+data['lease_id']+'.tmp')
     fd=os.open(temporary,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o644)
     try:
         with os.fdopen(fd,'w') as handle:
             json.dump(data,handle);handle.flush();os.fsync(handle.fileno())
-        os.replace(temporary,path)
+        replace_file(temporary,path)
     finally:
         if temporary.exists():temporary.unlink()
 

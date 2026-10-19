@@ -163,8 +163,12 @@ class ResidentFleet:
         if worker['busy'] or worker.get('blocked_until',0)>self.clock():return
         self._filter_verified(worker)
         for model in sorted(worker.get('reported',set()) & self.verifiers.keys()):
-            if worker.get('verified',{}).get(model,0)>self.clock():continue
-            policy=self.verifiers[model];check=policy.choose();request=check['request']
+            policy=self.verifiers[model]
+            # Renew while the previous result is still valid. Leave enough time
+            # for an existing customer task and the verification to finish.
+            renewal_margin=min(policy.interval/2,self.timeout+policy.timeout+5)
+            if worker.get('verified',{}).get(model,0)>self.clock()+renewal_margin:continue
+            check=policy.choose();request=check['request']
             task_id=uuid.uuid4().hex
             task={'id':task_id,'worker':name,'session':worker['session'],'challenge':secrets.token_hex(32),
                   'request':request,'request_hash':hashlib.sha256(canonical(request)).hexdigest(),

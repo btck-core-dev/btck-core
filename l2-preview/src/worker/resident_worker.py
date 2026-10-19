@@ -52,6 +52,23 @@ def windows_process_birth(pid):
         kernel.CloseHandle(handle)
 
 
+def windows_process_image(pid):
+    """Resolve an NVML-reported PID when session zero hides its image name."""
+    import ctypes
+    from ctypes import wintypes as w
+    kernel=ctypes.WinDLL('kernel32',use_last_error=True)
+    kernel.OpenProcess.argtypes=[w.DWORD,w.BOOL,w.DWORD];kernel.OpenProcess.restype=w.HANDLE
+    kernel.QueryFullProcessImageNameW.argtypes=[w.HANDLE,w.DWORD,w.LPWSTR,ctypes.POINTER(w.DWORD)]
+    kernel.CloseHandle.argtypes=[w.HANDLE]
+    handle=kernel.OpenProcess(0x1000,False,pid)
+    if not handle:return None
+    try:
+        buffer=ctypes.create_unicode_buffer(32768);size=w.DWORD(len(buffer))
+        if kernel.QueryFullProcessImageNameW(handle,0,buffer,ctypes.byref(size)):return buffer.value
+        return None
+    finally:kernel.CloseHandle(handle)
+
+
 def gpu_processes():
     raw = subprocess.check_output(['nvidia-smi', '--query-compute-apps=pid,process_name',
                                    '--format=csv,noheader,nounits'], timeout=4, stderr=subprocess.DEVNULL).decode()
@@ -59,7 +76,11 @@ def gpu_processes():
     for row in csv.reader(raw.splitlines()):
         if len(row) == 2 and row[0].strip().isdigit():
             pid = int(row[0].strip())
+            if pid in found:continue
             name = row[1].strip().replace('\\', '/').rsplit('/', 1)[-1]
+            if os.name=='nt' and name.startswith('['):
+                image=windows_process_image(pid)
+                if image:name=image.replace('\\','/').rsplit('/',1)[-1]
             found[pid] = {'pid': pid, 'name': name}
     return list(found.values())
 
@@ -137,6 +158,9 @@ class ResidentWorker:
                 raise ValueError('Use an exact miner executable basename')
             if config.get('miner_pid'):
                 raise ValueError('Choose automatic miner name or a fixed PID, not both')
+        if os.name=='nt' and config.get('mining_mode')=='pause_on_request':
+            from .mining_guard import enable_debug_privilege
+            enable_debug_privilege()
         self.miner_birth = self._miner_birth()
         if config.get('miner_pid') and self.miner_birth is None:
             raise ValueError('The configured existing miner is not running')
@@ -280,7 +304,8 @@ class ResidentWorker:
         temporary = self.status_path.with_suffix('.tmp')
         with os.fdopen(os.open(temporary, os.O_WRONLY|os.O_CREAT|os.O_TRUNC, 0o600), 'w') as handle:
             json.dump(data, handle);handle.flush();os.fsync(handle.fileno())
-        os.replace(temporary, self.status_path)
+        from .mining_guard import replace_file
+        replace_file(temporary, self.status_path)
 
     def heartbeat(self):
         response = self.post('heartbeat', self.readiness())

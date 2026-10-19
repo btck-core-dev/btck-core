@@ -126,7 +126,9 @@ class BoundedPilotServer(ThreadingHTTPServer):
 
 
 class InferencePilot:
-    def __init__(self, data_dir, provider, *, rate_kcu_per_1k='0.8', reference_price_usd='0.05'):
+    def __init__(self, data_dir, provider, *, rate_kcu_per_1k='0.8', reference_price_usd='0.05', max_concurrent_requests=1):
+        if type(max_concurrent_requests) is not int or not 1 <= max_concurrent_requests <= 32:
+            raise ValueError('Concurrent inference limit must be an integer from 1 to 32')
         self.root = Path(data_dir).resolve()
         self.root.mkdir(parents=True, mode=0o700, exist_ok=True)
         self._lockfile = (self.root/'owner.lock').open('a+b')
@@ -138,7 +140,7 @@ class InferencePilot:
         self.provider = provider
         self.rate, self.reference_price = rate_kcu_per_1k, reference_price_usd
         TieredPricingEngine.quote_kcu_usage(1, self.rate, self.reference_price)
-        self._slot = threading.BoundedSemaphore(1)
+        self._slot = threading.BoundedSemaphore(max_concurrent_requests)
         self.database = self.root/'pilot.sqlite3'
         with self.db() as db:
             db.executescript('''
@@ -303,7 +305,7 @@ class InferencePilot:
         if existing:
             return self.replay(existing, request_hash)
         if not self._slot.acquire(blocking=False):
-            raise PilotError(503, 'provider_busy', 'The single pilot provider is busy')
+            raise PilotError(503, 'provider_busy', 'The configured inference capacity is busy')
         try:
             with self.db(write=True) as db:
                 existing = db.execute('SELECT * FROM tasks WHERE agent=? AND idem=?', (agent,key)).fetchone()
