@@ -9,8 +9,8 @@
     "approval_id": "BTCK-STAGEB-20261012-AGY-001",
     "note": "Public Stage-B approval bound to two independent replay records.",
     "replay_evidence_sha256": {
-      "replay-a-mac-a1234-20261011": "4896e9990bf5a983b2499629bbc797ccab17ef49980ad8d843bd73491cee919d",
-      "replay-b-jczhang-super-server-20261011": "b4ce01c2c286408ff6639d232be51df1a27820babe0d2bf14153df740a2b31a7"
+      "replay-01": "4896e9990bf5a983b2499629bbc797ccab17ef49980ad8d843bd73491cee919d",
+      "replay-02": "b4ce01c2c286408ff6639d232be51df1a27820babe0d2bf14153df740a2b31a7"
     }
   },
   "consensus": {

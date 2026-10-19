@@ -59,8 +59,26 @@ class TestCheckpointReleaseTools(unittest.TestCase):
             self.assertEqual(approved["release"]["approval_id"], "BTCK-PUBLIC-UNIT-TEST-0001")
             self.assertEqual(
                 set(approved["release"]["replay_evidence_sha256"]),
-                {"isolated-a", "isolated-b"},
+                {"replay-01", "replay-02"},
             )
+            self.assertEqual(
+                set(approved["release"]["replay_evidence_sha256"].values()),
+                {hashlib.sha256(path.read_bytes()).hexdigest() for path in evidence},
+            )
+            self.assertNotIn("isolated-a", output.read_text())
+            self.assertNotIn("isolated-b", output.read_text())
+            public_bytes = output.read_bytes()
+            reordered = list(command)
+            positions = [i + 1 for i, value in enumerate(command) if value == "--replay-evidence"]
+            reordered[positions[0]], reordered[positions[1]] = reordered[positions[1]], reordered[positions[0]]
+            subprocess.run(reordered, check=True, capture_output=True, text=True)
+            self.assertEqual(public_bytes, output.read_bytes())
+            legacy_path = root / "legacy-approved.json"
+            subprocess.run(command[:-1] + [str(legacy_path), "--include-environment-ids"],
+                           check=True, capture_output=True, text=True)
+            legacy = json.loads(legacy_path.read_text())
+            self.assertEqual(set(legacy["release"]["replay_evidence_sha256"]),
+                             {"isolated-a", "isolated-b"})
 
             duplicate = json.loads(evidence[1].read_text(encoding="utf-8"))
             duplicate["environment_id"] = "isolated-a"
