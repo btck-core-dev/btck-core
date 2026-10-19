@@ -1,0 +1,13 @@
+[Unit]
+Description=Renew the isolated BTC-K L2 HTTPS certificate after draining inference
+After=network-online.target btck-l2-preview.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /etc/nginx-l2-preview/issue_certificate.py
+ExecStopPost=/usr/bin/rm -f /run/btck-l2-certificate/draining
+TimeoutStartSec=400
+UMask=0077
+RuntimeDirectory=btck-l2-certificate
+RuntimeDirectoryMode=0755

@@ -1,0 +1,21 @@
+[Unit]
+Description=Independent BTC-K L2 HTTPS edge
+After=network-online.target btck-l2-preview.service
+ConditionPathExists=/etc/btck-l2-acme/certificates/compute.bitcoin-k.com.crt
+[Service]
+Type=forking
+PIDFile=/run/btck-l2-edge.pid
+ExecStartPre=/usr/sbin/nginx -t -c /etc/nginx-l2-preview/nginx.conf
+ExecStart=/usr/sbin/nginx -c /etc/nginx-l2-preview/nginx.conf
+ExecReload=/bin/kill -HUP $MAINPID
+ExecStop=/bin/kill -QUIT $MAINPID
+Restart=on-failure
+RestartSec=5
+MemoryMax=64M
+CPUQuota=20%
+TasksMax=8
+Nice=10
+NoNewPrivileges=yes
+PrivateTmp=yes
+[Install]
+WantedBy=multi-user.target

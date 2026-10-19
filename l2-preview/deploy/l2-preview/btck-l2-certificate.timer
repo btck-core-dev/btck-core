@@ -1,0 +1,11 @@
+[Unit]
+Description=Check BTC-K L2 certificate daily
+
+[Timer]
+OnBootSec=10min
+OnCalendar=*-*-* 20:00:00 UTC
+RandomizedDelaySec=30min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

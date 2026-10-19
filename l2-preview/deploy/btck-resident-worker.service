@@ -1,0 +1,22 @@
+[Unit]
+Description=BTC-K resident GPU worker (private development pilot)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/btck-resident-worker
+Environment=PYTHONPATH=%h/btck-resident-worker/src
+ExecStart=/usr/bin/python3 -m worker.resident_worker --config %h/.config/btck/worker.json
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=15
+NoNewPrivileges=yes
+PrivateTmp=yes
+UMask=0077
+MemoryMax=128M
+CPUQuota=20%
+TasksMax=32
+
+[Install]
+WantedBy=default.target

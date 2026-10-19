@@ -1,0 +1,19 @@
+{
+  "gateway_url": "https://compute.example.invalid",
+  "backend_url": "http://127.0.0.1:8000/v1",
+  "token": "REPLACE_WITH_A_DEDICATED_RANDOM_WORKER_TOKEN",
+  "model": "REPLACE_WITH_APPROVED_MODEL_ID",
+  "gpu_indices": [
+    0
+  ],
+  "pearl_api_url": "http://127.0.0.1:21550",
+  "min_pearl_hashrate_hs": 560000000000000,
+  "min_free_mib": 512,
+  "max_temperature_c": 80,
+  "inference_timeout": 180,
+  "chat_template_kwargs": {},
+  "status_file": "/absolute/private/path/worker-status.json",
+  "miner_process_name": "SRBMiner-MULTI",
+  "backend_model": "REPLACE_WITH_LOCAL_MODEL_ID",
+  "hashrate_grace_seconds": 180
+}

@@ -1,0 +1,73 @@
+# Standalone L2 edge instance. Does not reload any existing nginx instance.
+user www-data;
+worker_processes 1;
+pid /run/btck-l2-edge.pid;
+error_log /var/log/btck-l2-edge/error.log warn;
+events { worker_connections 128; }
+http {
+    include /etc/nginx/mime.types;
+    server_tokens off;
+    log_format l2 '$time_iso8601 $request_method $uri $status $body_bytes_sent $request_time';
+    access_log /var/log/btck-l2-edge/access.log l2;
+    limit_req_zone $binary_remote_addr zone=l2_join:1m rate=1r/s;
+    limit_req_zone $binary_remote_addr zone=l2_api:1m rate=20r/s;
+    limit_conn_zone $binary_remote_addr zone=l2_per_ip:1m;
+    limit_conn_zone $server_name zone=l2_total:1m;
+    client_max_body_size 1m;
+    client_body_timeout 5s;
+    client_header_timeout 5s;
+    keepalive_timeout 10s;
+    send_timeout 15s;
+    proxy_temp_path /var/cache/btck-l2-edge/proxy;
+    client_body_temp_path /var/cache/btck-l2-edge/body;
+    server {
+        listen 443 ssl;
+        server_name compute.bitcoin-k.com;
+        if ($host != compute.bitcoin-k.com) { return 444; }
+        ssl_certificate /etc/btck-l2-acme/certificates/compute.bitcoin-k.com.crt;
+        ssl_certificate_key /etc/btck-l2-acme/certificates/compute.bitcoin-k.com.key;
+        ssl_protocols TLSv1.2 TLSv1.3;
+        ssl_session_cache shared:L2_TLS:1m;
+        ssl_session_tickets off;
+        limit_conn l2_per_ip 8;
+        limit_conn l2_total 32;
+        add_header X-Content-Type-Options nosniff always;
+        add_header Referrer-Policy no-referrer always;
+        location = /v1/join/redeem {
+            limit_except POST { deny all; }
+            client_max_body_size 8k;
+            limit_req zone=l2_join burst=3 nodelay;
+            proxy_pass http://127.0.0.1:18188;
+            proxy_next_upstream off;
+        }
+        location = /v1/chat/completions {
+            if (-f /run/btck-l2-certificate/draining) { return 503; }
+            limit_req zone=l2_api burst=20 nodelay;
+            client_max_body_size 128k;
+            proxy_pass http://127.0.0.1:18188;
+            proxy_read_timeout 200s;
+            proxy_send_timeout 10s;
+            proxy_buffering off;
+            proxy_next_upstream off;
+        }
+        location /downloads/ {
+            root /var/www/btck-l2;
+            index index.html;
+            autoindex off;
+            disable_symlinks on;
+            limit_rate 2m;
+            try_files $uri $uri/ =404;
+        }
+        location /v1/ {
+            limit_req zone=l2_api burst=20 nodelay;
+            proxy_pass http://127.0.0.1:18188;
+            proxy_read_timeout 200s;
+            proxy_send_timeout 10s;
+            proxy_buffering off;
+            proxy_next_upstream off;
+        }
+        location = /health { proxy_pass http://127.0.0.1:18188; }
+        location = / { proxy_pass http://127.0.0.1:18188; }
+        location / { return 404; }
+    }
+}

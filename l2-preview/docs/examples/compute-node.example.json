@@ -1,0 +1,25 @@
+{
+  "gateway_url": "https://compute.example.invalid",
+  "token": "REPLACE_WITH_DEDICATED_WORKER_TOKEN",
+  "model": "REPLACE_WITH_APPROVED_MODEL_ID",
+  "backend_model": "REPLACE_WITH_LOCAL_MODEL_ID",
+  "backend_url": "http://127.0.0.1:8000/v1",
+  "gpu_indices": [0],
+  "miner_process_name": "SRBMiner-MULTI",
+  "mining_mode": "pause_on_request",
+  "inference_timeout": 90,
+  "preemption_max_seconds": 120,
+  "mining_lease_file": "/var/lib/btck-compute/mining-lease.json",
+  "status_file": "/var/lib/btck-compute/status.json",
+  "min_free_mib": 512,
+  "max_temperature_c": 80,
+  "miner_launch": {
+    "command": ["/absolute/path/SRBMiner-MULTI", "--algorithm", "pearlhash", "--pool", "YOUR_POOL", "--wallet", "YOUR_PEARL_WALLET", "--disable-cpu"],
+    "cwd": "/absolute/path/to/miner",
+    "log": "/var/lib/btck-compute/miner.log"
+  },
+  "model_launch": {
+    "command": ["/absolute/path/to/existing/model-server", "YOUR_MODEL_ARGUMENTS"],
+    "log": "/var/lib/btck-compute/model.log"
+  }
+}

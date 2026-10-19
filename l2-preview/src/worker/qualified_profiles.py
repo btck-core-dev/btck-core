@@ -1,0 +1,41 @@
+"""Reference-machine measurements and observed compatibility constraints.
+
+Matches do not qualify a different computer or prove model identity.
+"""
+
+REFERENCE_PROFILES = [{'model_metadata_sha256': '7458a032290d8eadfffe928f93718c1f2481e2fd7427143cffcc4ba07b76e8ed',
+  'runtime': {'engine': 'vllm',
+              'version': '0.20.0',
+              'code_sha256': 'ee90ff080cfa5eb26e54ec6046de9308f03e6007dcc86ec608f5e22fccf1bf3d'},
+  'gpu_name': 'NVIDIA GeForce RTX 4070 Ti SUPER',
+  'per_gpu_mib': 16376,
+  'gpu_count': 4,
+  'id': 'linux-4070tis-tp4-qwen35b-16k-20261019',
+  'context': 16384,
+  'kv_cache_dtype': 'auto',
+  'prefill_tokens': 1024,
+  'prefix_caching': True,
+  'speculation': 'off',
+  'gpu_memory_utilization': 0.55,
+  'measured_model_peak_mib': 9645,
+  'measurements': {'short_ttft_seconds': 0.499,
+                   'same_3k_ttft_seconds': 2.214,
+                   'baseline_3k_ttft_seconds': 31.891,
+                   'long_input_tokens': 16165,
+                   'long_ttft_seconds': 6.064,
+                   'long_elapsed_seconds': 11.75,
+                   'tool_loop_passed': True,
+                   'network_agent_input_tokens': 15050,
+                   'network_agent_rounds': 2,
+                   'network_agent_passed': True},
+  'chat_template_kwargs': {'enable_thinking': False}}]
+
+ENGINE_CONSTRAINTS = [{'model_metadata_sha256': '7458a032290d8eadfffe928f93718c1f2481e2fd7427143cffcc4ba07b76e8ed',
+  'runtime': {'engine': 'vllm',
+              'version': '0.20.0',
+              'code_sha256': 'ee90ff080cfa5eb26e54ec6046de9308f03e6007dcc86ec608f5e22fccf1bf3d'},
+  'gpu_name': 'NVIDIA GeForce RTX 4070 Ti SUPER',
+  'per_gpu_mib': 16376,
+  'gpu_count': 4,
+  'kv_cache_dtype': 'auto',
+  'minimum_prefix_prefill_tokens': 528}]

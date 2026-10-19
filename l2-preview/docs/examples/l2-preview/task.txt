@@ -1,0 +1,1 @@
+Use lookup_service to look up the catalog service. You must call the tool; do not guess. Report a JSON object with service, region and acceptance_code using the returned record.

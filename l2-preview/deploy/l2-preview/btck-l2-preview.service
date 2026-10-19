@@ -1,0 +1,33 @@
+[Unit]
+Description=BTC-K L2 isolated development-credit preview
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=btck-l2
+Group=btck-l2
+WorkingDirectory=/opt/btck-l2/releases/agent-preview-20261018
+ExecStart=/usr/bin/python3 scripts/run_l2_resident_gateway.py --config /etc/btck-l2-preview/gateway.json
+Environment=PYTHONDONTWRITEBYTECODE=1
+UMask=0077
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=210
+KillSignal=SIGINT
+MemoryHigh=80M
+MemoryMax=96M
+CPUQuota=20%
+TasksMax=40
+Nice=10
+IOWeight=10
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/lib/btck-l2-preview
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+LockPersonality=yes
+
+[Install]
+WantedBy=multi-user.target

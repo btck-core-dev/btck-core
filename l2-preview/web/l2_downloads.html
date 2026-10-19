@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BTC-K Compute 下载</title>
+<style>body{font:17px system-ui;max-width:800px;margin:48px auto;padding:0 24px;line-height:1.7;background:#111827;color:#e5e7eb}a{color:#93c5fd}li{margin:12px 0}code{overflow-wrap:anywhere}small{color:#a8b5c6}</style>
+<h1>BTC-K Compute</h1>
+<p>邀请测试版 · 2026-10-19 · KCU 计价 · 使用开发积分</p>
+<ul>
+<li><a href="20261019-preview/BTC-K-Compute-Node-windows-x64-preview.zip">Windows 矿工软件</a>：解压后运行 BTC-K-Compute-Connect.exe。</li>
+<li><a href="20261019-preview/BTC-K-Compute-Node-linux-source.zip">Linux 矿工软件与源码</a>：含 root 服务安装程序和配置示例。</li>
+<li><a href="20261019-preview/BTC-K-L2-Agent-kit.zip">客户 / Agent 工具包</a>：Python 3.10+，含在线模型查询、工具调用和签名回执校验。</li>
+<li><a href="20261019-preview/SHA256SUMS">SHA256 校验和</a> · <a href="20261019-preview/MANIFEST.json">版本清单</a></li>
+</ul>
+<h2>矿工接入</h2>
+<p>向运营方获取专属 Worker 邀请资料，打开软件导入。选择本机已有模型、运行环境和 GPU，使用推荐或手动配置，然后连接。矿工无需域名、公网 IP 或端口映射，软件主动连接统一 HTTPS 网关。</p>
+<p>平时 Pearl 挖矿、模型常驻；调用到来时暂停 Pearl，调用结束恢复挖矿。模型与 Pearl 配置使用矿工自己的路径、矿池和钱包。软件不捆绑模型或自动下载运行环境。</p>
+<h2>客户与 Agent</h2>
+<p>使用独立的 Agent 凭证访问 <a href="/">调用页面</a>，或在工具包中设置网关 <code>https://compute.bitcoin-k.com</code>。查询当前在线模型后选择调用。Worker 邀请不能用作客户凭证。</p>
+<p>实际用量按所选模型 KCU 费率计价；工具在客户自己的电脑执行。预算、签名回执和任务恢复示例见包内说明。</p>
+<small>四张 RTX 4070 Ti SUPER 的现有 35B TP4 模型已通过 16K 上下文和真实工具往返测试；不代表其他机器、所有模型、4bit KV 或 Windows 实卡均已通过。当前不提供主网充值、提现或链上结算。新模型需经目录准入与服务验证后才能接单。</small>
+</html>

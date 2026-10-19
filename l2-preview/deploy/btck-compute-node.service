@@ -1,0 +1,18 @@
+[Unit]
+Description=BTC-K GPU compute node: resident model and per-request mining pause
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/btck-compute-node
+ExecStart=/usr/bin/python3 scripts/l2_compute_node.py --config /etc/btck-compute-node.json
+Restart=on-failure
+RestartSec=5
+KillMode=process
+TimeoutStopSec=150
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

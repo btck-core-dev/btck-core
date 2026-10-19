@@ -1,0 +1,5 @@
+{
+  "gateway_url": "https://compute.example.invalid",
+  "token": "REPLACE_WITH_A_PRIVATE_AGENT_TOKEN",
+  "trusted_receipt_pubkey": "REPLACE_WITH_THE_PUBLIC_KEY_FROM_TRUSTED_GATEWAY_STARTUP"
+}
