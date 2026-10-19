@@ -31,8 +31,8 @@ def verify_gui(executable, env, desktop=None):
         deadline = time.monotonic() + 20
         window = None
         while window is None:
-            if process.poll() is not None or time.monotonic() >= deadline:
-                raise AssertionError("Delivered Linux GUI failed to open its main window")
+            if (process.poll() is not None and (not desktop or process.returncode != 0)) or time.monotonic() >= deadline:
+                raise AssertionError("Delivered Linux GUI failed to open its main window: " + (process.stderr.read().decode(errors="replace") if process.poll() is not None else "timeout"))
             tree = subprocess.check_output(["xwininfo", "-root", "-tree"], env=env, text=True)
             match = re.search(r'(0x[0-9a-f]+) "(BTC-K Wallet [^"]+)"', tree)
             if match:
@@ -85,6 +85,9 @@ def main():
     parser.add_argument("--sha256", required=True)
     parser.add_argument("--evidence", type=Path, required=True)
     args = parser.parse_args()
+    args.archive = args.archive.resolve()
+    args.evidence = args.evidence.resolve()
+    args.evidence.parent.mkdir(parents=True, exist_ok=True)
     if not sys.platform.startswith("linux"):
         parser.error("Run on Linux")
     assert hashlib.sha256(args.archive.read_bytes()).hexdigest() == args.sha256

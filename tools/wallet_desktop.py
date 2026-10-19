@@ -13,7 +13,10 @@ def desktop_exec(executable: Path) -> str:
     value = value.replace("%", "%%")
     for character in ("\\", '"', "`", "$"):
         value = value.replace(character, "\\" + character)
-    return '"' + value.replace("\\", "\\\\") + '"'
+    # GLib checks the first executable before expanding %% field codes.
+    # A fixed env executable permits literal percent in the wallet path;
+    # no shell expansion is involved.
+    return '/usr/bin/env "' + value.replace("\\", "\\\\") + '"'
 
 
 def install_desktop_entry(executable: Path) -> Path:

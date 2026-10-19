@@ -11,7 +11,6 @@ import shutil
 import subprocess
 import sys
 import tempfile
-import tarfile
 
 ROOT = Path(__file__).resolve().parents[1]
 

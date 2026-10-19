@@ -2,6 +2,8 @@
 import os
 from pathlib import Path
 import sys
+import shutil
+import subprocess
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -53,6 +55,20 @@ class LinuxWalletTests(unittest.TestCase):
     def test_control_characters_rejected(self):
         with self.assertRaises(ValueError):
             desktop_exec(Path("/tmp/invalid\npath"))
+
+    @unittest.skipUnless(sys.platform.startswith("linux") and shutil.which("gio"),
+                         "requires Linux GIO desktop parser")
+    def test_real_desktop_parser_launches_reserved_path_characters(self):
+        with tempfile.TemporaryDirectory(prefix="btck-desktop-") as directory:
+            base = Path(directory)
+            executable = base / '钱包 20% "quote" $cash `tick` \\slash' / "test-executable"
+            executable.parent.mkdir()
+            shutil.copy2("/bin/true", executable)
+            with patch.dict(os.environ, {"XDG_DATA_HOME": str(base / "share")}), \
+                 patch.object(sys, "frozen", True, create=True):
+                entry = install_desktop_entry(executable)
+                subprocess.run(["gio", "launch", str(entry)], check=True,
+                               stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, timeout=10)
 
 
 if __name__ == "__main__":
