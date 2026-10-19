@@ -36,6 +36,10 @@ def main() -> None:
     parser.add_argument("--replay-evidence", type=Path, action="append", required=True)
     parser.add_argument("--approval-id", required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument(
+        "--include-environment-ids", action="store_true",
+        help="Reproduce legacy metadata; includes private environment identifiers in output",
+    )
     args = parser.parse_args()
     if args.output.resolve() == args.candidate_manifest.resolve():
         raise SystemExit("approval output must not overwrite the reviewed candidate")
@@ -81,11 +85,12 @@ def main() -> None:
         "approval_id": args.approval_id.strip(),
         "note": "Public Stage-B approval bound to two independent replay records.",
         "replay_evidence_sha256": {
-            str(record["environment_id"]): digest(path)
-            for path, record in sorted(
+            (str(record["environment_id"]) if args.include_environment_ids else f"replay-{index:02d}"): digest(path)
+            for index, (path, record) in enumerate(sorted(
                 zip(args.replay_evidence, records),
-                key=lambda item: str(item[1]["environment_id"]),
-            )
+                key=(lambda item: str(item[1]["environment_id"])) if args.include_environment_ids
+                    else (lambda item: digest(item[0])),
+            ), 1)
         },
     }
     atomic_json(args.output, manifest)

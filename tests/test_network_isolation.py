@@ -37,6 +37,21 @@ class _MemoryWriter:
 
 
 class TestNetworkIsolation(unittest.TestCase):
+    def test_release_evidence_aliases_preserve_all_loaded_network_parameters(self):
+        from dataclasses import replace
+        original = load_network("mainnet")
+        raw = json.loads(original.manifest_path.read_text())
+        before = dict(raw["release"]["replay_evidence_sha256"])
+        raw["release"]["replay_evidence_sha256"] = {
+            f"private-environment-{i}": value for i, value in enumerate(before.values(), 1)
+        }
+        with tempfile.TemporaryDirectory() as temporary:
+            candidate = Path(temporary) / "mainnet.json"
+            candidate.write_text(json.dumps(raw))
+            aliased = load_network("mainnet", candidate)
+        self.assertEqual(replace(aliased, manifest_path=original.manifest_path), original)
+        self.assertEqual(set(raw["release"]["replay_evidence_sha256"].values()), set(before.values()))
+
     def test_default_network_is_devnet(self):
         with mock.patch.dict(os.environ, {}, clear=False):
             os.environ.pop("BTCK_NETWORK", None)

@@ -13,7 +13,7 @@
 ## Stage-B replay 环境
 
 - Replay-A：Mac 工作站，使用全新 output data root 和唯一 `environment_id`。
-- Replay-B：`jczhang-Super-Server`（Linux/Python 3.10，独立物理主机），使用全新
+- Replay-B：独立 Linux 物理主机（Python 3.10），使用全新
   output data root 和不同 `environment_id`。
 - 两边只接收同一份冻结的 Stage-A manifest、candidate、chain DB 与同一源代码
   commit；输入文件须先逐项比较 SHA-256。
