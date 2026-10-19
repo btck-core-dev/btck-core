@@ -22,9 +22,9 @@ from privacy.wallet_registry import WalletRegistry, WalletRegistryError
 from privacy.private_files import restrict_private_path
 
 
-UI_FONT = "Segoe UI" if sys.platform == "win32" else "Helvetica Neue"
-MONO_FONT = "Consolas" if sys.platform == "win32" else "Menlo"
-HAND_CURSOR = "hand2" if sys.platform == "win32" else "pointinghand"
+UI_FONT = {"win32": "Segoe UI", "darwin": "Helvetica Neue"}.get(sys.platform, "DejaVu Sans")
+MONO_FONT = {"win32": "Consolas", "darwin": "Menlo"}.get(sys.platform, "DejaVu Sans Mono")
+HAND_CURSOR = "pointinghand" if sys.platform == "darwin" else "hand2"
 
 
 class TechButton(tk.Frame):
@@ -1337,6 +1337,10 @@ class WalletApp(tk.Tk):
 
 
 def main() -> None:
+    if sys.argv[1:] == ["--install-desktop"]:
+        from wallet_desktop import install_desktop_entry
+        print(install_desktop_entry(Path(sys.executable)))
+        return
     app = WalletApp()
     app.mainloop()
 

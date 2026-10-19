@@ -20,6 +20,8 @@ def default_registry_path() -> Path:
     if sys.platform == "darwin":
         return Path.home() / "Library" / "Application Support" / "Bitcoin K Wallet" / "wallets.json"
     base = Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local" / "share")
+    if not base.is_absolute():
+        base = Path.home() / ".local" / "share"
     return base / "bitcoin-k-wallet" / "wallets.json"
 
 

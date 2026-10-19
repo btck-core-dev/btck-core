@@ -100,3 +100,15 @@ git diff --check
 - [ ] **9. 单独推进 L2**：L1 稳定后另立范围完成 L2 代码、经济、安全和运营审计；L2 继续默认关闭，不能反向修改已批准的 L1 共识身份。
 
 每完成一项，必须在本清单勾选并链接对应的 commit、manifest、哈希或机器证据；只有文档声明而没有可验证证据，视为未完成。
+
+### Linux x86_64 desktop wallet
+
+The Linux wallet uses the same encrypted wallet format and automatic sync as the
+Mac and Windows clients. Download the Linux archive from the
+[v3.2.13 release](https://github.com/btck-core-dev/btck-core/releases/tag/v3.2.13),
+verify `LINUX_WALLET_SHA256SUMS` and the signed platform manifest, then extract
+the full archive and run `./launch-wallet.sh`. Optional `./install-desktop.sh`
+adds a per-user application menu entry without root. No Python installation is needed.
+Ubuntu 22.04 x86_64 with X11/XWayland is the supported acceptance target; glibc
+2.35 or newer is required. ARM64 and other distributions require separate validation.
+See [Linux instructions](packaging/LINUX_WALLET_README.txt) for backups and builds.
